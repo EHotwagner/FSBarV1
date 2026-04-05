@@ -12,6 +12,7 @@
     <Compile Include="ConnectionTests.fs" />
     <Compile Include="CommandTests.fs" />
     <Compile Include="EventTests.fs" />
+    <Compile Include="BarbRushTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
