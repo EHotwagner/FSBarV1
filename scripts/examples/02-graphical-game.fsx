@@ -1,0 +1,22 @@
+// 02-graphical-game.fsx — Launch graphical BAR and control from REPL
+// Usage: dotnet fsi scripts/examples/02-graphical-game.fsx
+
+#load "../prelude.fsx"
+
+printfn "Starting graphical BAR session..."
+use client = BarClient.startGraphical()
+
+printfn "Running 300 frames (observe the game window)..."
+client.Run(300, fun frame ->
+    frame.Events
+    |> List.choose (fun ev ->
+        match ev with
+        | GameEvent.UnitIdle unitId ->
+            Some (MoveCommand unitId 4096.0f 100.0f 4096.0f)
+        | _ -> None
+    )
+) |> ignore
+
+printfn "Stopping..."
+client.Stop()
+printfn "Done."

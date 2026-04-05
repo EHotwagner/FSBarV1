@@ -1,0 +1,6 @@
+version: v1
+plugins:
+  - plugin: fsgrpc
+    out: ../src/FSBar.Proto/Generated
+    opt:
+      - paths=source_relative

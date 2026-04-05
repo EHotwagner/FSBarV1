@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj" />
+    <Project Path="src/FSBar.Client/FSBar.Client.fsproj" />
+    <Project Path="src/FSBar.Proto/FSBar.Proto.fsproj" />
+  </Folder>
+</Solution>

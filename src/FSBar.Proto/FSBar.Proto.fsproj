@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Proto</RootNamespace>
+    <PackageId>FSBar.Proto</PackageId>
+    <Version>0.1.0</Version>
+    <Description>F# protobuf bindings for HighBar V2 protocol</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FsGrpc" Version="1.0.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="Generated/highbar/common.proto.gen.fs" />
+    <Compile Include="Generated/highbar/callbacks.proto.gen.fs" />
+    <Compile Include="Generated/highbar/events.proto.gen.fs" />
+    <Compile Include="Generated/highbar/commands.proto.gen.fs" />
+    <Compile Include="Generated/highbar/messages.proto.gen.fs" />
+  </ItemGroup>
+
+</Project>

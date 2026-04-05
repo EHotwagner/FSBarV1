@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+src/FSBar.Proto/Generated/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/

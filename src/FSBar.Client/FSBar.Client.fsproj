@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Client</RootNamespace>
+    <PackageId>FSBar.Client</PackageId>
+    <Version>0.1.0</Version>
+    <Description>F# REPL client for BAR AI orchestration via HighBar V2 proxy</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="EngineConfig.fsi" />
+    <Compile Include="EngineConfig.fs" />
+    <Compile Include="Connection.fsi" />
+    <Compile Include="Connection.fs" />
+    <Compile Include="Events.fsi" />
+    <Compile Include="Events.fs" />
+    <Compile Include="Commands.fsi" />
+    <Compile Include="Commands.fs" />
+    <Compile Include="Protocol.fsi" />
+    <Compile Include="Protocol.fs" />
+    <Compile Include="ScriptGenerator.fsi" />
+    <Compile Include="ScriptGenerator.fs" />
+    <Compile Include="EngineLauncher.fsi" />
+    <Compile Include="EngineLauncher.fs" />
+    <Compile Include="Callbacks.fsi" />
+    <Compile Include="Callbacks.fs" />
+    <Compile Include="BarClient.fsi" />
+    <Compile Include="BarClient.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FSBar.Proto/FSBar.Proto.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BarData" Version="*" />
+  </ItemGroup>
+
+</Project>

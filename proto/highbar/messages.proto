@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package highbar;
+
+import "highbar/events.proto";
+import "highbar/commands.proto";
+import "highbar/callbacks.proto";
+
+// Protocol version: 1 (defined as constant in proxy code, must match at handshake)
+
+// Top-level envelope for proxy → AI messages
+message ProxyMessage {
+  oneof message {
+    Handshake handshake = 1;
+    Frame frame = 2;
+    CallbackResponse callback_response = 3;
+    SaveRequest save_request = 4;
+    LoadRequest load_request = 5;
+    Shutdown shutdown = 6;
+  }
+}
+
+// Top-level envelope for AI → proxy messages
+message AIMessage {
+  oneof message {
+    HandshakeResponse handshake_response = 1;
+    FrameResponse frame_response = 2;
+    CallbackRequest callback_request = 3;
+    SaveResponse save_response = 4;
+  }
+}
+
+// Initial handshake sent by proxy on connection
+message Handshake {
+  uint32 protocol_version = 1;
+  string engine_version = 2;
+  string game_id = 3;
+  string map_name = 4;
+  string mod_name = 5;
+  int32 team_id = 6;
+  int32 ally_team_id = 7;
+  int32 player_count = 8;
+}
+
+// AI response to handshake
+message HandshakeResponse {
+  bool accepted = 1;
+  uint32 protocol_version = 2;
+}
+
+// Batched events for a single game frame
+message Frame {
+  uint32 frame_number = 1;
+  repeated EngineEvent events = 2;
+  int32 team_id = 3;  // For multi-AI team routing
+}
+
+// AI response to a frame: batch of commands to execute
+message FrameResponse {
+  repeated AICommand commands = 1;
+  int32 team_id = 2;  // For multi-AI team routing
+}
+
+// Engine requests AI to save its state
+message SaveRequest {}
+
+// AI provides serialized state
+message SaveResponse {
+  bytes state_data = 1;
+}
+
+// Engine provides previously saved state for AI to restore
+message LoadRequest {
+  bytes state_data = 1;
+}
+
+// Notification that game is ending
+message Shutdown {
+  ShutdownReason reason = 1;
+}
+
+enum ShutdownReason {
+  SHUTDOWN_REASON_UNKNOWN = 0;
+  SHUTDOWN_REASON_GAME_OVER = 1;
+  SHUTDOWN_REASON_DISCONNECT = 2;
+  SHUTDOWN_REASON_ERROR = 3;
+}
