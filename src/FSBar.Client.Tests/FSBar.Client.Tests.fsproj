@@ -8,6 +8,16 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="EngineConfigTests.fs" />
+    <Compile Include="ScriptGeneratorTests.fs" />
+    <Compile Include="CommandsTests.fs" />
+    <Compile Include="EventsTests.fs" />
+    <Compile Include="ConnectionTests.fs" />
+    <Compile Include="ProtocolTests.fs" />
+    <Compile Include="BarClientTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
     <PackageReference Include="xunit" Version="2.9.*" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.*" PrivateAssets="all" />
