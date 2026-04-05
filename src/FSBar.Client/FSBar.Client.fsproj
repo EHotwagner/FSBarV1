@@ -25,6 +25,12 @@
     <Compile Include="EngineLauncher.fs" />
     <Compile Include="Callbacks.fsi" />
     <Compile Include="Callbacks.fs" />
+    <Compile Include="MapGrid.fsi" />
+    <Compile Include="MapGrid.fs" />
+    <Compile Include="MapQuery.fsi" />
+    <Compile Include="MapQuery.fs" />
+    <Compile Include="MapCache.fsi" />
+    <Compile Include="MapCache.fs" />
     <Compile Include="BarClient.fsi" />
     <Compile Include="BarClient.fs" />
   </ItemGroup>

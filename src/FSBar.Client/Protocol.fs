@@ -95,6 +95,8 @@ module Protocol =
         Connection.sendMessage stream (encode resp)
 
     /// Send a callback request and wait for the response.
+    /// Skips any interleaved Frame messages (auto-responds with empty commands)
+    /// since the engine may push frames asynchronously.
     let sendCallback (stream: NetworkStream) (callbackId: uint32) (paramList: CallbackParam list) : CallbackResponse =
         let reqId = nextRequestId
         nextRequestId <- nextRequestId + 1u
@@ -109,9 +111,25 @@ module Protocol =
         }
         Connection.sendMessage stream (encode msg)
 
-        let respBytes = Connection.recvBytes stream
-        let proxyMsg = decode<ProxyMessage> respBytes
-
-        match proxyMsg.Message with
-        | ProxyMessage.MessageCase.CallbackResponse resp -> resp
-        | other -> failwith $"Expected CallbackResponse, got {other}"
+        let rec readUntilCallback (attempts: int) =
+            if attempts > 100 then
+                failwith "sendCallback: exceeded 100 attempts waiting for CallbackResponse"
+            let respBytes = Connection.recvBytes stream
+            let proxyMsg = decode<ProxyMessage> respBytes
+            match proxyMsg.Message with
+            | ProxyMessage.MessageCase.CallbackResponse resp -> resp
+            | ProxyMessage.MessageCase.Frame _ ->
+                // Engine sent a frame while we're waiting for callback response.
+                // Respond with empty commands and keep reading.
+                sendFrameResponse stream []
+                readUntilCallback (attempts + 1)
+            | ProxyMessage.MessageCase.SaveRequest _ ->
+                let saveResp : AIMessage = {
+                    Message = AIMessage.MessageCase.SaveResponse {
+                        StateData = FsGrpc.Bytes.Empty
+                    }
+                }
+                Connection.sendMessage stream (encode saveResp)
+                readUntilCallback (attempts + 1)
+            | other -> failwith $"Expected CallbackResponse, got {other}"
+        readUntilCallback 0

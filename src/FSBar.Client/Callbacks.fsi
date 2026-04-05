@@ -63,3 +63,18 @@ module Callbacks =
 
     /// Get all available unit-definition IDs up to maxCount.
     val getUnitDefs: stream: NetworkStream -> maxCount: int -> int array
+
+    /// Get the full heightmap as a flat float32 list (row-major order).
+    val getHeightMap: stream: NetworkStream -> float32 list
+
+    /// Get the full slope map as a flat float32 list (row-major order).
+    val getSlopeMap: stream: NetworkStream -> float32 list
+
+    /// Get the line-of-sight map as a flat int list (row-major order).
+    val getLosMap: stream: NetworkStream -> int list
+
+    /// Get the radar coverage map as a flat int list (row-major order).
+    val getRadarMap: stream: NetworkStream -> int list
+
+    /// Get the resource distribution map as a flat int list (row-major order).
+    val getResourceMap: stream: NetworkStream -> int list

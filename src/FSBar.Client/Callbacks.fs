@@ -161,3 +161,25 @@ module Callbacks =
         Protocol.sendCallback stream (uint32 CallbackId.CallbackGetUnitDefs) [ intParam maxCount ]
         |> getIntArray
         |> List.toArray
+
+    // --- Map data callbacks ---
+
+    let getHeightMap (stream: NetworkStream) : float32 list =
+        Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetHeightMap) []
+        |> getFloatArray
+
+    let getSlopeMap (stream: NetworkStream) : float32 list =
+        Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetSlopeMap) []
+        |> getFloatArray
+
+    let getLosMap (stream: NetworkStream) : int list =
+        Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetLosMap) []
+        |> getIntArray
+
+    let getRadarMap (stream: NetworkStream) : int list =
+        Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetRadarMap) []
+        |> getIntArray
+
+    let getResourceMap (stream: NetworkStream) : int list =
+        Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetResourceMap) []
+        |> getIntArray

@@ -14,6 +14,7 @@
 
 open FSBar.Client
 open FSBar.Client.Commands
+open FSBar.Client.MapQuery
 open BarData
 
 printfn "FSBar.Client loaded. Use BarClient.startHeadless() to begin."

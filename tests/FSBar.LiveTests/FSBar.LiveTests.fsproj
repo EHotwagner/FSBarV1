@@ -13,6 +13,8 @@
     <Compile Include="CommandTests.fs" />
     <Compile Include="EventTests.fs" />
     <Compile Include="BarbRushTests.fs" />
+    <Compile Include="MapGridTests.fs" />
+    <Compile Include="MapQueryTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
