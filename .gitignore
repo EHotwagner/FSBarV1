@@ -9,3 +9,5 @@ Thumbs.db
 *.swp
 .vscode/
 .idea/
+reports/testreports/
+src/FSBar.Client.Tests/TestResults/

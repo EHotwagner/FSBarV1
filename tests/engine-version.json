@@ -1,0 +1,14 @@
+{
+  "engine": {
+    "version": "2025.06.19",
+    "binary": "spring-headless",
+    "downloadUrl": "https://github.com/beyond-all-reason/spring/releases"
+  },
+  "game": {
+    "name": "Beyond All Reason test-29840-d9b7dba",
+    "rapidTag": "byar:test"
+  },
+  "map": {
+    "name": "Red Rock Desert v2"
+  }
+}
