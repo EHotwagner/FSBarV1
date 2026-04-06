@@ -14,6 +14,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-06
 - Filesystem — `.baseline` text files committed to git (007-fix-surface-baselines)
 - F# / .NET 10.0 + Silk.NET.Windowing 2.22.0, Silk.NET.OpenGL 2.22.0, Silk.NET.Input 2.22.0, SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.Proto (in-repo) (008-game-viz)
 - N/A (in-memory only) (008-game-viz)
+- F# / .NET 10.0 + SkiaViewer 1.0.0, SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.Viz (in-repo) (010-map-gamestate-preview)
+- Binary files on disk for MapGrid serialization (010-map-gamestate-preview)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -39,9 +41,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 010-map-gamestate-preview: Added F# / .NET 10.0 + SkiaViewer 1.0.0, SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.Viz (in-repo)
 - 009-harden-skiasharp-viewer: Added F# / .NET 10.0 + Silk.NET.Windowing 2.22.0, Silk.NET.OpenGL 2.22.0, Silk.NET.Input 2.22.0, SkiaSharp 2.88.6
 - 008-game-viz: Added F# / .NET 10.0 + Silk.NET.Windowing 2.22.0, Silk.NET.OpenGL 2.22.0, Silk.NET.Input 2.22.0, SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.Proto (in-repo)
-- 007-fix-surface-baselines: Added F# / .NET 10.0 + xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x (existing in FSBar.Client.Tests)
 
 
 <!-- MANUAL ADDITIONS START -->

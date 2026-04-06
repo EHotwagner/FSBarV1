@@ -9,6 +9,9 @@
     <Compile Include="SurfaceBaselineTests.fs" />
     <Compile Include="VizEngineFixture.fs" />
     <Compile Include="LayerRendererTests.fs" />
+    <Compile Include="MapDataTests.fs" />
+    <Compile Include="MockSnapshotTests.fs" />
+    <Compile Include="PreviewSessionTests.fs" />
     <Compile Include="ViewerTests.fs" />
     <Compile Include="GameVizIntegrationTests.fs" />
   </ItemGroup>

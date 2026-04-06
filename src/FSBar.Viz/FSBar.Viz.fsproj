@@ -18,6 +18,12 @@
     <Compile Include="LayerRenderer.fs" />
     <Compile Include="SceneBuilder.fsi" />
     <Compile Include="SceneBuilder.fs" />
+    <Compile Include="MapData.fsi" />
+    <Compile Include="MapData.fs" />
+    <Compile Include="MockSnapshot.fsi" />
+    <Compile Include="MockSnapshot.fs" />
+    <Compile Include="PreviewSession.fsi" />
+    <Compile Include="PreviewSession.fs" />
     <Compile Include="GameViz.fsi" />
     <Compile Include="GameViz.fs" />
   </ItemGroup>
