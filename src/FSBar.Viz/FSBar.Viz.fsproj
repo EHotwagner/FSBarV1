@@ -26,6 +26,8 @@
     <Compile Include="PreviewSession.fs" />
     <Compile Include="GameViz.fsi" />
     <Compile Include="GameViz.fs" />
+    <Compile Include="LiveSession.fsi" />
+    <Compile Include="LiveSession.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -46,6 +46,7 @@ let private lineDiff (expected: string) (actual: string) =
 [<InlineData("MockSnapshot")>]
 [<InlineData("PreviewSession")>]
 [<InlineData("GameViz")>]
+[<InlineData("LiveSession")>]
 let ``baseline_matches_fsi_surface`` (moduleName: string) =
     let fsiPath = Path.Combine(vizSrcDir, sprintf "%s.fsi" moduleName)
     let baselinePath = Path.Combine(baselinesDir, sprintf "%s.baseline" moduleName)

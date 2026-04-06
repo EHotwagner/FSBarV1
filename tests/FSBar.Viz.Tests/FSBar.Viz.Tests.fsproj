@@ -14,6 +14,8 @@
     <Compile Include="PreviewSessionTests.fs" />
     <Compile Include="ViewerTests.fs" />
     <Compile Include="GameVizIntegrationTests.fs" />
+    <Compile Include="LiveSessionTests.fs" />
+    <Compile Include="LiveSessionIntegrationTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

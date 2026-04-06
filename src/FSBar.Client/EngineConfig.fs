@@ -65,8 +65,8 @@ module EngineConfig =
         {
             Mode = Headless
             SocketPath = $"/tmp/fsbar-{guid}.sock"
-            MapName = "Red Rock Desert v2"
-            GameType = "Beyond All Reason test-29840-d9b7dba"
+            MapName = "Avalanche 3.4"
+            GameType = "Beyond All Reason test-29871-90f4bc1"
             OpponentAI = "NullAI"
             OpponentSide = "Cortex"
             OurSide = "Armada"

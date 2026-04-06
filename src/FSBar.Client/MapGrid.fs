@@ -117,17 +117,43 @@ module MapGrid =
             Callbacks.getSlopeMap stream
             |> toFloat32Array2D slopeW slopeH "SlopeMap"
 
+        // LOS and Radar may be at a lower resolution (e.g., 1/8th of heightmap)
+        let losRaw = Callbacks.getLosMap stream |> List.toArray
         let losMap =
-            Callbacks.getLosMap stream
-            |> toIntArray2D w h "LosMap"
+            let losSize = losRaw.Length
+            if losSize = w * h then
+                Array2D.init w h (fun x z -> losRaw.[z * w + x])
+            else
+                // Compute actual dimensions from element count (square or proportional grid)
+                let losSide = int (sqrt (float losSize))
+                if losSide * losSide = losSize then
+                    Array2D.init losSide losSide (fun x z -> losRaw.[z * losSide + x])
+                else
+                    Array2D.zeroCreate 1 1
 
+        let radarRaw = Callbacks.getRadarMap stream |> List.toArray
         let radarMap =
-            Callbacks.getRadarMap stream
-            |> toIntArray2D w h "RadarMap"
+            let radarSize = radarRaw.Length
+            if radarSize = w * h then
+                Array2D.init w h (fun x z -> radarRaw.[z * w + x])
+            else
+                let radarSide = int (sqrt (float radarSize))
+                if radarSide * radarSide = radarSize then
+                    Array2D.init radarSide radarSide (fun x z -> radarRaw.[z * radarSide + x])
+                else
+                    Array2D.zeroCreate 1 1
 
+        let resourceRaw = Callbacks.getResourceMap stream |> List.toArray
         let resourceMap =
-            Callbacks.getResourceMap stream
-            |> toIntArray2D w h "ResourceMap"
+            let resSize = resourceRaw.Length
+            if resSize = w * h then
+                Array2D.init w h (fun x z -> resourceRaw.[z * w + x])
+            else
+                let resSide = int (sqrt (float resSize))
+                if resSide * resSide = resSize then
+                    Array2D.init resSide resSide (fun x z -> resourceRaw.[z * resSide + x])
+                else
+                    Array2D.zeroCreate 1 1
 
         { WidthElmos = w * 8
           HeightElmos = h * 8
@@ -147,9 +173,18 @@ module MapGrid =
     /// <param name="grid">The existing map grid to update.</param>
     /// <returns>A new <see cref="T:FSBar.Client.MapGrid"/> with the LOS layer refreshed.</returns>
     let refreshLos (stream: NetworkStream) (grid: MapGrid) : MapGrid =
+        let raw = Callbacks.getLosMap stream |> List.toArray
+        let currentW = Array2D.length1 grid.LosMap
+        let currentH = Array2D.length2 grid.LosMap
         let losMap =
-            Callbacks.getLosMap stream
-            |> toIntArray2D grid.WidthHeightmap grid.HeightHeightmap "LosMap"
+            if raw.Length = currentW * currentH then
+                Array2D.init currentW currentH (fun x z -> raw.[z * currentW + x])
+            else
+                let side = int (sqrt (float raw.Length))
+                if side * side = raw.Length then
+                    Array2D.init side side (fun x z -> raw.[z * side + x])
+                else
+                    grid.LosMap
         { grid with LosMap = losMap }
 
     /// <summary>
@@ -160,9 +195,18 @@ module MapGrid =
     /// <param name="grid">The existing map grid to update.</param>
     /// <returns>A new <see cref="T:FSBar.Client.MapGrid"/> with the radar layer refreshed.</returns>
     let refreshRadar (stream: NetworkStream) (grid: MapGrid) : MapGrid =
+        let raw = Callbacks.getRadarMap stream |> List.toArray
+        let currentW = Array2D.length1 grid.RadarMap
+        let currentH = Array2D.length2 grid.RadarMap
         let radarMap =
-            Callbacks.getRadarMap stream
-            |> toIntArray2D grid.WidthHeightmap grid.HeightHeightmap "RadarMap"
+            if raw.Length = currentW * currentH then
+                Array2D.init currentW currentH (fun x z -> raw.[z * currentW + x])
+            else
+                let side = int (sqrt (float raw.Length))
+                if side * side = raw.Length then
+                    Array2D.init side side (fun x z -> raw.[z * side + x])
+                else
+                    grid.RadarMap
         { grid with RadarMap = radarMap }
 
     /// <summary>
