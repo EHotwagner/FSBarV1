@@ -131,9 +131,7 @@ module GameViz =
     let private doStop () =
         match viewer with
         | Some v ->
-            v.Dispose()
-            // Allow Silk.NET window to fully close before reuse
-            System.Threading.Thread.Sleep(500)
+            v.Dispose() // Viewer.run completion signaling handles the wait
             viewer <- None
             LayerRenderer.invalidateAll ()
             units <- Map.empty
@@ -240,11 +238,20 @@ module GameViz =
             let stream = client.Stream
             let grid =
                 match mapGridRef with
-                | Some g ->
+                | Some g when g.HeightMap.Length > 1 && g.HeightMap.[0, 0] <> 0.0f ->
+                    // Map data loaded — just refresh dynamic layers
                     let g = try MapGrid.refreshLos stream g with _ -> g
                     let g = try MapGrid.refreshRadar stream g with _ -> g
                     mapGridRef <- Some g
                     g
+                | Some g ->
+                    // HeightMap is still empty (all zeros) — retry full load
+                    try
+                        let loaded = MapGrid.loadFromEngine stream
+                        mapGridRef <- Some loaded
+                        loaded
+                    with _ ->
+                        g
                 | None ->
                     try
                         let g = MapGrid.loadFromEngine stream

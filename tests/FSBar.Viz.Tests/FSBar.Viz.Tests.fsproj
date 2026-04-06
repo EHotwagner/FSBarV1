@@ -9,6 +9,7 @@
     <Compile Include="SurfaceBaselineTests.fs" />
     <Compile Include="VizEngineFixture.fs" />
     <Compile Include="LayerRendererTests.fs" />
+    <Compile Include="ViewerTests.fs" />
     <Compile Include="GameVizIntegrationTests.fs" />
   </ItemGroup>
 

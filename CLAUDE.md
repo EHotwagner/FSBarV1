@@ -39,10 +39,57 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 009-harden-skiasharp-viewer: Added F# / .NET 10.0 + Silk.NET.Windowing 2.22.0, Silk.NET.OpenGL 2.22.0, Silk.NET.Input 2.22.0, SkiaSharp 2.88.6
 - 008-game-viz: Added F# / .NET 10.0 + Silk.NET.Windowing 2.22.0, Silk.NET.OpenGL 2.22.0, Silk.NET.Input 2.22.0, SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.Proto (in-repo)
 - 007-fix-surface-baselines: Added F# / .NET 10.0 + xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x (existing in FSBar.Client.Tests)
-- 006-validate-highbar-fixes: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 
 
 <!-- MANUAL ADDITIONS START -->
+
+## FSI MCP Server
+
+The FSI MCP server (`fsi-server`) runs at `http://127.0.0.1:5020/sse` and provides an F# Interactive session via MCP tools.
+
+### Critical: DLL references are locked
+
+FSI locks DLLs loaded via `#r`. After rebuilding a project, you **must restart FSI** to pick up the new DLLs. Use the `restart_fsi` MCP tool to do this without restarting the entire MCP server.
+
+### Starting the MCP server
+
+The server binary is at `/home/developer/tools/fsi-mcp-server/server/`. Start it with:
+```
+XDG_RUNTIME_DIR=/tmp/runtime-developer DISPLAY=:0 dotnet run --no-build
+```
+- `XDG_RUNTIME_DIR` is required for GLFW windowing (Silk.NET viz)
+- `DISPLAY=:0` is required for graphical windows
+
+### Loading FSBar assemblies in FSI
+
+Before loading `#r` references, preload native libraries with `dlopen`:
+```fsharp
+open System.Runtime.InteropServices
+[<DllImport("libdl.so.2")>]
+extern nativeint dlopen(string filename, int flags)
+let np = "/home/developer/projects/FSBarV1/tests/FSBar.Viz.Tests/bin/Debug/net10.0/runtimes/linux-x64/native"
+let _ = dlopen(np + "/libglfw.so.3", 0x2 ||| 0x100)
+let _ = dlopen(np + "/libSkiaSharp.so", 0x2 ||| 0x100)
+```
+
+Load DLLs from the test output directory (has all transitive dependencies):
+```
+#r ".../tests/FSBar.Viz.Tests/bin/Debug/net10.0/<DllName>.dll"
+```
+
+### GameViz notes
+
+- The SkiaSharp GPU backend (GRContext) segfaults in this environment. The Viewer uses a raster SKSurface + GL texture upload instead.
+- `Silk.NET.Windowing.Glfw.GlfwWindowing.RegisterPlatform()` must be called before `Window.Create` (done in Viewer.fs).
+- The engine proxy does not support `getCornersHeightMap` — heightmap data is empty. GameViz retries loading on each `onFrame` until data is available.
+- Throttle viz updates to ~60fps when running the game loop. Calling `onFrame` on every `Step()` at high game speed will consume 100% CPU.
+
+### Engine paths
+
+- Headless engine: `/home/developer/.local/state/engine-2025.06.21/spring-headless`
+- Spring data dir: `/home/developer/.local/state/Beyond All Reason`
+
 <!-- MANUAL ADDITIONS END -->
