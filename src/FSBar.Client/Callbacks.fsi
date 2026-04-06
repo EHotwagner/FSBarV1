@@ -67,6 +67,10 @@ module Callbacks =
     /// Get the full heightmap as a flat float32 list (row-major order).
     val getHeightMap: stream: NetworkStream -> float32 list
 
+    /// Get the corners heightmap as a flat float32 list (row-major order).
+    /// Returns (mapWidth+1)*(mapHeight+1) vertex-resolution height values.
+    val getCornersHeightMap: stream: NetworkStream -> float32 list
+
     /// Get the full slope map as a flat float32 list (row-major order).
     val getSlopeMap: stream: NetworkStream -> float32 list
 

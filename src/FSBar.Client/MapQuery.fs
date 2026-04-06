@@ -23,10 +23,13 @@ module MapQuery =
         | Ok () -> Ok grid.HeightMap.[gx, gz]
 
     let slopeAtElmo (grid: MapGrid) (x: int) (z: int) : Result<float32, string> =
-        let gx, gz = elmoToGrid x z
-        match boundsCheck grid gx gz "SlopeMap" with
-        | Error e -> Error e
-        | Ok () -> Ok grid.SlopeMap.[gx, gz]
+        let sx, sz = x / 16, z / 16
+        let maxX = Array2D.length1 grid.SlopeMap - 1
+        let maxZ = Array2D.length2 grid.SlopeMap - 1
+        if sx < 0 || sx > maxX || sz < 0 || sz > maxZ then
+            Error $"Out of bounds: elmo ({x}, {z}) → slope grid ({sx}, {sz}) outside SlopeMap range [0..{maxX}, 0..{maxZ}]"
+        else
+            Ok grid.SlopeMap.[sx, sz]
 
     let terrainAtElmo (grid: MapGrid) (x: int) (z: int) : Result<Terrain, string> =
         let gx, gz = elmoToGrid x z

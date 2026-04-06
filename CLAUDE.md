@@ -28,14 +28,16 @@ tests/
 
 Always run tests against the live environment. Do not use mocks, fakes, or in-memory substitutes.
 
+Tests that cannot pass due to out-of-scope issues (e.g., missing server, external dependency unavailable, unimplemented upstream feature) MUST be marked as skipped or have their assertions relaxed. Never mark a failing test as passed.
+
 ## Code Style
 
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 006-validate-highbar-fixes: Added [if applicable, e.g., PostgreSQL, CoreData, files or N/A]
 - 005-incorporate-highbarv2-fixes: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (unit definitions), xUnit 2.9.x
 - 004-array-map-layers: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), FSBar.Proto (generated types), BarData (unit definitions)
-- 003-live-game-tests: Added F# / .NET 10.0 + FSBar.Client (in-repo), FSBar.Proto (in-repo), BarData (NuGet), xUnit 2.9.x, Microsoft.NET.Test.Sdk
 
 
 <!-- MANUAL ADDITIONS START -->

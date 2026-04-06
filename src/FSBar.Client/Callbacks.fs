@@ -168,6 +168,10 @@ module Callbacks =
         Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetHeightMap) []
         |> getFloatArray
 
+    let getCornersHeightMap (stream: NetworkStream) : float32 list =
+        Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetCornersHeightMap) []
+        |> getFloatArray
+
     let getSlopeMap (stream: NetworkStream) : float32 list =
         Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetSlopeMap) []
         |> getFloatArray

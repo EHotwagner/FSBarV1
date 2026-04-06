@@ -67,12 +67,15 @@ module MapGrid =
         let hmH = h + 1
 
         let heightMap =
-            Callbacks.getHeightMap stream
+            Callbacks.getCornersHeightMap stream
             |> toFloat32Array2D hmW hmH "HeightMap"
+
+        let slopeW = w / 2
+        let slopeH = h / 2
 
         let slopeMap =
             Callbacks.getSlopeMap stream
-            |> toFloat32Array2D hmW hmH "SlopeMap"
+            |> toFloat32Array2D slopeW slopeH "SlopeMap"
 
         let losMap =
             Callbacks.getLosMap stream
@@ -110,7 +113,9 @@ module MapGrid =
 
     let terrainAt (grid: MapGrid) (x: int) (z: int) : Terrain =
         let h = grid.HeightMap.[x, z]
-        let s = grid.SlopeMap.[x, z]
+        let sx = min (x / 2) (Array2D.length1 grid.SlopeMap - 1)
+        let sz = min (z / 2) (Array2D.length2 grid.SlopeMap - 1)
+        let s = grid.SlopeMap.[sx, sz]
         if h < 0.0f then
             Terrain.Water -h
         elif s > 0.6f then
@@ -124,7 +129,9 @@ module MapGrid =
         let h = Array2D.length2 grid.HeightMap
         Array2D.init w h (fun x z ->
             let height = grid.HeightMap.[x, z]
-            let slope = grid.SlopeMap.[x, z]
+            let sx = min (x / 2) (Array2D.length1 grid.SlopeMap - 1)
+            let sz = min (z / 2) (Array2D.length2 grid.SlopeMap - 1)
+            let slope = grid.SlopeMap.[sx, sz]
             let isWater = height < 0.0f
             match moveType with
             | MoveType.Kbot ->
