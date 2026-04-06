@@ -42,7 +42,6 @@ let private lineDiff (expected: string) (actual: string) =
 [<InlineData("ColorMaps")>]
 [<InlineData("LayerRenderer")>]
 [<InlineData("SceneBuilder")>]
-[<InlineData("Viewer")>]
 [<InlineData("GameViz")>]
 let ``baseline_matches_fsi_surface`` (moduleName: string) =
     let fsiPath = Path.Combine(vizSrcDir, sprintf "%s.fsi" moduleName)

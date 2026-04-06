@@ -2,6 +2,7 @@ namespace FSBar.Viz
 
 open System
 open FSBar.Client
+open SkiaViewer
 
 module GameViz =
     let private stateLock = obj ()

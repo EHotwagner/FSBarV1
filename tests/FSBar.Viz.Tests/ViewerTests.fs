@@ -5,7 +5,7 @@ open System.Threading
 open Xunit
 open SkiaSharp
 open Silk.NET.Maths
-open FSBar.Viz
+open SkiaViewer
 
 /// Serialize all viewer tests — GLFW requires single-threaded window lifecycle.
 [<CollectionDefinition("Viewer", DisableParallelization = true)>]
