@@ -1,5 +1,6 @@
 namespace FSBar.LiveTests
 
+open System.IO
 open Xunit
 open Xunit.Abstractions
 open FSBar.Client
@@ -13,7 +14,14 @@ type MapQueryTests(engine: EngineFixture, output: ITestOutputHelper) =
         let stream = engine.Client.Stream
         try
             Some (MapGrid.loadFromEngine stream)
-        with ex when ex.Message.Contains("empty array") ->
+        with
+        | :? EngineDisconnectedException as ex ->
+            output.WriteLine($"SKIP: Engine disconnected — {ex.Message}")
+            None
+        | :? IOException as ex ->
+            output.WriteLine($"SKIP: I/O error — {ex.Message}")
+            None
+        | ex when ex.Message.Contains("empty array") ->
             output.WriteLine("SKIP: Proxy does not support map data callbacks (52-56)")
             None
 

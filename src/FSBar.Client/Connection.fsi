@@ -3,6 +3,11 @@ namespace FSBar.Client
 open System.IO
 open System.Net.Sockets
 
+type EngineDisconnectedException =
+    inherit IOException
+    new: message: string * ?lastFrameNumber: uint32 * ?innerException: exn -> EngineDisconnectedException
+    member LastFrameNumber: uint32 option
+
 module Connection =
 
     /// Create a Unix domain socket listener bound to the given path.
@@ -11,7 +16,7 @@ module Connection =
 
     /// Accept a single connection from the listener within the given timeout (ms).
     /// Returns the accepted client socket and a NetworkStream wrapping it.
-    val acceptConnection: listener: Socket -> timeoutMs: int -> Socket * NetworkStream
+    val acceptConnection: listener: Socket -> timeoutMs: int -> readTimeoutMs: int -> Socket * NetworkStream
 
     /// Send a protobuf-serialized message as a length-prefixed frame:
     /// 4-byte little-endian length header followed by the payload bytes.

@@ -4,7 +4,9 @@
 #load "../prelude.fsx"
 
 printfn "Starting graphical BAR session..."
-use client = BarClient.startGraphical()
+open FSBar
+
+let client = BarClient.startGraphical()
 
 printfn "Running 300 frames (observe the game window)..."
 client.Run(300, fun frame ->

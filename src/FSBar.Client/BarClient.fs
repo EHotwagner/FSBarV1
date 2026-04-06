@@ -61,7 +61,8 @@ type BarClient(config: EngineConfig) =
             engineProcess <- Some proc
 
             // Accept proxy connection
-            let (accepted, netStream) = Connection.acceptConnection sock config.TimeoutMs
+            let readTimeout = EngineConfig.resolveReadTimeout config
+            let (accepted, netStream) = Connection.acceptConnection sock config.TimeoutMs readTimeout
             clientSocket <- Some accepted
             stream <- Some netStream
 

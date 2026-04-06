@@ -19,6 +19,7 @@ type EngineConfig = {
     AppImagePath: string
     SpringDataDir: string option
     GameSpeed: int
+    ReadTimeoutMs: int option
 }
 
 module EngineConfig =
@@ -37,4 +38,15 @@ module EngineConfig =
             AppImagePath = "/home/developer/applications/Beyond-All-Reason-1.2988.0.AppImage"
             SpringDataDir = None
             GameSpeed = 100
+            ReadTimeoutMs = None
         }
+
+    let resolveReadTimeout (config: EngineConfig) : int =
+        config.ReadTimeoutMs
+        |> Option.defaultWith (fun () ->
+            match Environment.GetEnvironmentVariable("FSBAR_CLIENT_TIMEOUT_MS") with
+            | null | "" -> 10000
+            | value ->
+                match Int32.TryParse(value) with
+                | true, ms -> ms
+                | false, _ -> 10000)

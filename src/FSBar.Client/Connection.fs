@@ -4,6 +4,13 @@ open System
 open System.IO
 open System.Net.Sockets
 
+type EngineDisconnectedException(message: string, ?lastFrameNumber: uint32, ?innerException: exn) =
+    inherit IOException(
+        message,
+        defaultArg innerException null)
+
+    member _.LastFrameNumber: uint32 option = lastFrameNumber
+
 module Connection =
 
     /// Create a Unix domain socket listener bound to the given path.
@@ -20,12 +27,13 @@ module Connection =
 
     /// Accept a single connection from the listener within the given timeout (ms).
     /// Returns the accepted client socket and a NetworkStream wrapping it.
-    let acceptConnection (listener: Socket) (timeoutMs: int) : Socket * NetworkStream =
+    let acceptConnection (listener: Socket) (timeoutMs: int) (readTimeoutMs: int) : Socket * NetworkStream =
         if not (listener.Poll(timeoutMs * 1000, SelectMode.SelectRead)) then
             failwith $"No connection received within {timeoutMs}ms timeout"
 
         let client = listener.Accept()
         let stream = new NetworkStream(client, ownsSocket = false)
+        stream.ReadTimeout <- readTimeoutMs
         (client, stream)
 
     /// Read exactly `count` bytes from the stream.
@@ -35,10 +43,15 @@ module Connection =
         let mutable offset = 0
 
         while offset < count do
-            let bytesRead = stream.Read(buffer, offset, count - offset)
+            let bytesRead =
+                try
+                    stream.Read(buffer, offset, count - offset)
+                with
+                | :? IOException as ex ->
+                    raise (EngineDisconnectedException("Engine proxy read timeout", innerException = ex))
 
             if bytesRead = 0 then
-                failwith "Connection closed while reading data"
+                raise (EngineDisconnectedException("Engine proxy closed connection"))
 
             offset <- offset + bytesRead
 

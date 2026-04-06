@@ -136,7 +136,7 @@ let ``acceptConnection_timeout_throws`` () =
     let listener = Connection.createListener path
     try
         Assert.Throws<exn>(fun () ->
-            Connection.acceptConnection listener 1 |> ignore
+            Connection.acceptConnection listener 1 10000 |> ignore
         ) |> ignore
     finally
         listener.Close()

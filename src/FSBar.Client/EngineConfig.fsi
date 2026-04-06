@@ -17,7 +17,9 @@ type EngineConfig = {
     AppImagePath: string
     SpringDataDir: string option
     GameSpeed: int
+    ReadTimeoutMs: int option
 }
 
 module EngineConfig =
     val defaultConfig: unit -> EngineConfig
+    val resolveReadTimeout: config: EngineConfig -> int
