@@ -1,6 +1,7 @@
 **/bin/
 **/obj/
-src/FSBar.Proto/Generated/
+# Proto generated files are committed for CI builds
+# src/FSBar.Proto/Generated/
 *.user
 *.suo
 .DS_Store
