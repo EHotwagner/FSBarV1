@@ -11,3 +11,8 @@ Thumbs.db
 .idea/
 reports/testreports/
 src/FSBar.Client.Tests/TestResults/
+
+# FSharp.Formatting
+output/
+.fsdocs/
+tmp/

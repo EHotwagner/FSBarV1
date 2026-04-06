@@ -46,14 +46,29 @@ client.Run(100, fun frame ->
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) — system design and component overview
-- [API Reference](docs/api-reference.md) — complete public API surface
-- [Protocol](docs/protocol.md) — protobuf communication protocol
-- [Commands & Events](docs/commands-and-events.md) — unit commands and game events
-- [Callbacks](docs/callbacks.md) — querying game state mid-frame
-- [Examples](docs/examples.md) — usage tutorials and scenarios
-- [Test Suite](docs/tests.md) — full test documentation
-- [Known Issues](docs/known-issues.md) — current limitations
+Full documentation is available at **https://EHotwagner.github.io/FSBarV1/**
+
+To build and preview locally:
+
+```bash
+dotnet tool restore
+dotnet fsdocs watch
+```
+
+Then open http://localhost:8901.
+
+### Documentation Index
+
+- [Getting Started](https://EHotwagner.github.io/FSBarV1/getting-started.html) — installation, prerequisites, first game
+- [Architecture](https://EHotwagner.github.io/FSBarV1/architecture.html) — system design and component overview
+- [Commands & Events](https://EHotwagner.github.io/FSBarV1/commands-and-events.html) — unit commands and game events
+- [Callbacks](https://EHotwagner.github.io/FSBarV1/callbacks.html) — querying game state mid-frame
+- [Map Analysis](https://EHotwagner.github.io/FSBarV1/map-analysis.html) — terrain, heightmaps, resource analysis
+- [Protocol Details](https://EHotwagner.github.io/FSBarV1/protocol.html) — protobuf communication protocol
+- [Examples](https://EHotwagner.github.io/FSBarV1/examples.html) — usage tutorials and AI patterns
+- [Test Suite](https://EHotwagner.github.io/FSBarV1/tests.html) — all 115 tests documented
+- [Known Issues](https://EHotwagner.github.io/FSBarV1/known-issues.html) — current limitations
+- [API Reference](https://EHotwagner.github.io/FSBarV1/reference/index.html) — auto-generated API docs
 
 ## Prerequisites (Live Tests)
 

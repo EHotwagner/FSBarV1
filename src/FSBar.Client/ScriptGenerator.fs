@@ -2,7 +2,15 @@ namespace FSBar.Client
 
 open System.Text
 
+/// <summary>Generates Spring engine startup scripts from an <see cref="T:FSBar.Client.EngineConfig"/>.</summary>
 module ScriptGenerator =
+    /// <summary>
+    /// Generates a Spring engine TDF-format startup script that configures a two-team game
+    /// with the HighBar V2 AI proxy on team 0 and the specified opponent AI on team 1.
+    /// The script includes mod options for faction selection, game speed, and debug commands.
+    /// </summary>
+    /// <param name="config">The engine configuration specifying map, factions, socket path, and opponent AI.</param>
+    /// <returns>A complete TDF-format script string ready to be written to disk for engine launch.</returns>
     let generate (config: EngineConfig) : string =
         let ourFaction = config.OurSide.ToLowerInvariant()
         let opponentFaction = config.OpponentSide.ToLowerInvariant()

@@ -1,0 +1,12 @@
+<Project>
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <WarnOn>3390</WarnOn>
+    <RepositoryUrl>https://github.com/EHotwagner/FSBarV1</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+  <PropertyGroup>
+    <FsDocsLicenseLink>https://github.com/EHotwagner/FSBarV1/blob/master/LICENSE</FsDocsLicenseLink>
+    <FsDocsWarnOnMissingDocs>true</FsDocsWarnOnMissingDocs>
+  </PropertyGroup>
+</Project>

@@ -15,6 +15,11 @@
     <Compile Include="ConnectionTests.fs" />
     <Compile Include="ProtocolTests.fs" />
     <Compile Include="BarClientTests.fs" />
+    <Compile Include="SurfaceAreaTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Baselines/**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
