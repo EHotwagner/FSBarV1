@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Viz</RootNamespace>
+    <PackageId>FSBar.Viz</PackageId>
+    <Version>0.1.0</Version>
+    <Description>In-process 2D map visualization for FSBar game sessions</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="VizTypes.fsi" />
+    <Compile Include="VizTypes.fs" />
+    <Compile Include="ColorMaps.fsi" />
+    <Compile Include="ColorMaps.fs" />
+    <Compile Include="LayerRenderer.fsi" />
+    <Compile Include="LayerRenderer.fs" />
+    <Compile Include="SceneBuilder.fsi" />
+    <Compile Include="SceneBuilder.fs" />
+    <Compile Include="Viewer.fsi" />
+    <Compile Include="Viewer.fs" />
+    <Compile Include="GameViz.fsi" />
+    <Compile Include="GameViz.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FSBar.Client/FSBar.Client.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Silk.NET.Windowing" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.OpenGL" Version="2.22.0" />
+    <PackageReference Include="Silk.NET.Input" Version="2.22.0" />
+    <PackageReference Include="SkiaSharp" Version="2.88.6" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="2.88.6" />
+  </ItemGroup>
+
+</Project>
