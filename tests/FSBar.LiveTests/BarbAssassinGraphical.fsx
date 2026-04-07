@@ -75,9 +75,9 @@ if commanderUnitId < 0 then
     exit 1
 
 let stream = client.Stream
-let enemyX = 4608.0f
+let enemyX = 3200.0f
 let enemyY = 100.0f
-let enemyZ = 4096.0f
+let enemyZ = 3200.0f
 
 printfn "Target: enemy base at (%.0f, %.0f)" enemyX enemyZ
 printfn "Mission: find and destroy enemy commander"

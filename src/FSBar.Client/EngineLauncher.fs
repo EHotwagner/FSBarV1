@@ -105,6 +105,10 @@ module EngineLauncher =
         // Copy archive cache if available
         springDataDir |> Option.iter (fun dir -> copyArchiveCache dir sessionDir)
 
+        // Write springsettings.cfg to force windowed mode for graphical launches
+        let settingsPath = Path.Combine(sessionDir, "springsettings.cfg")
+        File.WriteAllText(settingsPath, "Fullscreen=0\nXResolution=1280\nYResolution=720\n")
+
         // Set up process
         let psi =
             ProcessStartInfo(

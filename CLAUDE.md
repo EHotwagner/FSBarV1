@@ -91,6 +91,10 @@ Load DLLs from the test output directory (has all transitive dependencies):
 - The engine proxy does not support `getCornersHeightMap` — heightmap data is empty. GameViz retries loading on each `onFrame` until data is available.
 - Throttle viz updates to ~60fps when running the game loop. Calling `onFrame` on every `Step()` at high game speed will consume 100% CPU.
 
+### Graphical mode
+
+- Always run the graphical engine in windowed mode (never fullscreen). The `EngineLauncher` writes `Fullscreen=0` to `springsettings.cfg` in each session directory automatically.
+
 ### Engine paths
 
 - Headless engine: `/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.21/spring-headless`
