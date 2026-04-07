@@ -1,6 +1,6 @@
 # FSBarV1 Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-06
+Auto-generated from all feature plans. Last updated: 2026-04-07
 
 ## Active Technologies
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (unit definitions), xUnit 2.9.x (002-test-suite-report)
@@ -18,6 +18,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-06
 - Binary files on disk for MapGrid serialization (010-map-gamestate-preview)
 - F# / .NET 10.0 + FSBar.Client (in-repo), FSBar.Viz (in-repo), SkiaViewer 1.0.0, SkiaSharp 2.88.6, Silk.NET 2.22.0 (011-live-map-viz)
 - N/A (in-memory only, no persistence needed) (011-live-map-viz)
+- Containerfile (OCI/Docker format), Bash (entrypoint), Markdown (documentation) + Arch Linux base image, .NET 10.0 SDK, Node.js, GitHub CLI, FSI MCP server (012-minimal-container-setup)
+- N/A (container image layers + host bind mounts at runtime) (012-minimal-container-setup)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -43,9 +45,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 012-minimal-container-setup: Added Containerfile (OCI/Docker format), Bash (entrypoint), Markdown (documentation) + Arch Linux base image, .NET 10.0 SDK, Node.js, GitHub CLI, FSI MCP server
 - 011-live-map-viz: Added F# / .NET 10.0 + FSBar.Client (in-repo), FSBar.Viz (in-repo), SkiaViewer 1.0.0, SkiaSharp 2.88.6, Silk.NET 2.22.0
 - 010-map-gamestate-preview: Added F# / .NET 10.0 + SkiaViewer 1.0.0, SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.Viz (in-repo)
-- 009-harden-skiasharp-viewer: Added F# / .NET 10.0 + Silk.NET.Windowing 2.22.0, Silk.NET.OpenGL 2.22.0, Silk.NET.Input 2.22.0, SkiaSharp 2.88.6
 
 
 <!-- MANUAL ADDITIONS START -->

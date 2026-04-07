@@ -1,0 +1,87 @@
+FROM archlinux:latest
+
+# ── System setup ──────────────────────────────────────────────────────────────
+
+# Configure faster mirrors, update system, install required packages
+RUN echo 'Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch' > /etc/pacman.d/mirrorlist && \
+    echo 'Server = https://mirrors.kernel.org/archlinux/$repo/os/$arch' >> /etc/pacman.d/mirrorlist && \
+    echo 'Server = https://mirror.leaseweb.net/archlinux/$repo/os/$arch' >> /etc/pacman.d/mirrorlist && \
+    pacman -Syu --noconfirm && \
+    pacman -S --noconfirm \
+    base-devel curl wget git jq sudo openssh \
+    nodejs npm \
+    dotnet-sdk aspnet-runtime \
+    github-cli python python-pip \
+    ttf-liberation fontconfig \
+    openal sdl2 alsa-lib nss \
+    mesa-utils \
+    && pacman -Scc --noconfirm
+
+# ── User setup ────────────────────────────────────────────────────────────────
+
+RUN useradd -m -s /bin/bash developer && \
+    echo "developer ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+USER developer
+WORKDIR /home/developer
+ENV PATH="/home/developer/.local/bin:/home/developer/.dotnet/tools:$PATH" \
+    DOTNET_ROOT="/usr/share/dotnet"
+
+# ── AUR packages ─────────────────────────────────────────────────────────────
+
+RUN git clone https://aur.archlinux.org/freeimage.git /tmp/freeimage && \
+    cd /tmp/freeimage && \
+    makepkg -si --noconfirm && \
+    rm -rf /tmp/freeimage && \
+    sudo ln -sf /usr/lib/libfreeimage.so /usr/lib/freeimage.so
+
+# ── Dev tools ─────────────────────────────────────────────────────────────────
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# ── .NET global tools ─────────────────────────────────────────────────────────
+
+RUN dotnet tool install -g fsautocomplete && \
+    dotnet tool install -g fantomas
+
+# ── Python tools ──────────────────────────────────────────────────────────────
+
+RUN uv tool install specify-cli --from git+https://github.com/github/spec-kit.git
+
+# ── Custom tools (upcons) ─────────────────────────────────────────────────────
+
+RUN mkdir -p /home/developer/.local/share/nuget-local && \
+    dotnet nuget add source /home/developer/.local/share/nuget-local --name local-feed && \
+    git clone --depth 1 https://github.com/EHotwagner/Constitutions.git /home/developer/tools/Constitutions && \
+    dotnet pack /home/developer/tools/Constitutions/src/upcons/upcons.fsproj -c Release && \
+    dotnet tool install --global upcons --add-source /home/developer/.local/share/nuget-local
+
+# ── Git identity & auth ──────────────────────────────────────────────────────
+
+ARG GH_TOKEN
+RUN git config --global user.name "developer" && \
+    git config --global user.email "developer@container" && \
+    git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+
+# ── FSI MCP Server ───────────────────────────────────────────────────────────
+
+RUN git clone --depth 1 https://github.com/EHotwagner/fsi-mcp-server.git /home/developer/tools/fsi-mcp-server && \
+    sed -i 's|<TargetFramework>net9.0</TargetFramework>|<TargetFramework>net10.0</TargetFramework>|; \
+             s|</PropertyGroup>|<AllowMissingPrunePackageData>true</AllowMissingPrunePackageData></PropertyGroup>|' \
+        /home/developer/tools/fsi-mcp-server/server/fsi-mcp-server.fsproj && \
+    dotnet build /home/developer/tools/fsi-mcp-server/server
+
+# ── Project repos ────────────────────────────────────────────────────────────
+
+RUN git clone https://github.com/EHotwagner/FSBarV1.git /home/developer/projects/FSBarV1 && \
+    git clone https://github.com/EHotwagner/HighBarV2.git /home/developer/projects/HighBarV2 && \
+    git clone https://github.com/EHotwagner/SkiaViewer.git /home/developer/projects/SkiaViewer && \
+    git config --global --unset url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf
+
+# ── Finalize ─────────────────────────────────────────────────────────────────
+
+COPY --chmod=755 --chown=developer:developer entrypoint.sh /home/developer/.local/bin/entrypoint.sh
+
+EXPOSE 5020 8080
+ENTRYPOINT ["/home/developer/.local/bin/entrypoint.sh"]
+CMD ["/bin/bash"]
