@@ -157,6 +157,61 @@ client.Stop()
 // ... client is disposed when it goes out of scope
 
 (**
+## Interactive REPL Sessions
+
+The fastest way to explore the engine interactively is with the REPL scripts. These provide
+helper functions for stepping frames, querying units, issuing commands, and more.
+
+### Headless REPL
+
+Start a headless engine session (no GUI, fast simulation):
+*)
+
+(*** do-not-eval ***)
+// From the repo root:
+//   dotnet build tests/FSBar.Viz.Tests/
+//   dotnet fsi scripts/examples/Repl.fsx
+
+// Or from FSI / MCP server:
+//   #load "scripts/examples/Repl.fsx"
+//   open Repl
+
+// start ()         — launch headless engine
+// step 100         — advance 100 frames
+// units ()         — list all tracked units
+// economy ()       — show metal/energy
+// move 25947 2000f 2000f  — move a unit
+// viz ()           — open live visualization window
+// stop ()          — shut down
+
+(**
+### Graphical REPL
+
+Start a full windowed BAR game with an opponent AI you can watch:
+*)
+
+(*** do-not-eval ***)
+// From the repo root:
+//   dotnet build tests/FSBar.Viz.Tests/
+//   DISPLAY=:0 dotnet fsi scripts/examples/ReplGraphical.fsx
+
+// Or from FSI / MCP server:
+//   #load "scripts/examples/ReplGraphical.fsx"
+//   open ReplGraphical
+
+// start ()         — launch windowed game (BARb opponent, 5x speed)
+// step 100         — advance 100 frames
+// units ()         — list all tracked units
+// move 25947 3000f 3000f  — move a unit
+// attack 25947 21640      — attack an enemy
+// economy ()       — show metal/energy
+// stop ()          — shut down
+
+(**
+Both REPL scripts run a 30-frame warmup on `start()` so your commander is immediately tracked.
+All helper functions (`step`, `move`, `attack`, `units`, `economy`, etc.) are available after
+`open Repl` or `open ReplGraphical`.
+
 ## Configuration Options
 
 The `EngineConfig` record controls all session parameters:
@@ -165,8 +220,8 @@ The `EngineConfig` record controls all session parameters:
 |-------|---------|-------------|
 | `Mode` | `Headless` | `Headless` or `Graphical` |
 | `SocketPath` | `/tmp/fsbar-<guid>.sock` | Unix socket path |
-| `MapName` | `"Red Rock Desert v2"` | BAR map name |
-| `GameType` | `"Beyond All Reason test-29840-d9b7dba"` | Game version string |
+| `MapName` | `"Avalanche 3.4"` | BAR map name |
+| `GameType` | `"Beyond All Reason test-29871-90f4bc1"` | Game version string |
 | `OpponentAI` | `"NullAI"` | Opponent AI name |
 | `OurSide` | `"Armada"` | Our faction |
 | `OpponentSide` | `"Cortex"` | Opponent faction |

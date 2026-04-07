@@ -233,14 +233,14 @@ let ``defaultConfig_returns_headless_mode`` () =
 (**
 ### defaultConfig returns expected map name
 
-Verifies the default map is "Red Rock Desert v2".
+Verifies the default map is "Avalanche 3.4".
 *)
 
 (*** do-not-eval ***)
 [<Fact>]
 let ``defaultConfig_returns_expected_map_name`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal("Red Rock Desert v2", config.MapName)
+    Assert.Equal("Avalanche 3.4", config.MapName)
 
 (**
 ### defaultConfig returns expected game type
@@ -252,7 +252,7 @@ Verifies the default game type string.
 [<Fact>]
 let ``defaultConfig_returns_expected_game_type`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal("Beyond All Reason test-29840-d9b7dba", config.GameType)
+    Assert.Equal("Beyond All Reason test-29871-90f4bc1", config.GameType)
 
 (**
 ### defaultConfig returns expected opponent AI
@@ -428,7 +428,7 @@ Verifies the map name appears in the generated script.
 let ``generate_contains_map_name`` () =
     let config = EngineConfig.defaultConfig ()
     let script = ScriptGenerator.generate config
-    Assert.Contains("Red Rock Desert v2", script)
+    Assert.Contains("Avalanche 3.4", script)
 
 (**
 ### generate contains game type
@@ -441,7 +441,7 @@ Verifies the game type string appears in the script.
 let ``generate_contains_game_type`` () =
     let config = EngineConfig.defaultConfig ()
     let script = ScriptGenerator.generate config
-    Assert.Contains("Beyond All Reason test-29840-d9b7dba", script)
+    Assert.Contains("Beyond All Reason test-29871-90f4bc1", script)
 
 (**
 ### generate contains socket path
@@ -1688,7 +1688,7 @@ Verifies `BarClient.defaultConfig()` delegates to `EngineConfig.defaultConfig()`
 let ``defaultConfig_module_function_works`` () =
     let config = BarClient.defaultConfig ()
     Assert.Equal(Headless, config.Mode)
-    Assert.Equal("Red Rock Desert v2", config.MapName)
+    Assert.Equal("Avalanche 3.4", config.MapName)
 
 (**
 ### Multiple create/dispose cycles
@@ -2339,7 +2339,7 @@ within 5000 frames using position callbacks every 500 frames.
 member _.``Commander reaches enemy base against BARb AI``() =
     let uid = getCommanderUnitId().Value
     let stream = fixture.Client.Stream
-    let enemyX, enemyY, enemyZ = 4608.0f, 100.0f, 4096.0f
+    let enemyX, enemyY, enemyZ = 3200.0f, 100.0f, 3200.0f
 
     let mutable frameCount = 0
     let mutable arrived = false
@@ -2372,8 +2372,9 @@ member _.``Commander reaches enemy base against BARb AI``() =
 (**
 ### Commander assassinates enemy commander
 
-Multi-phase test: move to enemy base, hunt for the enemy commander by checking unit definitions
-via callbacks, then attack it. Verifies the enemy commander is destroyed within 12000 frames.
+Multi-phase test: seeds enemy IDs from warmup events (EnemyEnterLOS/EnemyCreated), moves to enemy
+base, hunts for the enemy commander by checking unit definitions via callbacks, then attacks it.
+Verifies the enemy commander is destroyed within 12000 frames.
 *)
 
 (*** do-not-eval ***)
@@ -2381,7 +2382,7 @@ via callbacks, then attack it. Verifies the enemy commander is destroyed within 
 member _.``Commander assassinates enemy commander``() =
     let uid = getCommanderUnitId().Value
     let stream = fixture.Client.Stream
-    let enemyX, enemyY, enemyZ = 4608.0f, 100.0f, 4096.0f
+    let enemyX, enemyY, enemyZ = 3200.0f, 100.0f, 3200.0f
 
     let mutable phase = "move"
     let mutable frameCount = 0
@@ -2390,6 +2391,15 @@ member _.``Commander assassinates enemy commander``() =
     let mutable ourComDead = false
     let enemiesInLOS = ResizeArray<int>()
     let maxFrames = 12000
+
+    // Seed enemies from warmup and prior test frames (EnemyEnterLOS/EnemyCreated may have fired earlier)
+    for evt in fixture.InitialEvents do
+        match evt with
+        | GameEvent.EnemyEnterLOS eid | GameEvent.EnemyCreated eid ->
+            if not (enemiesInLOS.Contains(eid)) then
+                enemiesInLOS.Add(eid)
+        | _ -> ()
+
     let checkedDefs = System.Collections.Generic.HashSet<int>()
 
     while frameCount < maxFrames && not enemyComDead && not ourComDead do
@@ -2398,9 +2408,10 @@ member _.``Commander assassinates enemy commander``() =
         | Some frame ->
             frameCount <- frameCount + 1
 
+            // Collect enemies entering LOS or being created
             for evt in frame.Events do
                 match evt with
-                | GameEvent.EnemyEnterLOS eid ->
+                | GameEvent.EnemyEnterLOS eid | GameEvent.EnemyCreated eid ->
                     if not (enemiesInLOS.Contains(eid)) then
                         enemiesInLOS.Add(eid)
                 | GameEvent.EnemyDestroyed(eid, _) when eid = enemyComId ->

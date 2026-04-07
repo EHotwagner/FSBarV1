@@ -47,7 +47,7 @@ open FSBar.Viz
 
 let config =
     { EngineConfig.defaultConfig () with
-        EngineBin = "/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.19/spring-headless"
+        EngineBin = "/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.21/spring-headless"
         SpringDataDir = Some "/home/developer/.local/state/Beyond All Reason" }
 
 printfn "Starting live visualization (map: %s)..." config.MapName

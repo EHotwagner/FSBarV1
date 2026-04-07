@@ -29,6 +29,6 @@ client.Stop()
 - [Map Analysis](map-analysis.html) — Terrain, heightmaps, resource analysis
 - [Protocol Details](protocol.html) — Wire format and message flow
 - [Examples](examples.html) — End-to-end scenarios and AI patterns
-- [Test Suite](tests.html) — All 115 tests documented
+- [Test Suite](tests.html) — All 143 tests documented
 - [Known Issues](known-issues.html) — Current limitations
 - [API Reference](reference/index.html) — Auto-generated API docs

@@ -1,21 +1,21 @@
-// 09-headless-repl.fsx — Interactive headless engine REPL
+// ReplGraphical.fsx — Interactive graphical engine REPL
 //
-// Starts a headless BAR engine and provides helper functions for
-// interactive control via FSI. Load this script, then use the
-// helpers to step frames, query state, issue commands, and
-// optionally open a live visualization.
+// Starts a full windowed BAR game and provides helper functions for
+// interactive control via FSI. Same API as Repl.fsx but launches
+// the graphical engine so you can watch the game play out.
 //
 // Usage (from repo root):
-//   dotnet build src/FSBar.Viz/
-//   dotnet fsi scripts/examples/09-headless-repl.fsx
+//   dotnet build tests/FSBar.Viz.Tests/
+//   DISPLAY=:0 dotnet fsi scripts/examples/ReplGraphical.fsx
 //
 // Or from the FSI MCP server:
-//   #load "/home/developer/projects/FSBarV1/scripts/examples/09-headless-repl.fsx"
-//   step 10           // advance 10 frames
-//   units ()          // list all known units
-//   move 42 2000 1000 // move unit 42 to (2000, 1000)
-//   viz ()            // open live visualization
-//   economy ()        // show metal/energy
+//   #load "/home/developer/projects/FSBarV1/scripts/examples/ReplGraphical.fsx"
+//   open ReplGraphical
+//   start ()           // launch windowed game
+//   step 100           // advance 100 frames
+//   units ()           // list all known units
+//   move 42 2000 1000  // move unit 42 to (2000, 1000)
+//   economy ()         // show metal/energy
 
 // Resolve paths relative to this script file
 let private _scriptDir = __SOURCE_DIRECTORY__
@@ -53,11 +53,16 @@ open FSBar.Client.MapQuery
 open FSBar.Viz
 open BarData
 
+// ── Engine paths ────────────────────────────────────────────
+let private _engineDir = "/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.21"
+let private _springHeadless = System.IO.Path.Combine(_engineDir, "spring-headless")
+let private _springGraphical = System.IO.Path.Combine(_engineDir, "spring")
+let private _dataDir = "/home/developer/.local/state/Beyond All Reason"
+
 // ── State ────────────────────────────────────────────────────
 let mutable private _client: BarClient option = None
 let mutable private _frame: GameFrame = { FrameNumber = 0u; Events = [] }
 let mutable private _units: Map<int, {| Id: int; DefId: int; Name: string; X: float32; Z: float32; Hp: float32; MaxHp: float32 |}> = Map.empty
-let mutable private _vizRunning = false
 let mutable private _grid: MapGrid option = None
 
 let private client () =
@@ -67,40 +72,7 @@ let private client () =
 
 let private stream () = (client()).Stream
 
-// ── Lifecycle ────────────────────────────────────────────────
-
-/// Start a headless engine session.
-let start () =
-    if _client.IsSome then printfn "Session already running. Call stop() first."; ()
-    else
-    let config =
-        { EngineConfig.defaultConfig () with
-            EngineBin = "/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.19/spring-headless"
-            SpringDataDir = Some "/home/developer/.local/state/Beyond All Reason" }
-    printfn "Starting headless engine (map: %s)..." config.MapName
-    let c = new BarClient(config)
-    c.Start()
-    _client <- Some c
-    printfn "Connected! Team %d" (Callbacks.getMyTeam c.Stream)
-
-/// Start with a custom config.
-let startWith (config: EngineConfig) =
-    if _client.IsSome then printfn "Session already running."; ()
-    else
-    printfn "Starting engine (map: %s)..." config.MapName
-    let c = new BarClient(config)
-    c.Start()
-    _client <- Some c
-    printfn "Connected!"
-
-/// Stop the session and clean up.
-let stop () =
-    if _vizRunning then GameViz.stop (); _vizRunning <- false
-    match _client with
-    | Some c -> c.Stop(); _client <- None; _units <- Map.empty; _grid <- None; printfn "Session stopped."
-    | None -> printfn "No session running."
-
-// ── Stepping ─────────────────────────────────────────────────
+// ── Frame processing ────────────────────────────────────────
 
 let private processFrame (frame: GameFrame) =
     _frame <- frame
@@ -128,9 +100,54 @@ let private processFrame (frame: GameFrame) =
                     with _ -> u)
             _units <- updated
         | _ -> ()
-    if _vizRunning then GameViz.onFrame frame
 
-/// Advance N frames (default 1). Returns the last frame number.
+// ── Lifecycle ────────────────────────────────────────────────
+
+let private warmup () =
+    let c = client ()
+    for _ in 1..30 do
+        c.Step() |> processFrame
+    printfn "Connected! Team %d | Frame %d | Units: %d" (Callbacks.getMyTeam c.Stream) _frame.FrameNumber _units.Count
+
+/// Start a graphical (windowed) engine session with BARb opponent at 5x speed.
+let start () =
+    if _client.IsSome then printfn "Session already running. Call stop() first."; ()
+    else
+    let config =
+        { EngineConfig.defaultConfig () with
+            Mode = Graphical
+            EngineBin = _springHeadless
+            AppImagePath = _springGraphical
+            SpringDataDir = Some _dataDir
+            OpponentAI = "BARb"
+            TimeoutMs = 120000
+            GameSpeed = 5 }
+    printfn "Starting graphical engine (map: %s, opponent: %s, speed: %dx)..." config.MapName config.OpponentAI config.GameSpeed
+    let c = new BarClient(config)
+    c.Start()
+    _client <- Some c
+    warmup ()
+
+/// Start with a custom config (sets Graphical mode and longer timeout).
+let startWith (config: EngineConfig) =
+    if _client.IsSome then printfn "Session already running."; ()
+    else
+    let config = { config with Mode = Graphical; TimeoutMs = max config.TimeoutMs 120000 }
+    printfn "Starting graphical engine (map: %s)..." config.MapName
+    let c = new BarClient(config)
+    c.Start()
+    _client <- Some c
+    warmup ()
+
+/// Stop the session and clean up.
+let stop () =
+    match _client with
+    | Some c -> c.Stop(); _client <- None; _units <- Map.empty; _grid <- None; printfn "Session stopped."
+    | None -> printfn "No session running."
+
+// ── Stepping ─────────────────────────────────────────────────
+
+/// Advance N frames. Returns the last frame number.
 let step (n: int) =
     let c = client ()
     for _ in 1 .. n do
@@ -176,7 +193,7 @@ let economy () =
 
 /// Show current status.
 let status () =
-    printfn "Frame: %d | Units: %d | Viz: %b" _frame.FrameNumber _units.Count _vizRunning
+    printfn "Frame: %d | Units: %d" _frame.FrameNumber _units.Count
 
 /// Get unit info by ID.
 let unit' (id: int) =
@@ -314,31 +331,11 @@ let spawnByName (name: string) (x: float32) (z: float32) =
         | None -> printfn "Unit '%s' not found in engine defs" name
     | None -> printfn "Unknown unit '%s'. Try: AllUnits.all |> List.map (fun u -> u.name)" name
 
-// ── Visualization ────────────────────────────────────────────
-
-/// Open the live visualization window.
-let viz () =
-    if _vizRunning then printfn "Viz already running."; ()
-    else
-    GameViz.start None
-    GameViz.attachToClient (client ())
-    GameViz.enableOverlay OverlayKind.Units
-    GameViz.enableOverlay OverlayKind.Events
-    GameViz.enableOverlay OverlayKind.MetalSpots
-    GameViz.enableOverlay OverlayKind.EconomyHud
-    _vizRunning <- true
-    printfn "Viz opened. Keys: 1-0=layers, U/E/G/M=overlays, Home=reset"
-
-/// Close the visualization window.
-let noviz () =
-    if _vizRunning then GameViz.stop (); _vizRunning <- false; printfn "Viz closed."
-    else printfn "Viz not running."
-
 // ── Help ─────────────────────────────────────────────────────
 
 let help () =
     printfn """
-FSBar Headless REPL
+FSBar Graphical REPL
 ═══════════════════════════════════════════════════════
 Session:    start()  stop()  status()
 Stepping:   step N   step1()   stepWith N handler
@@ -350,9 +347,8 @@ Commands:   move id x z     fight id x z    patrol id x z
             build id defId x z facing       send [cmds]
 Cheats:     give resId amt  spawn defId x z
             spawnByName "armcom" x z
-Viz:        viz()  noviz()
 ═══════════════════════════════════════════════════════"""
 
 // ── Ready ────────────────────────────────────────────────────
 
-printfn "FSBar REPL loaded. Call start() to launch engine, help() for commands."
+printfn "FSBar Graphical REPL loaded. Call start() to launch windowed game, help() for commands."

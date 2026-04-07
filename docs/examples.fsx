@@ -71,7 +71,7 @@ let commanderId =
 printfn "Commander: unit %d" commanderId
 
 // Rush toward enemy base
-let enemyX, enemyY, enemyZ = 4608.0f, 100.0f, 4096.0f
+let enemyX, enemyY, enemyZ = 3200.0f, 100.0f, 3200.0f
 let mutable moveSent = false
 
 let frames =
@@ -326,7 +326,7 @@ for _ in 1..30 do client.Step() |> ignore
 let stream = client.Stream
 let commanderId = 1
 
-let enemyX, enemyY, enemyZ = 4608.0f, 100.0f, 4096.0f
+let enemyX, enemyY, enemyZ = 3200.0f, 100.0f, 3200.0f
 let mutable phase = "move"
 let mutable enemyComId = -1
 let mutable frameCount = 0
