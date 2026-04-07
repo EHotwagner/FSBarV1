@@ -166,4 +166,145 @@ generated per session to allow concurrent test runs.
 | FsGrpc.Tools | 1.0.6 | Build-time protobuf compilation |
 | BarData | (NuGet) | BAR unit definitions and game constants |
 | xUnit | 2.9.x | Test framework |
+| SkiaViewer | 1.0.0 | Cross-platform windowed OpenGL viewer for SkiaSharp |
+| SkiaSharp | 2.88.6 | 2D graphics library (Skia bindings for .NET) |
+| Silk.NET | 2.22.0 | Windowing, OpenGL, and input (GLFW backend) |
+
+## Visualization: SkiaViewer + FSBar.Viz
+
+FSBarV1 includes a real-time game visualization system built on the **SkiaViewer** NuGet package.
+SkiaViewer is a minimal, standalone viewer that opens an OpenGL window on a background thread and
+calls a render callback at a fixed FPS. FSBar.Viz wraps it to display live game state.
+
+### Architecture
+
+```
++-------------+    GameFrame    +----------+    GameSnapshot    +--------------+    SKCanvas    +------------+
+| BarClient   | -------------> | GameViz  | ----------------> | SceneBuilder | ------------> | SkiaViewer |
+| (engine I/O)|   per frame    | (state)  |   lock-protected  | (compositing)|  60fps render | (window)   |
++-------------+                +----------+                    +--------------+               +------------+
+                                    |                               |
+                                    v                               v
+                               MapGrid/Callbacks            LayerRenderer
+                               (query engine)               (Array2D -> SKBitmap)
+```
+
+### SkiaViewer Public API
+
+SkiaViewer exposes a single type and function:
+*)
+
+(*** do-not-eval ***)
+// ViewerConfig record — configures the window and render callbacks
+type ViewerConfig = {
+    Title: string
+    Width: int
+    Height: int
+    TargetFps: int
+    ClearColor: SkiaSharp.SKColor
+    OnRender: SkiaSharp.SKCanvas -> unit   // called each frame
+    OnResize: int -> int -> unit           // window resized
+    OnKeyDown: Silk.NET.Input.Key -> unit  // keyboard input
+    OnMouseScroll: float32 -> float32 -> float32 -> unit  // zoom
+    OnMouseDrag: float32 -> float32 -> unit               // pan
+}
+
+// Viewer.run launches a window on a background thread, returns IDisposable
+// val run: ViewerConfig -> IDisposable
+
+(**
+### Rendering Pipeline
+
+SkiaViewer uses a **raster surface + GL texture upload** pipeline because the SkiaSharp GPU backend
+(GRContext) segfaults in this environment:
+
+1. **Each frame**: SkiaViewer allocates a raster `SKSurface` (CPU-side bitmap)
+2. **OnRender callback**: FSBar.Viz draws to the `SKCanvas` using SkiaSharp primitives
+3. **Pixel upload**: SkiaViewer extracts pixel data and uploads to an OpenGL texture
+4. **Display**: A fullscreen quad renders the texture via Silk.NET's GLFW window
+5. **Swap**: Buffers swap at the configured `TargetFps` (default 60)
+
+All rendering is CPU-bound — there is no GPU-accelerated path available.
+
+### What FSBar.Viz Displays
+
+**Map Layers** (switch with keyboard 1-9, 0):
+
+| Key | Layer | Color Scheme |
+|-----|-------|-------------|
+| 1 | HeightMap | Terrain (blue → green → brown → white) |
+| 2 | SlopeMap | Grayscale (flat=dark, steep=bright) |
+| 3 | ResourceMap | Heat map (blue → yellow → red) |
+| 4 | LOS (Line of Sight) | Binary (red=unseen, green=visible) |
+| 5 | Radar coverage | Binary |
+| 6 | Terrain classification | Color-coded (Land, Water, Cliff) |
+| 7 | Kbot passability | Binary (red=blocked, green=passable) |
+| 8 | Tank passability | Binary |
+| 9 | Hover passability | Binary |
+| 0 | Ship passability | Binary |
+
+**Overlays** (toggle with keyboard shortcuts):
+
+| Key | Overlay | Description |
+|-----|---------|-------------|
+| U | Units | Blue circles (friendly), red circles (enemy) at game positions |
+| E | Events | Expanding/fading rings — green (created), red (destroyed), yellow (spotted) |
+| G | Grid | Grid lines over the map |
+| M | Metal Spots | Gray circles sized by resource richness |
+| — | Economy HUD | Top-right panel: metal/energy current, income, usage, storage |
+
+**Mouse interaction**: scroll to zoom (centered on cursor), drag to pan. Press **Home** to reset
+the view (auto-fit entire map).
+
+### How GameViz Connects
+
+`GameViz` is the glue between BarClient and SkiaViewer:
+*)
+
+(*** do-not-eval ***)
+open FSBar.Viz
+
+// Start the viewer window
+GameViz.start None
+
+// Attach to a running BarClient for live data
+GameViz.attachToClient myClient
+
+// Enable overlays
+GameViz.enableOverlay OverlayKind.Units
+GameViz.enableOverlay OverlayKind.Events
+GameViz.enableOverlay OverlayKind.MetalSpots
+GameViz.enableOverlay OverlayKind.EconomyHud
+
+// Feed frames from the game loop
+for _ in 1..1000 do
+    let frame = myClient.Step()
+    GameViz.onFrame frame  // updates snapshot, triggers re-render
+
+// Stop when done
+GameViz.stop ()
+
+(**
+Each call to `GameViz.onFrame` queries the engine for unit positions, economy, and dynamic map layers
+(LOS/Radar), builds a `GameSnapshot`, and stores it behind a lock. The SkiaViewer render callback
+(running at 60fps on its own thread) reads the latest snapshot and composites the scene.
+
+### Session Types
+
+FSBar.Viz provides two session modes:
+
+- **LiveSession**: Launches the engine, creates a BarClient, connects GameViz, and runs a background
+  stepping thread. Use this for automated games with real-time visualization.
+- **PreviewSession**: Displays saved `MapGrid` or `GameSnapshot` data without a live engine.
+  Useful for offline analysis of captured map data.
+
+### Known Limitations
+
+- **CPU-only rendering**: The GPU backend segfaults, so all drawing is raster-based. Large maps
+  (512x512) can be CPU-intensive at 60fps.
+- **Single window**: Only one SkiaViewer instance per process. Starting a new one stops the previous.
+- **No heightmap corners**: The engine proxy does not support `getCornersHeightMap`, so GameViz
+  retries loading on each `onFrame` until data is available.
+- **Decoupled FPS**: The viewer always renders at 60fps regardless of engine speed. At high game
+  speeds (100x), the viewer samples whatever snapshot is latest.
 *)
