@@ -8,6 +8,8 @@ FSBarV1 is an F# client library for controlling the [Beyond All Reason](https://
 
 ## Installation
 
+### From source
+
 ```bash
 # Clone and build
 git clone https://github.com/EHotwagner/FSBarV1.git
@@ -21,7 +23,49 @@ The library is also available as a local NuGet package:
 dotnet pack src/FSBar.Client/ -o ~/.local/share/nuget-local/
 ```
 
+### Container
+
+A minimal development container is available with all dependencies pre-installed (.NET 10.0, FSI MCP server, fsautocomplete, native libraries):
+
+```bash
+# Build the image
+podman build --build-arg GH_TOKEN=<your-github-token> \
+  -t fsbar-dev -f container/Containerfile container/
+
+# Run with BAR game folder mounted
+podman run -it --rm \
+  -v "<path-to-BAR>:/home/developer/.local/state/Beyond All Reason" \
+  -p 5020:5020 \
+  fsbar-dev
+```
+
+For GPU passthrough, X11 display forwarding, and full setup instructions, see [container/README.md](container/README.md).
+
 ## Quick Start
+
+### Interactive REPL
+
+The fastest way to get started is the interactive REPL script:
+
+```bash
+dotnet build tests/FSBar.Viz.Tests/
+dotnet fsi scripts/examples/Repl.fsx
+```
+
+Or via the [FSI MCP server](https://github.com/EHotwagner/fsi-mcp-server), which gives an AI agent access to the same FSI session. Both the user and the agent share the same REPL state, allowing them to co-control the game — the agent can query units, issue commands, and reason about strategy while the user experiments interactively:
+
+```fsharp
+#load "/home/developer/projects/FSBarV1/scripts/examples/Repl.fsx"
+open Repl
+start ()           // launch headless engine
+step 10            // advance 10 frames
+units ()           // list all known units
+move 42 2000 1000  // move unit 42 to (2000, 1000)
+viz ()             // open live visualization
+economy ()         // show metal/energy
+```
+
+### Library usage
 
 ```fsharp
 open FSBar.Client
