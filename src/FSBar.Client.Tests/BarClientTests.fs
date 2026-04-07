@@ -63,7 +63,7 @@ let ``stop_from_idle_is_safe`` () =
 let ``defaultConfig_module_function_works`` () =
     let config = BarClient.defaultConfig ()
     Assert.Equal(Headless, config.Mode)
-    Assert.Equal("Red Rock Desert v2", config.MapName)
+    Assert.Equal("Avalanche 3.4", config.MapName)
 
 [<Fact>]
 let ``multiple_create_dispose_cycles`` () =

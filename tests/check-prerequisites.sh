@@ -71,7 +71,7 @@ else
         RESOLVED_ENGINE="${_PATH_ENGINE}"
         CHECKS+=("{\"name\":\"engine_binary\",\"passed\":true,\"detail\":\"${ENGINE_BINARY} found on PATH at ${_PATH_ENGINE}\"}")
     else
-        # Search standard BAR AppImage locations
+        # Search standard BAR engine locations
         _FOUND=""
         for candidate in "${HOME}/.local/state/Beyond All Reason/engine"/*/"${ENGINE_BINARY}"; do
             if [ -x "$candidate" ]; then
@@ -104,6 +104,13 @@ if [ -z "${DATA_DIR}" ] && [ -n "${RESOLVED_ENGINE}" ]; then
             break
         fi
     done
+    # Fallback: check standard BAR data directory
+    if [ -z "${DATA_DIR}" ]; then
+        _BAR_DATA="${HOME}/.local/state/Beyond All Reason"
+        if [ -d "${_BAR_DATA}/maps" ] && [ -d "${_BAR_DATA}/packages" ]; then
+            DATA_DIR="${_BAR_DATA}"
+        fi
+    fi
 fi
 DATA_DIR="${DATA_DIR:-${HOME}/.spring}"
 

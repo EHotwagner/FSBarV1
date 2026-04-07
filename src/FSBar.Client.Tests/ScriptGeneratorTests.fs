@@ -14,13 +14,13 @@ let ``generate_headless_produces_valid_script`` () =
 let ``generate_contains_map_name`` () =
     let config = EngineConfig.defaultConfig ()
     let script = ScriptGenerator.generate config
-    Assert.Contains("Red Rock Desert v2", script)
+    Assert.Contains("Avalanche 3.4", script)
 
 [<Fact>]
 let ``generate_contains_game_type`` () =
     let config = EngineConfig.defaultConfig ()
     let script = ScriptGenerator.generate config
-    Assert.Contains("Beyond All Reason test-29840-d9b7dba", script)
+    Assert.Contains("Beyond All Reason test-29871-90f4bc1", script)
 
 [<Fact>]
 let ``generate_contains_socket_path`` () =

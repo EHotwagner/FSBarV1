@@ -1,6 +1,6 @@
 {
   "engine": {
-    "version": "2025.06.19",
+    "version": "2025.06.21",
     "binary": "spring-headless",
     "downloadUrl": "https://github.com/beyond-all-reason/spring/releases"
   },

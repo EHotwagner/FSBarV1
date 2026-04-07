@@ -20,43 +20,56 @@ module EngineLauncher =
         let guid = extractGuid config.SocketPath
         $"/tmp/fsbar-{guid}"
 
-    /// Auto-detect SPRING_DATADIR from the engine binary location.
-    /// Finds the binary via `which`, goes up 2 directory levels,
-    /// and validates that maps/ and packages/ subdirectories exist.
+    /// Auto-detect SPRING_DATADIR from the engine binary location or standard paths.
+    /// First tries walking up from the binary location, then checks the standard BAR data directory.
     let private detectSpringDataDir (engineBin: string) : string option =
-        try
-            let psi =
-                ProcessStartInfo(
-                    FileName = "which",
-                    Arguments = engineBin,
-                    RedirectStandardOutput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true
-                )
+        let tryBinaryParent () =
+            try
+                let psi =
+                    ProcessStartInfo(
+                        FileName = "which",
+                        Arguments = engineBin,
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    )
 
-            use proc = Process.Start(psi)
-            let output = proc.StandardOutput.ReadToEnd().Trim()
-            proc.WaitForExit()
+                use proc = Process.Start(psi)
+                let output = proc.StandardOutput.ReadToEnd().Trim()
+                proc.WaitForExit()
 
-            if proc.ExitCode <> 0 || String.IsNullOrEmpty(output) then
-                None
-            else
-                let binDir = Path.GetDirectoryName(output)
-                let parent = Directory.GetParent(binDir)
-
-                if isNull parent || isNull parent.Parent then
+                if proc.ExitCode <> 0 || String.IsNullOrEmpty(output) then
                     None
                 else
-                    let candidate = parent.Parent.FullName
-                    let hasMapDir = Directory.Exists(Path.Combine(candidate, "maps"))
-                    let hasPackagesDir = Directory.Exists(Path.Combine(candidate, "packages"))
+                    let binDir = Path.GetDirectoryName(output)
+                    let parent = Directory.GetParent(binDir)
 
-                    if hasMapDir && hasPackagesDir then
-                        Some candidate
-                    else
+                    if isNull parent || isNull parent.Parent then
                         None
-        with
-        | _ -> None
+                    else
+                        let candidate = parent.Parent.FullName
+                        let hasMapDir = Directory.Exists(Path.Combine(candidate, "maps"))
+                        let hasPackagesDir = Directory.Exists(Path.Combine(candidate, "packages"))
+
+                        if hasMapDir && hasPackagesDir then
+                            Some candidate
+                        else
+                            None
+            with
+            | _ -> None
+
+        let tryStandardPath () =
+            let candidate =
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".local/state/Beyond All Reason")
+            if Directory.Exists(Path.Combine(candidate, "maps"))
+               && Directory.Exists(Path.Combine(candidate, "packages")) then
+                Some candidate
+            else
+                None
+
+        tryBinaryParent () |> Option.orElseWith tryStandardPath
 
     /// Copy ArchiveCache20.lua from SPRING_DATADIR/cache/ to sessionDir/cache/ if available.
     let private copyArchiveCache (springDataDir: string) (sessionDir: string) : unit =

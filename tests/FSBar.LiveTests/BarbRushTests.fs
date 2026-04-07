@@ -80,9 +80,9 @@ type BarbRushTests(fixture: BarbFixture) =
         let uid = commanderId.Value
 
         let stream = fixture.Client.Stream
-        let enemyX = 4608.0f
+        let enemyX = 3200.0f
         let enemyY = 100.0f
-        let enemyZ = 4096.0f
+        let enemyZ = 3200.0f
 
         let mutable frameCount = 0
         let mutable arrived = false
@@ -127,9 +127,9 @@ type BarbRushTests(fixture: BarbFixture) =
         let uid = commanderId.Value
 
         let stream = fixture.Client.Stream
-        let enemyX = 4608.0f
+        let enemyX = 3200.0f
         let enemyY = 100.0f
-        let enemyZ = 4096.0f
+        let enemyZ = 3200.0f
 
         // Phase tracking
         let mutable phase = "move"  // move -> hunt -> kill
@@ -140,6 +140,14 @@ type BarbRushTests(fixture: BarbFixture) =
         let enemiesInLOS = ResizeArray<int>()
         let maxFrames = 12000
 
+        // Seed enemies from warmup and prior test frames (EnemyEnterLOS/EnemyCreated may have fired earlier)
+        for evt in fixture.InitialEvents do
+            match evt with
+            | GameEvent.EnemyEnterLOS eid | GameEvent.EnemyCreated eid ->
+                if not (enemiesInLOS.Contains(eid)) then
+                    enemiesInLOS.Add(eid)
+            | _ -> ()
+
         // Cache commander def names so we only look them up once
         let checkedDefs = System.Collections.Generic.HashSet<int>()
 
@@ -149,10 +157,10 @@ type BarbRushTests(fixture: BarbFixture) =
             | Some frame ->
                 frameCount <- frameCount + 1
 
-                // Collect enemies entering LOS
+                // Collect enemies entering LOS or being created
                 for evt in frame.Events do
                     match evt with
-                    | GameEvent.EnemyEnterLOS eid ->
+                    | GameEvent.EnemyEnterLOS eid | GameEvent.EnemyCreated eid ->
                         if not (enemiesInLOS.Contains(eid)) then
                             enemiesInLOS.Add(eid)
                     | GameEvent.EnemyDestroyed(eid, _) when eid = enemyComId ->

@@ -11,12 +11,12 @@ let ``defaultConfig_returns_headless_mode`` () =
 [<Fact>]
 let ``defaultConfig_returns_expected_map_name`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal("Red Rock Desert v2", config.MapName)
+    Assert.Equal("Avalanche 3.4", config.MapName)
 
 [<Fact>]
 let ``defaultConfig_returns_expected_game_type`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal("Beyond All Reason test-29840-d9b7dba", config.GameType)
+    Assert.Equal("Beyond All Reason test-29871-90f4bc1", config.GameType)
 
 [<Fact>]
 let ``defaultConfig_returns_expected_opponent_ai`` () =
