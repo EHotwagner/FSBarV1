@@ -42,7 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="BarData" Version="*" />
+    <PackageReference Include="BarData" Version="*-*" />
   </ItemGroup>
 
 </Project>

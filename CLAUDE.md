@@ -22,6 +22,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-08
 - N/A (container image layers + host bind mounts at runtime) (012-minimal-container-setup)
 - F# / .NET 10.0 + FSBar.Client (in-repo), System.IO, System.IO.Compression (for gzip) (013-auto-engine-version)
 - Filesystem scanning (read-only) (013-auto-engine-version)
+- F# / .NET 10.0 + SkiaViewer (local nupkg), BarData (local nupkg), NuGet CLI tooling (015-fix-stale-dll-cache)
+- Filesystem (nupkg files, NuGet global cache) (015-fix-stale-dll-cache)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -47,9 +49,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 015-fix-stale-dll-cache: Added F# / .NET 10.0 + SkiaViewer (local nupkg), BarData (local nupkg), NuGet CLI tooling
 - 013-auto-engine-version: Added F# / .NET 10.0 + FSBar.Client (in-repo), System.IO, System.IO.Compression (for gzip)
 - 012-minimal-container-setup: Added Containerfile (OCI/Docker format), Bash (entrypoint), Markdown (documentation) + Arch Linux base image, .NET 10.0 SDK, Node.js, GitHub CLI, FSI MCP server
-- 011-live-map-viz: Added F# / .NET 10.0 + FSBar.Client (in-repo), FSBar.Viz (in-repo), SkiaViewer 1.0.0, SkiaSharp 2.88.6, Silk.NET 2.22.0
 
 
 <!-- MANUAL ADDITIONS START -->
@@ -107,5 +109,25 @@ Engine versions are **auto-detected** at runtime by the `EngineDiscovery` module
 - Engine dir pattern: `~/.local/state/Beyond All Reason/engine/recoil_<YYYY.MM.DD>/`
 - Headless binary: `spring-headless` (within engine version dir)
 - Graphical binary: `spring` (within engine version dir)
+
+### Upstream dependency workflow (SkiaViewer, BarData)
+
+Both SkiaViewer and BarData are consumed as NuGet packages from the local `nupkg/` feed. Each upstream project has a `pack-dev.sh` script that produces a timestamp-versioned prerelease package (e.g., `1.0.0-dev.20260408T115727`), eliminating stale cache issues.
+
+**Updating an upstream dependency:**
+```bash
+# In the upstream repo (e.g., SkiaViewer):
+./pack-dev.sh ~/projects/FSBarV1/nupkg
+
+# In FSBarV1 — just build, NuGet picks up the new version:
+dotnet build
+```
+
+**Verifying dependency freshness:**
+```bash
+./scripts/check-deps.sh
+```
+
+PackageReferences use `Version="*-*"` wildcard to accept the latest prerelease version automatically. Do **not** use exact version pinning for local-feed packages.
 
 <!-- MANUAL ADDITIONS END -->
