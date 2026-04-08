@@ -24,7 +24,8 @@ type ViewerTests() =
           OnResize = fun _ _ -> ()
           OnKeyDown = fun _ -> ()
           OnMouseScroll = fun _ _ _ -> ()
-          OnMouseDrag = fun _ _ -> () }
+          OnMouseDrag = fun _ _ -> ()
+          PreferredBackend = None }
 
     // ========================================================================
     // Phase 3: User Story 1 — Viewer Renders Graphics Reliably (P1)
@@ -183,7 +184,8 @@ type ViewerTests() =
               OnResize = fun _ _ -> ()
               OnKeyDown = fun _ -> ()
               OnMouseScroll = fun _ _ _ -> ()
-              OnMouseDrag = fun _ _ -> () }
+              OnMouseDrag = fun _ _ -> ()
+              PreferredBackend = None }
 
         use viewer = Viewer.run config
         Thread.Sleep(2000)
@@ -231,7 +233,8 @@ type ViewerTests() =
               OnResize = fun _ _ -> ()
               OnKeyDown = fun _ -> ()
               OnMouseScroll = fun _ _ _ -> ()
-              OnMouseDrag = fun _ _ -> () }
+              OnMouseDrag = fun _ _ -> ()
+              PreferredBackend = None }
 
         use viewer = Viewer.run config
         // Wait for viewer to fully initialize and start rendering

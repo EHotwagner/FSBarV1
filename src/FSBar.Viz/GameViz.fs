@@ -179,7 +179,8 @@ module GameViz =
                 fun delta cx cy ->
                     let factor = if delta > 0.0f then 1.1f else 0.9f
                     processCommand (VizCommand.Zoom(factor, cx, cy))
-              OnMouseDrag = fun dx dy -> processCommand (VizCommand.Pan(dx, dy)) }
+              OnMouseDrag = fun dx dy -> processCommand (VizCommand.Pan(dx, dy))
+              PreferredBackend = None }
 
         viewer <- Some(Viewer.run viewerConfig)
         printfn "[GameViz] Visualization started."

@@ -156,7 +156,8 @@ module PreviewSession =
                             { viewState with
                                 OriginX = viewState.OriginX + dx
                                 OriginY = viewState.OriginY + dy
-                                AutoFit = false }) }
+                                AutoFit = false })
+              PreferredBackend = None }
 
         viewer <- Some(Viewer.run viewerConfig)
         viewState <- { VizDefaults.defaultViewState with AutoFit = true }
