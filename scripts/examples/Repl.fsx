@@ -6,7 +6,7 @@
 // optionally open a live visualization.
 //
 // Usage (from repo root):
-//   dotnet build tests/FSBar.Viz.Tests/
+//   ./pack-dev.sh
 //   dotnet fsi scripts/examples/Repl.fsx
 //
 // Or from the FSI MCP server:
@@ -19,34 +19,27 @@
 //   viz ()             // open live visualization
 //   economy ()         // show metal/energy
 
-// Resolve paths relative to this script file
-let private _scriptDir = __SOURCE_DIRECTORY__
-let private _repoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(_scriptDir, "..", ".."))
-let private _binDir = System.IO.Path.Combine(_repoRoot, "tests", "FSBar.Viz.Tests", "bin", "Debug", "net10.0")
+// NuGet package references — FSBar.Viz pulls in all transitive deps.
+// Run ./pack-dev.sh before loading this script to ensure packages are current.
+#r "nuget: FSBar.Viz, *-*"
 
-// Load native libs for viz support
+// Load native libs for viz support (FSI doesn't auto-resolve NuGet native assets)
 open System.Runtime.InteropServices
 [<DllImport("libdl.so.2")>]
 extern nativeint private dlopen(string filename, int flags)
-let private _np = System.IO.Path.Combine(_binDir, "runtimes", "linux-x64", "native")
-let private _1 = dlopen(_np + "/libglfw.so.3", 0x2 ||| 0x100)
-let private _2 = dlopen(_np + "/libSkiaSharp.so", 0x2 ||| 0x100)
-
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FsGrpc.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Google.Protobuf.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Proto.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/BarData.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Client.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/SkiaSharp.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Silk.NET.Core.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Silk.NET.Input.Common.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Silk.NET.Maths.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Silk.NET.Windowing.Common.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Silk.NET.Windowing.Glfw.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Silk.NET.GLFW.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/Silk.NET.OpenGL.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/SkiaViewer.dll"
-#r "../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Viz.dll"
+let private _nugetBase = System.IO.Path.Combine(System.Environment.GetFolderPath(System.Environment.SpecialFolder.UserProfile), ".nuget", "packages")
+let private _findNativeLib (packageGlob: string) (libName: string) =
+    let pkgDir = System.IO.Path.Combine(_nugetBase, packageGlob)
+    if System.IO.Directory.Exists pkgDir then
+        System.IO.Directory.GetFiles(pkgDir, libName, System.IO.SearchOption.AllDirectories)
+        |> Array.tryFind (fun p -> p.Contains "linux-x64")
+    else None
+let private _loadNative (packageGlob: string) (libName: string) =
+    match _findNativeLib packageGlob libName with
+    | Some path -> dlopen(path, 0x2 ||| 0x100) |> ignore
+    | None -> eprintfn "Warning: could not find %s in NuGet cache" libName
+do _loadNative "ultz.native.glfw" "libglfw.so.3"
+do _loadNative "skiasharp.nativeassets.linux.nodependencies" "libSkiaSharp.so"
 
 open System
 open FSBar.Client
@@ -67,7 +60,7 @@ let private client () =
     | Some c -> c
     | None -> failwith "No session. Call start() first."
 
-let private stream () = (client()).Stream
+let stream () = (client()).Stream
 
 // ── Frame processing ────────────────────────────────────────
 

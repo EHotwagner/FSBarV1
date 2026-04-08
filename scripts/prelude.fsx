@@ -1,4 +1,5 @@
 // FSBar.Client Prelude — load this once to get started:
+//   ./pack-dev.sh
 //   #load "scripts/prelude.fsx"
 //
 // Then use:
@@ -6,13 +7,7 @@
 //   let frame = client.Step()
 //   client.Stop()
 
-#r "../src/FSBar.Proto/bin/Debug/net10.0/FsGrpc.dll"
-#r "../src/FSBar.Proto/bin/Debug/net10.0/Google.Protobuf.dll"
-#r "../src/FSBar.Proto/bin/Debug/net10.0/FSBar.Proto.dll"
-#r "../src/FSBar.Client/bin/Debug/net10.0/FSBar.Client.dll"
-#r "../src/FSBar.Client/bin/Debug/net10.0/BarData.dll"
-#r "../src/FSBar.Viz/bin/Debug/net10.0/FSBar.Viz.dll"
-#r "../src/FSBar.Viz/bin/Debug/net10.0/SkiaSharp.dll"
+#r "nuget: FSBar.Viz, *-*"
 
 open FSBar.Client
 open FSBar.Client.Commands

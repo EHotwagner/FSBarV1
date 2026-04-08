@@ -87,7 +87,7 @@ module EngineConfig =
             EngineBin = engineBin
             AppImagePath = appImagePath
             SpringDataDir = springDataDir
-            GameSpeed = 100
+            GameSpeed = 3
             ReadTimeoutMs = None
         }
 
