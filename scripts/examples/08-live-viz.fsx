@@ -45,10 +45,7 @@ let _ = dlopen(np + "/libSkiaSharp.so", 0x2 ||| 0x100)
 open FSBar.Client
 open FSBar.Viz
 
-let config =
-    { EngineConfig.defaultConfig () with
-        EngineBin = "/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.21/spring-headless"
-        SpringDataDir = Some "/home/developer/.local/state/Beyond All Reason" }
+let config = EngineConfig.defaultConfig ()
 
 printfn "Starting live visualization (map: %s)..." config.MapName
 let session = LiveSession.start config None

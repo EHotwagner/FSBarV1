@@ -53,11 +53,11 @@ open FSBar.Client.MapQuery
 open FSBar.Viz
 open BarData
 
-// ── Engine paths ────────────────────────────────────────────
-let private _engineDir = "/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.21"
-let private _springHeadless = System.IO.Path.Combine(_engineDir, "spring-headless")
-let private _springGraphical = System.IO.Path.Combine(_engineDir, "spring")
-let private _dataDir = "/home/developer/.local/state/Beyond All Reason"
+// ── Engine resolution (auto-detected) ───────────────────────
+let private _resolved = EngineDiscovery.resolveEngine None
+let private _springHeadless = _resolved.Engine.HeadlessBin |> Option.defaultValue "spring-headless"
+let private _springGraphical = _resolved.Engine.GraphicalBin |> Option.defaultValue ""
+let private _dataDir = _resolved.Engine.DataDir
 
 // ── State ────────────────────────────────────────────────────
 let mutable private _client: BarClient option = None

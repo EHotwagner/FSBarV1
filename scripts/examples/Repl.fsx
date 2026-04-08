@@ -111,10 +111,7 @@ let private warmup () =
 let start () =
     if _client.IsSome then printfn "Session already running. Call stop() first."; ()
     else
-    let config =
-        { EngineConfig.defaultConfig () with
-            EngineBin = "/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.21/spring-headless"
-            SpringDataDir = Some "/home/developer/.local/state/Beyond All Reason" }
+    let config = EngineConfig.defaultConfig ()
     printfn "Starting headless engine (map: %s)..." config.MapName
     let c = new BarClient(config)
     c.Start()
