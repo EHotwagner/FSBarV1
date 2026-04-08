@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="EngineConfigTests.fs" />
+    <Compile Include="EngineDiscoveryTests.fs" />
     <Compile Include="ScriptGeneratorTests.fs" />
     <Compile Include="CommandsTests.fs" />
     <Compile Include="EventsTests.fs" />

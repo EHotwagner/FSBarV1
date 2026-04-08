@@ -62,18 +62,31 @@ module EngineConfig =
     /// <returns>A new <see cref="T:FSBar.Client.EngineConfig"/> with default values.</returns>
     let defaultConfig () =
         let guid = Guid.NewGuid().ToString("N").[..7]
+        let engineBin, appImagePath, gameType, springDataDir =
+            try
+                let resolution = EngineDiscovery.resolveEngine None
+                let headless =
+                    resolution.Engine.HeadlessBin
+                    |> Option.defaultValue "spring-headless"
+                let graphical =
+                    resolution.Engine.GraphicalBin
+                    |> Option.defaultValue ""
+                headless, graphical, resolution.Game.Name, Some resolution.Engine.DataDir
+            with ex ->
+                eprintfn "[EngineConfig] Engine discovery failed: %s. Using fallback defaults." ex.Message
+                "spring-headless", "", "Beyond All Reason", None
         {
             Mode = Headless
             SocketPath = $"/tmp/fsbar-{guid}.sock"
             MapName = "Avalanche 3.4"
-            GameType = "Beyond All Reason test-29871-90f4bc1"
+            GameType = gameType
             OpponentAI = "NullAI"
             OpponentSide = "Cortex"
             OurSide = "Armada"
             TimeoutMs = 30000
-            EngineBin = "spring-headless"
-            AppImagePath = "/home/developer/applications/Beyond-All-Reason-1.2988.0.AppImage"
-            SpringDataDir = None
+            EngineBin = engineBin
+            AppImagePath = appImagePath
+            SpringDataDir = springDataDir
             GameSpeed = 100
             ReadTimeoutMs = None
         }

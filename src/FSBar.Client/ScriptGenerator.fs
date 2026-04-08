@@ -75,7 +75,6 @@ module ScriptGenerator =
         ln $"\t\tName={config.OpponentAI};"
         ln "\t\tTeam=1;"
         ln $"\t\tShortName={config.OpponentAI};"
-        ln "\t\tVersion=0.1;"
         ln "\t\tHost=0;"
         ln "\t}"
         ln ""

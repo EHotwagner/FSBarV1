@@ -43,6 +43,7 @@ let private lineDiff (expected: string) (actual: string) =
 [<InlineData("Commands")>]
 [<InlineData("Connection")>]
 [<InlineData("EngineConfig")>]
+[<InlineData("EngineDiscovery")>]
 [<InlineData("EngineLauncher")>]
 [<InlineData("Events")>]
 [<InlineData("MapCache")>]

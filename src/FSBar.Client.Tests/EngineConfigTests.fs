@@ -1,5 +1,6 @@
 module FSBar.Client.Tests.EngineConfigTests
 
+open System
 open Xunit
 open FSBar.Client
 
@@ -16,7 +17,7 @@ let ``defaultConfig_returns_expected_map_name`` () =
 [<Fact>]
 let ``defaultConfig_returns_expected_game_type`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal("Beyond All Reason test-29871-90f4bc1", config.GameType)
+    Assert.StartsWith("Beyond All Reason", config.GameType)
 
 [<Fact>]
 let ``defaultConfig_returns_expected_opponent_ai`` () =
@@ -37,12 +38,12 @@ let ``defaultConfig_returns_expected_timeout`` () =
 [<Fact>]
 let ``defaultConfig_returns_expected_engine_bin`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal("spring-headless", config.EngineBin)
+    Assert.False(String.IsNullOrEmpty(config.EngineBin), "EngineBin should not be empty")
 
 [<Fact>]
-let ``defaultConfig_returns_none_spring_data_dir`` () =
+let ``defaultConfig_returns_resolved_spring_data_dir`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal(None, config.SpringDataDir)
+    Assert.True(config.SpringDataDir.IsSome, "Expected SpringDataDir to be auto-detected")
 
 [<Fact>]
 let ``defaultConfig_returns_expected_game_speed`` () =

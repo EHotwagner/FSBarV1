@@ -121,6 +121,10 @@ Live integration tests require:
 - HighBarV2 proxy (`libSkirmishAI.so`) deployed to the engine's AI directory
 - BAR game data and maps
 
+For detailed BAR environment setup — directory layout, AI registration, developer mode, and build/install steps — see [docs/bar-info.md](docs/bar-info.md).
+
+The engine version is auto-detected from the installed BAR data directory. To pin a specific version, see [tests/ENGINE-VERSION.md](tests/ENGINE-VERSION.md).
+
 Check prerequisites:
 
 ```bash

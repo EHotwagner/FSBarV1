@@ -1,6 +1,6 @@
 # FSBarV1 Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-07
+Auto-generated from all feature plans. Last updated: 2026-04-08
 
 ## Active Technologies
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (unit definitions), xUnit 2.9.x (002-test-suite-report)
@@ -20,6 +20,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-07
 - N/A (in-memory only, no persistence needed) (011-live-map-viz)
 - Containerfile (OCI/Docker format), Bash (entrypoint), Markdown (documentation) + Arch Linux base image, .NET 10.0 SDK, Node.js, GitHub CLI, FSI MCP server (012-minimal-container-setup)
 - N/A (container image layers + host bind mounts at runtime) (012-minimal-container-setup)
+- F# / .NET 10.0 + FSBar.Client (in-repo), System.IO, System.IO.Compression (for gzip) (013-auto-engine-version)
+- Filesystem scanning (read-only) (013-auto-engine-version)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -45,9 +47,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 013-auto-engine-version: Added F# / .NET 10.0 + FSBar.Client (in-repo), System.IO, System.IO.Compression (for gzip)
 - 012-minimal-container-setup: Added Containerfile (OCI/Docker format), Bash (entrypoint), Markdown (documentation) + Arch Linux base image, .NET 10.0 SDK, Node.js, GitHub CLI, FSI MCP server
 - 011-live-map-viz: Added F# / .NET 10.0 + FSBar.Client (in-repo), FSBar.Viz (in-repo), SkiaViewer 1.0.0, SkiaSharp 2.88.6, Silk.NET 2.22.0
-- 010-map-gamestate-preview: Added F# / .NET 10.0 + SkiaViewer 1.0.0, SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.Viz (in-repo)
 
 
 <!-- MANUAL ADDITIONS START -->
@@ -99,7 +101,11 @@ Load DLLs from the test output directory (has all transitive dependencies):
 
 ### Engine paths
 
-- Headless engine: `/home/developer/.local/state/Beyond All Reason/engine/recoil_2025.06.21/spring-headless`
-- Spring data dir: `/home/developer/.local/state/Beyond All Reason`
+Engine versions are **auto-detected** at runtime by the `EngineDiscovery` module. It scans `~/.local/state/Beyond All Reason/engine/recoil_*/` and selects the latest version. Override with `HIGHBAR_TEST_ENGINE` env var or `tests/engine-version.json`.
+
+- Standard data dir: `~/.local/state/Beyond All Reason`
+- Engine dir pattern: `~/.local/state/Beyond All Reason/engine/recoil_<YYYY.MM.DD>/`
+- Headless binary: `spring-headless` (within engine version dir)
+- Graphical binary: `spring` (within engine version dir)
 
 <!-- MANUAL ADDITIONS END -->

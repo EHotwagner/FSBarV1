@@ -20,7 +20,7 @@ let ``generate_contains_map_name`` () =
 let ``generate_contains_game_type`` () =
     let config = EngineConfig.defaultConfig ()
     let script = ScriptGenerator.generate config
-    Assert.Contains("Beyond All Reason test-29871-90f4bc1", script)
+    Assert.Contains(config.GameType, script)
 
 [<Fact>]
 let ``generate_contains_socket_path`` () =

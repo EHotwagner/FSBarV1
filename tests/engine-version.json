@@ -1,11 +1,11 @@
 {
   "engine": {
-    "version": "2025.06.21",
+    "version": "2025.06.19",
     "binary": "spring-headless",
     "downloadUrl": "https://github.com/beyond-all-reason/spring/releases"
   },
   "game": {
-    "name": "Beyond All Reason test-29871-90f4bc1",
+    "name": "Beyond All Reason test-29876-f8bb848",
     "rapidTag": "byar:test"
   },
   "map": {

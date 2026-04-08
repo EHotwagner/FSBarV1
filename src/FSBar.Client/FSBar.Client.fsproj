@@ -9,6 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="EngineDiscovery.fsi" />
+    <Compile Include="EngineDiscovery.fs" />
     <Compile Include="EngineConfig.fsi" />
     <Compile Include="EngineConfig.fs" />
     <Compile Include="Connection.fsi" />
