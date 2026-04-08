@@ -115,7 +115,7 @@ type ViewerTests() =
         let viewer = Viewer.run config
         Thread.Sleep(1000)
 
-        let disposeTask = System.Threading.Tasks.Task.Run(fun () -> viewer.Dispose())
+        let disposeTask = System.Threading.Tasks.Task.Run(fun () -> (viewer :> System.IDisposable).Dispose())
         let completed = disposeTask.Wait(TimeSpan.FromSeconds(2.0))
 
         Assert.True(completed, "Dispose should complete within 2 seconds")

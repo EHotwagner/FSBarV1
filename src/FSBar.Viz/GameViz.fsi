@@ -16,6 +16,9 @@ module GameViz =
     /// Must be called after start() and before the game loop begins.
     val attachToClient: client: BarClient -> unit
 
+    /// Seed the visualization with pre-existing units (e.g. units that existed before viz started).
+    val seedUnits: unitStates: UnitState list -> unit
+
     /// Notify the visualization that a new frame has been processed.
     /// Builds the GameSnapshot internally from the attached client's data.
     val onFrame: frame: GameFrame -> unit
@@ -61,3 +64,6 @@ module GameViz =
 
     /// Zoom by a factor around a screen-space center point.
     val zoom: factor: float32 -> centerX: float32 -> centerY: float32 -> unit
+
+    /// Take a screenshot of the current viz window and save it to the given folder.
+    val screenshot: folder: string -> Result<string, string>

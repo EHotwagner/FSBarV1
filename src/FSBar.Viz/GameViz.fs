@@ -9,7 +9,7 @@ module GameViz =
     let mutable private config = VizDefaults.defaultConfig
     let mutable private viewState = VizDefaults.defaultViewState
     let mutable private snapshot: GameSnapshot option = None
-    let mutable private viewer: IDisposable option = None
+    let mutable private viewer: ViewerHandle option = None
     let mutable private clientRef: BarClient option = None
     let mutable private mapGridRef: MapGrid option = None
     let mutable private myTeamId = 0
@@ -132,7 +132,7 @@ module GameViz =
     let private doStop () =
         match viewer with
         | Some v ->
-            v.Dispose() // Viewer.run completion signaling handles the wait
+            (v :> IDisposable).Dispose()
             viewer <- None
             LayerRenderer.invalidateAll ()
             units <- Map.empty
@@ -232,6 +232,12 @@ module GameViz =
             computeAutoFit grid viewState.WindowWidth viewState.WindowHeight
 
         printfn "[GameViz] Attached to client. Map: %dx%d" grid.WidthHeightmap grid.HeightHeightmap
+
+    let seedUnits (unitStates: UnitState list) =
+        for u in unitStates do
+            units <- units.Add(u.UnitId, u)
+        lock stateLock (fun () ->
+            snapshot <- snapshot |> Option.map (fun s -> { s with Units = units }))
 
     let onFrame (frame: GameFrame) =
         match clientRef with
@@ -488,3 +494,8 @@ module GameViz =
 
     let zoom factor centerX centerY =
         processCommand (VizCommand.Zoom(factor, centerX, centerY))
+
+    let screenshot (folder: string) : Result<string, string> =
+        match viewer with
+        | Some v -> v.Screenshot(folder)
+        | None -> Result.Error "Viz not running"

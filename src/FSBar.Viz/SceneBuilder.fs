@@ -40,8 +40,8 @@ module SceneBuilder =
 
         // Draw unit overlay
         if config.ActiveOverlays.Contains OverlayKind.Units then
-            use friendlyPaint = new SKPaint(IsAntialias = true, Color = SKColor(0uy, 120uy, 255uy, byte (config.OverlayOpacity * 255.0f)), Style = SKPaintStyle.Fill)
-            use enemyPaint = new SKPaint(IsAntialias = true, Color = SKColor(255uy, 40uy, 40uy, byte (config.OverlayOpacity * 255.0f)), Style = SKPaintStyle.Fill)
+            use friendlyPaint = new SKPaint(IsAntialias = true, Color = SKColor(255uy, 0uy, 255uy, byte (config.OverlayOpacity * 255.0f)), Style = SKPaintStyle.Fill)
+            use enemyPaint = new SKPaint(IsAntialias = true, Color = SKColor(255uy, 0uy, 0uy, byte (config.OverlayOpacity * 255.0f)), Style = SKPaintStyle.Fill)
             for kvp in snapshot.Units do
                 let u = kvp.Value
                 let gx = u.PositionX / 8.0f

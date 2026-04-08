@@ -329,12 +329,29 @@ let viz () =
     else
     GameViz.start None
     GameViz.attachToClient (client ())
+    // Seed viz with existing units the Repl already knows about
+    let s = stream ()
+    let seed =
+        _units |> Map.toList |> List.map (fun (_, u) ->
+            let (_, py, _) = Callbacks.getUnitPos s u.Id
+            { UnitId = u.Id; PositionX = u.X; PositionY = py; PositionZ = u.Z
+              TeamId = Callbacks.getMyTeam s; DefId = u.DefId
+              Health = u.Hp; MaxHealth = u.MaxHp; IsEnemy = false } : FSBar.Viz.UnitState)
+    GameViz.seedUnits seed
     GameViz.enableOverlay OverlayKind.Units
     GameViz.enableOverlay OverlayKind.Events
     GameViz.enableOverlay OverlayKind.MetalSpots
     GameViz.enableOverlay OverlayKind.EconomyHud
     _vizRunning <- true
     printfn "Viz opened. Keys: 1-0=layers, U/E/G/M=overlays, Home=reset"
+
+/// Take a screenshot of the viz window.
+let screenshot () =
+    if not _vizRunning then printfn "Viz not running."
+    else
+    match GameViz.screenshot "/tmp" with
+    | Ok path -> printfn "Screenshot: %s" path
+    | Result.Error msg -> printfn "Screenshot failed: %s" msg
 
 /// Close the visualization window.
 let noviz () =

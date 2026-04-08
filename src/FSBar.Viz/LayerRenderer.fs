@@ -25,6 +25,15 @@ module LayerRenderer =
             | MoveType.Hover -> "Passability_Hover"
             | MoveType.Ship -> "Passability_Ship"
 
+    let private copyPixelsToBitmap (bmp: SKBitmap) (pixels: byte[]) (w: int) (h: int) =
+        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
+        try
+            let src = handle.AddrOfPinnedObject()
+            let dst = bmp.GetPixels()
+            System.Buffer.MemoryCopy(src.ToPointer(), dst.ToPointer(), int64 (w * h * 4), int64 (w * h * 4))
+        finally
+            handle.Free()
+
     let private renderHeightMap (grid: MapGrid) (scheme: ColorScheme) =
         let w = grid.WidthHeightmap
         let h = grid.HeightHeightmap
@@ -50,11 +59,7 @@ module LayerRenderer =
                 pixels.[idx + 1] <- c.Green
                 pixels.[idx + 2] <- c.Blue
                 pixels.[idx + 3] <- 255uy
-        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
-        try
-            bmp.InstallPixels(SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul), handle.AddrOfPinnedObject(), w * 4) |> ignore
-        finally
-            handle.Free()
+        copyPixelsToBitmap bmp pixels w h
         bmp
 
     let private renderFloatArray (data: float32[,]) (scheme: ColorScheme) =
@@ -80,11 +85,7 @@ module LayerRenderer =
                 pixels.[idx + 1] <- c.Green
                 pixels.[idx + 2] <- c.Blue
                 pixels.[idx + 3] <- 255uy
-        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
-        try
-            bmp.InstallPixels(SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul), handle.AddrOfPinnedObject(), w * 4) |> ignore
-        finally
-            handle.Free()
+        copyPixelsToBitmap bmp pixels w h
         bmp
 
     let private renderIntArray (data: int[,]) (scheme: ColorScheme) =
@@ -107,11 +108,7 @@ module LayerRenderer =
                 pixels.[idx + 1] <- c.Green
                 pixels.[idx + 2] <- c.Blue
                 pixels.[idx + 3] <- 255uy
-        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
-        try
-            bmp.InstallPixels(SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul), handle.AddrOfPinnedObject(), w * 4) |> ignore
-        finally
-            handle.Free()
+        copyPixelsToBitmap bmp pixels w h
         bmp
 
     let private renderBoolArray (data: bool[,]) (scheme: ColorScheme) =
@@ -128,11 +125,7 @@ module LayerRenderer =
                 pixels.[idx + 1] <- c.Green
                 pixels.[idx + 2] <- c.Blue
                 pixels.[idx + 3] <- 255uy
-        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
-        try
-            bmp.InstallPixels(SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul), handle.AddrOfPinnedObject(), w * 4) |> ignore
-        finally
-            handle.Free()
+        copyPixelsToBitmap bmp pixels w h
         bmp
 
     let private renderTerrainClassification (grid: MapGrid) (scheme: ColorScheme) =
@@ -153,11 +146,7 @@ module LayerRenderer =
                 pixels.[idx + 1] <- c.Green
                 pixels.[idx + 2] <- c.Blue
                 pixels.[idx + 3] <- 255uy
-        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
-        try
-            bmp.InstallPixels(SKImageInfo(w, h, SKColorType.Rgba8888, SKAlphaType.Premul), handle.AddrOfPinnedObject(), w * 4) |> ignore
-        finally
-            handle.Free()
+        copyPixelsToBitmap bmp pixels w h
         bmp
 
     let private renderFresh (grid: MapGrid) (layer: LayerKind) (scheme: ColorScheme) =
