@@ -12,12 +12,12 @@ module Callbacks =
 
     // --- Param helpers ---
 
-    let private intParam (v: int) : CallbackParam =
+    let intParam (v: int) : CallbackParam =
         { Value = CallbackParam.ValueCase.IntValue v }
 
     // --- Result extraction helpers ---
 
-    let private getInt (resp: CallbackResponse) : int =
+    let getInt (resp: CallbackResponse) : int =
         match resp.Result with
         | Some r ->
             match r.Value with
@@ -25,7 +25,7 @@ module Callbacks =
             | _ -> 0
         | _ -> 0
 
-    let private getFloat (resp: CallbackResponse) : float32 =
+    let getFloat (resp: CallbackResponse) : float32 =
         match resp.Result with
         | Some r ->
             match r.Value with
@@ -33,7 +33,7 @@ module Callbacks =
             | _ -> 0.0f
         | _ -> 0.0f
 
-    let private getString (resp: CallbackResponse) : string =
+    let getString (resp: CallbackResponse) : string =
         match resp.Result with
         | Some r ->
             match r.Value with
@@ -41,7 +41,7 @@ module Callbacks =
             | _ -> ""
         | _ -> ""
 
-    let private getVector3 (resp: CallbackResponse) : float32 * float32 * float32 =
+    let getVector3 (resp: CallbackResponse) : float32 * float32 * float32 =
         match resp.Result with
         | Some r ->
             match r.Value with
@@ -49,7 +49,7 @@ module Callbacks =
             | _ -> (0.0f, 0.0f, 0.0f)
         | _ -> (0.0f, 0.0f, 0.0f)
 
-    let private getFloatArray (resp: CallbackResponse) : float32 list =
+    let getFloatArray (resp: CallbackResponse) : float32 list =
         match resp.Result with
         | Some r ->
             match r.Value with
@@ -57,7 +57,7 @@ module Callbacks =
             | _ -> []
         | _ -> []
 
-    let private getIntArray (resp: CallbackResponse) : int list =
+    let getIntArray (resp: CallbackResponse) : int list =
         match resp.Result with
         | Some r ->
             match r.Value with

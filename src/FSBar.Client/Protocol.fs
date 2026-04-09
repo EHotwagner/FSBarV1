@@ -18,8 +18,8 @@ type HandshakeInfo = {
 
 module Protocol =
 
-    let private protocolVersion = 1u
-    let mutable private nextRequestId = 1u
+    let protocolVersion = 1u
+    let mutable nextRequestId = 1u
 
     /// Perform handshake: receive Handshake from proxy, validate, send HandshakeResponse.
     let handshake (stream: NetworkStream) : HandshakeInfo =

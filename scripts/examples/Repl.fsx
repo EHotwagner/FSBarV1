@@ -96,8 +96,8 @@ let private processFrame (frame: GameFrame) =
 
 let private warmup () =
     let c = client ()
-    for _ in 1..30 do
-        c.Step() |> processFrame
+    for frame in c.Frames |> Seq.truncate 30 do
+        processFrame frame
     printfn "Connected! Team %d | Frame %d | Units: %d" (Callbacks.getMyTeam c.Stream) _frame.FrameNumber _units.Count
 
 /// Start a headless engine session.
@@ -133,8 +133,7 @@ let stop () =
 /// Advance N frames (default 1). Returns the last frame number.
 let step (n: int) =
     let c = client ()
-    for _ in 1 .. n do
-        let frame = c.Step()
+    for frame in c.Frames |> Seq.truncate n do
         processFrame frame
     printfn "Frame %d (units: %d)" _frame.FrameNumber _units.Count
 
@@ -144,8 +143,10 @@ let step1 () = step 1
 /// Advance N frames and send commands from a handler each frame.
 let stepWith (n: int) (handler: GameFrame -> Highbar.AICommand list) =
     let c = client ()
-    for _ in 1 .. n do
-        let frame = c.StepWith handler
+    for frame in c.Frames |> Seq.truncate n do
+        let cmds = handler frame
+        if not cmds.IsEmpty then
+            c.SendCommands cmds
         processFrame frame
     printfn "Frame %d" _frame.FrameNumber
 
@@ -235,71 +236,104 @@ let buildOptions (defId: int) =
 
 /// Move a unit to (x, z).
 let move (unitId: int) (x: float32) (z: float32) =
+    let c = client ()
     let cmd = MoveCommand unitId x 0.0f z
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     printfn "Unit %d -> (%.0f, %.0f)" unitId x z
 
 /// Attack-move a unit to (x, z).
 let fight (unitId: int) (x: float32) (z: float32) =
+    let c = client ()
     let cmd = FightCommand unitId x 0.0f z
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     printfn "Unit %d fight-move -> (%.0f, %.0f)" unitId x z
 
 /// Patrol a unit to (x, z).
 let patrol (unitId: int) (x: float32) (z: float32) =
+    let c = client ()
     let cmd = PatrolCommand unitId x 0.0f z
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     printfn "Unit %d patrol -> (%.0f, %.0f)" unitId x z
 
 /// Attack a target unit.
 let attack (unitId: int) (targetId: int) =
+    let c = client ()
     let cmd = AttackCommand unitId targetId
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     printfn "Unit %d attacking %d" unitId targetId
 
 /// Guard another unit.
 let guard (unitId: int) (guardId: int) =
+    let c = client ()
     let cmd = GuardCommand unitId guardId
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     printfn "Unit %d guarding %d" unitId guardId
 
 /// Stop a unit.
 let halt (unitId: int) =
+    let c = client ()
     let cmd = StopCommand unitId
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     printfn "Unit %d stopped" unitId
 
 /// Build a structure at (x, z) with facing (0=S, 1=E, 2=N, 3=W).
 let build (builderId: int) (defId: int) (x: float32) (z: float32) (facing: int) =
+    let c = client ()
     let cmd = BuildCommand builderId defId x 0.0f z facing
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     let name = Callbacks.getUnitDefName (stream ()) defId
     printfn "Unit %d building %s at (%.0f, %.0f)" builderId name x z
 
 /// Self-destruct a unit.
 let selfDestruct (unitId: int) =
+    let c = client ()
     let cmd = SelfDestructCommand unitId
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     printfn "Unit %d self-destructing" unitId
 
 /// Send multiple commands in one frame step.
 let send (cmds: Highbar.AICommand list) =
-    (client()).StepWith(fun _ -> cmds) |> processFrame
+    let c = client ()
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands cmds
+        processFrame frame
     printfn "Sent %d commands (frame %d)" cmds.Length _frame.FrameNumber
 
 // ── Cheats ───────────────────────────────────────────────────
 
 /// Give resources (0=metal, 1=energy).
 let give (resourceId: int) (amount: float32) =
+    let c = client ()
     let cmd = GiveMeResourceCommand resourceId amount
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     let name = if resourceId = 0 then "metal" else "energy"
     printfn "Gave %.0f %s" amount name
 
 /// Spawn a unit at (x, z) by definition ID.
 let spawn (defId: int) (x: float32) (z: float32) =
+    let c = client ()
     let cmd = GiveMeNewUnitCommand defId x 0.0f z
-    (client()).StepWith(fun _ -> [cmd]) |> processFrame
+    for frame in c.Frames |> Seq.truncate 1 do
+        c.SendCommands [cmd]
+        processFrame frame
     let name = Callbacks.getUnitDefName (stream ()) defId
     printfn "Spawned %s at (%.0f, %.0f)" name x z
 

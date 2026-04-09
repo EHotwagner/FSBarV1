@@ -31,7 +31,7 @@ type EngineResolution = {
 
 module EngineDiscovery =
 
-    let private standardDataDir () =
+    let standardDataDir () =
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".local/state/Beyond All Reason")
@@ -44,7 +44,7 @@ module EngineDiscovery =
         else
             None
 
-    let private isExecutable (path: string) =
+    let isExecutable (path: string) =
         if not (File.Exists(path)) then false
         else
             try
@@ -54,7 +54,7 @@ module EngineDiscovery =
             with
             | _ -> File.Exists(path)
 
-    let private tryBinary (versionDir: string) (name: string) =
+    let tryBinary (versionDir: string) (name: string) =
         let path = Path.Combine(versionDir, name)
         if isExecutable path then Some path else None
 
@@ -123,7 +123,7 @@ module EngineDiscovery =
                 "Engine version %s is corrupted: binary at %s is not executable"
                 versionString binaryPath
 
-    let private resolveFromEnvVar () =
+    let resolveFromEnvVar () =
         match Environment.GetEnvironmentVariable("HIGHBAR_TEST_ENGINE") with
         | null | "" -> None
         | path ->
@@ -153,7 +153,7 @@ module EngineDiscovery =
             }
             Some engine
 
-    let private resolveFromConfigFile (configPath: string) =
+    let resolveFromConfigFile (configPath: string) =
         if not (File.Exists(configPath)) then None
         else
             let json = File.ReadAllText(configPath)
@@ -201,7 +201,7 @@ module EngineDiscovery =
                         DataDir = dataDir
                     }
 
-    let private sourceLabel = function
+    let sourceLabel = function
         | OverrideEnvVar -> "env:HIGHBAR_TEST_ENGINE"
         | ConfigFile -> "engine-version.json"
         | AutoDetected -> "auto-detected"

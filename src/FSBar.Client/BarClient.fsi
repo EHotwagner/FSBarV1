@@ -43,42 +43,25 @@ type BarClient =
     member Stream: System.Net.Sockets.NetworkStream
 
     /// <summary>
+    /// Game frames as a lazy sequence. Iterating pulls frames from the engine one at a time.
+    /// Between iterations, any commands queued via SendCommands are delivered to the engine.
+    /// The sequence terminates when the engine disconnects or sends a shutdown message.
+    /// </summary>
+    member Frames: seq<GameFrame>
+
+    /// <summary>
+    /// Queue commands to send with the next frame response.
+    /// Commands are delivered when the consumer requests the next frame from the Frames sequence.
+    /// </summary>
+    /// <exception cref="T:System.InvalidOperationException">Thrown if the session is not Connected or Running.</exception>
+    member SendCommands: commands: Highbar.AICommand list -> unit
+
+    /// <summary>
     /// Launches the BAR engine, listens for the HighBar V2 proxy connection on the configured socket path,
     /// performs the protocol handshake, and transitions to the Connected state.
     /// </summary>
     /// <exception cref="T:System.Exception">Thrown if the client is in an invalid state to start, or if connection/handshake fails.</exception>
     member Start: unit -> unit
-
-    /// <summary>
-    /// Receives the next game frame from the engine and sends an empty command response (no-op).
-    /// </summary>
-    /// <returns>The received <see cref="T:FSBar.Client.GameFrame"/> containing frame number and events.</returns>
-    /// <exception cref="T:System.Exception">Thrown if not connected, or if the game has ended.</exception>
-    member Step: unit -> GameFrame
-
-    /// <summary>
-    /// Receives the next game frame, passes it to the handler, and sends the returned AI commands to the engine.
-    /// </summary>
-    /// <param name="handler">A function that receives a game frame and returns AI commands.</param>
-    /// <returns>The received <see cref="T:FSBar.Client.GameFrame"/>.</returns>
-    /// <exception cref="T:System.Exception">Thrown if not connected, or if the game has ended.</exception>
-    member StepWith: handler: (GameFrame -> Highbar.AICommand list) -> GameFrame
-
-    /// <summary>
-    /// Runs the game for a fixed number of frames, calling the handler for each frame.
-    /// </summary>
-    /// <param name="frameCount">The number of frames to process.</param>
-    /// <param name="handler">A function that receives a game frame and returns AI commands.</param>
-    /// <returns>A list of all received game frames.</returns>
-    member Run: frameCount: int * handler: (GameFrame -> Highbar.AICommand list) -> GameFrame list
-
-    /// <summary>
-    /// Runs the game until the predicate returns true, calling the handler for each frame.
-    /// </summary>
-    /// <param name="predicate">A function that returns true when the loop should stop.</param>
-    /// <param name="handler">A function that receives a game frame and returns AI commands.</param>
-    /// <returns>A list of all received game frames including the one that triggered the stop.</returns>
-    member RunUntil: predicate: (GameFrame -> bool) * handler: (GameFrame -> Highbar.AICommand list) -> GameFrame list
 
     /// <summary>
     /// Resets the in-game state by sending cheat commands to drain and restore resources.

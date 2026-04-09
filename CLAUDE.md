@@ -1,6 +1,6 @@
 # FSBarV1 Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-08
+Auto-generated from all feature plans. Last updated: 2026-04-09
 
 ## Active Technologies
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (unit definitions), xUnit 2.9.x (002-test-suite-report)
@@ -25,6 +25,7 @@ Auto-generated from all feature plans. Last updated: 2026-04-08
 - F# / .NET 10.0 + SkiaViewer (local nupkg), BarData (local nupkg), NuGet CLI tooling (015-fix-stale-dll-cache)
 - Filesystem (nupkg files, NuGet global cache) (015-fix-stale-dll-cache)
 - In-memory (Map, ConcurrentDictionary caches) (016-gamestate-api)
+- N/A (in-memory session state + Unix domain sockets) (016-idiomatic-fsharp-streams)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -50,9 +51,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 016-idiomatic-fsharp-streams: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), FSBar.Proto (generated types), BarData (unit definitions)
 - 016-gamestate-api: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), FSBar.Proto (generated types), BarData (unit definitions)
 - 015-fix-stale-dll-cache: Added F# / .NET 10.0 + SkiaViewer (local nupkg), BarData (local nupkg), NuGet CLI tooling
-- 013-auto-engine-version: Added F# / .NET 10.0 + FSBar.Client (in-repo), System.IO, System.IO.Compression (for gzip)
 
 
 <!-- MANUAL ADDITIONS START -->

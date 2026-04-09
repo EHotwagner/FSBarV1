@@ -19,8 +19,7 @@ GameViz.enableOverlay OverlayKind.Events
 // Run game for 300 frames, feeding each to the viz
 printfn "Running 300 frames with visualization..."
 
-for _ in 1..300 do
-    let frame = client.Step()
+for frame in client.Frames |> Seq.truncate 300 do
     GameViz.onFrame frame
 
 printfn "Done. Viz window remains open — press Ctrl+C to exit."

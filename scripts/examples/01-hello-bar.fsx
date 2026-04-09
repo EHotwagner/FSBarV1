@@ -7,8 +7,7 @@ printfn "Starting headless BAR session..."
 use client = BarClient.startHeadless()
 
 printfn "Stepping 5 frames..."
-for i in 1..5 do
-    let frame = client.Step()
+for frame in client.Frames |> Seq.truncate 5 do
     printfn "  Frame %d: %d events" frame.FrameNumber frame.Events.Length
     for ev in frame.Events do
         match ev with

@@ -37,6 +37,8 @@ type BarClient(config: EngineConfig) =
     let mutable engineProcess: Process option = None
     let mutable handshakeInfo: HandshakeInfo option = None
     let mutable sessionDir: string = ""
+    let mutable pendingCommands: AICommand list = []
+    let mutable firstFrame: bool = true
 
     let requireStream () =
         match stream with
@@ -62,6 +64,44 @@ type BarClient(config: EngineConfig) =
     /// </summary>
     /// <exception cref="T:System.Exception">Thrown if not currently connected to the proxy.</exception>
     member _.Stream = requireStream()
+
+    /// <summary>
+    /// Game frames as a lazy sequence. Iterating pulls frames from the engine one at a time.
+    /// Between iterations, any commands queued via SendCommands are delivered to the engine.
+    /// The sequence terminates when the engine disconnects or sends a shutdown message.
+    /// </summary>
+    member _.Frames : seq<GameFrame> =
+        seq {
+            requireConnected ()
+            state <- Running
+            firstFrame <- true
+            let s = requireStream ()
+            let mutable running = true
+            while running do
+                if not firstFrame then
+                    Protocol.sendFrameResponse s pendingCommands
+                    pendingCommands <- []
+                else
+                    firstFrame <- false
+                match Protocol.receiveFrame s with
+                | Some frame ->
+                    yield frame
+                | None ->
+                    state <- Stopped
+                    running <- false
+        }
+
+    /// <summary>
+    /// Queue commands to send with the next frame response.
+    /// Commands are delivered when the consumer requests the next frame from the Frames sequence.
+    /// </summary>
+    /// <exception cref="T:System.InvalidOperationException">Thrown if the session is not Connected or Running.</exception>
+    member _.SendCommands(commands: AICommand list) =
+        match state with
+        | Connected | Running ->
+            pendingCommands <- commands
+        | s ->
+            raise (System.InvalidOperationException($"Cannot send commands: session is {s}"))
 
     /// <summary>
     /// Launches the BAR engine, listens for the HighBar V2 proxy connection on the configured socket path,
@@ -116,74 +156,6 @@ type BarClient(config: EngineConfig) =
             reraise ()
 
     /// <summary>
-    /// Receives the next game frame from the engine and sends an empty command response (no-op).
-    /// Use this for passive observation without issuing any AI commands.
-    /// </summary>
-    /// <returns>The received <see cref="T:FSBar.Client.GameFrame"/> containing frame number and events.</returns>
-    /// <exception cref="T:System.Exception">Thrown if not connected, or if the game has ended (shutdown received).</exception>
-    member _.Step() : GameFrame =
-        requireConnected ()
-        state <- Running
-        match Protocol.receiveFrame (requireStream()) with
-        | Some frame ->
-            Protocol.sendFrameResponse (requireStream()) []
-            state <- Connected
-            frame
-        | None ->
-            state <- Stopped
-            failwith "Game ended (shutdown received)"
-
-    /// <summary>
-    /// Receives the next game frame from the engine, passes it to the handler function, and sends
-    /// the returned AI commands back to the engine.
-    /// </summary>
-    /// <param name="handler">A function that receives a <see cref="T:FSBar.Client.GameFrame"/> and returns a list of AI commands to execute.</param>
-    /// <returns>The received <see cref="T:FSBar.Client.GameFrame"/>.</returns>
-    /// <exception cref="T:System.Exception">Thrown if not connected, or if the game has ended (shutdown received).</exception>
-    member _.StepWith(handler: GameFrame -> AICommand list) : GameFrame =
-        requireConnected ()
-        state <- Running
-        match Protocol.receiveFrame (requireStream()) with
-        | Some frame ->
-            let commands = handler frame
-            Protocol.sendFrameResponse (requireStream()) commands
-            state <- Connected
-            frame
-        | None ->
-            state <- Stopped
-            failwith "Game ended (shutdown received)"
-
-    /// <summary>
-    /// Runs the game for a fixed number of frames, calling the handler for each frame to produce AI commands.
-    /// </summary>
-    /// <param name="frameCount">The number of frames to process.</param>
-    /// <param name="handler">A function that receives a <see cref="T:FSBar.Client.GameFrame"/> and returns a list of AI commands.</param>
-    /// <returns>A list of all received <see cref="T:FSBar.Client.GameFrame"/> values.</returns>
-    member this.Run(frameCount: int, handler: GameFrame -> AICommand list) : GameFrame list =
-        let frames = ResizeArray<GameFrame>()
-        for _ in 1..frameCount do
-            let frame = this.StepWith(handler)
-            frames.Add(frame)
-        frames |> Seq.toList
-
-    /// <summary>
-    /// Runs the game until the predicate returns <c>true</c> for a received frame, calling the handler
-    /// for each frame to produce AI commands.
-    /// </summary>
-    /// <param name="predicate">A function that returns <c>true</c> when the loop should stop.</param>
-    /// <param name="handler">A function that receives a <see cref="T:FSBar.Client.GameFrame"/> and returns a list of AI commands.</param>
-    /// <returns>A list of all received <see cref="T:FSBar.Client.GameFrame"/> values, including the final one that triggered the stop.</returns>
-    member this.RunUntil(predicate: GameFrame -> bool, handler: GameFrame -> AICommand list) : GameFrame list =
-        let frames = ResizeArray<GameFrame>()
-        let mutable stop = false
-        while not stop do
-            let frame = this.StepWith(handler)
-            frames.Add(frame)
-            if predicate frame then
-                stop <- true
-        frames |> Seq.toList
-
-    /// <summary>
     /// Resets the in-game state by sending cheat commands to drain and restore resources.
     /// Runs several verification frames afterward to let the engine settle.
     /// </summary>
@@ -191,25 +163,29 @@ type BarClient(config: EngineConfig) =
     /// Requires an active connected session. Uses the engine's cheat mode to manipulate resources.
     /// Useful between test scenarios to start from a clean economic state.
     /// </remarks>
-    member this.Reset() =
+    member _.Reset() =
         requireConnected ()
-        // Run a few frames to destroy units and reset resources
-        let mutable sent = false
-        this.StepWith(fun _ ->
-            if not sent then
-                sent <- true
-                [
-                    Commands.SendTextMessageCommand ".cheat" 0
-                    Commands.GiveMeResourceCommand 0 -1000000.0f
-                    Commands.GiveMeResourceCommand 1 -1000000.0f
-                    Commands.GiveMeResourceCommand 0 1000.0f
-                    Commands.GiveMeResourceCommand 1 1000.0f
-                ]
-            else []
-        ) |> ignore
+        let s = requireStream ()
+        // Send cheat commands on first frame
+        match Protocol.receiveFrame s with
+        | Some _ ->
+            Protocol.sendFrameResponse s [
+                Commands.SendTextMessageCommand ".cheat" 0
+                Commands.GiveMeResourceCommand 0 -1000000.0f
+                Commands.GiveMeResourceCommand 1 -1000000.0f
+                Commands.GiveMeResourceCommand 0 1000.0f
+                Commands.GiveMeResourceCommand 1 1000.0f
+            ]
+        | None ->
+            state <- Stopped
+            failwith "Game ended (shutdown received)"
         // Run verification frames
         for _ in 1..10 do
-            this.Step() |> ignore
+            match Protocol.receiveFrame s with
+            | Some _ -> Protocol.sendFrameResponse s []
+            | None ->
+                state <- Stopped
+                failwith "Game ended during reset"
         printfn "Game state reset."
 
     /// <summary>

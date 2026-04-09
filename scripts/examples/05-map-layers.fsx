@@ -7,7 +7,7 @@ printfn "Starting headless BAR session..."
 use client = BarClient.startHeadless()
 
 // Warm up a few frames so the engine is ready
-for _ in 1..5 do client.Step() |> ignore
+for _ in client.Frames |> Seq.truncate 5 do ()
 
 let stream = client.Stream
 

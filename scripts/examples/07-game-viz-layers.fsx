@@ -13,8 +13,7 @@ GameViz.start None
 GameViz.attachToClient client
 
 // Step a few frames to get initial data
-for _ in 1..30 do
-    let frame = client.Step()
+for frame in client.Frames |> Seq.truncate 30 do
     GameViz.onFrame frame
 
 printfn "=== Layer Switching Demo ==="
@@ -35,8 +34,7 @@ for (layer, name) in layers do
     System.Threading.Thread.Sleep(2000)
 
     // Keep feeding frames
-    for _ in 1..10 do
-        let frame = client.Step()
+    for frame in client.Frames |> Seq.truncate 10 do
         GameViz.onFrame frame
 
 printfn ""

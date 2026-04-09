@@ -79,7 +79,7 @@ type GameFrame = {
 /// <summary>Functions for converting protobuf engine events to typed <see cref="T:FSBar.Client.GameEvent"/> values.</summary>
 module Events =
 
-    let private shutdownReasonToString (reason: Highbar.ShutdownReason) =
+    let shutdownReasonToString (reason: Highbar.ShutdownReason) =
         match reason with
         | Highbar.ShutdownReason.GameOver -> "GameOver"
         | Highbar.ShutdownReason.Disconnect -> "Disconnect"

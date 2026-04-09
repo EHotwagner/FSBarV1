@@ -8,8 +8,7 @@ use client = BarClient.startHeadless()
 
 // Step through 5 frames one at a time
 printfn "\n--- Stepping 5 frames ---"
-for i in 1..5 do
-    let frame = client.Step()
+for frame in client.Frames |> Seq.truncate 5 do
     let unitEvents =
         frame.Events
         |> List.filter (fun ev ->
@@ -21,8 +20,10 @@ for i in 1..5 do
 
 // Run 100 frames continuously with a handler
 printfn "\n--- Running 100 frames with handler ---"
-let frames =
-    client.Run(100, fun frame ->
+let mutable frameCount = 0
+for frame in client.Frames |> Seq.truncate 100 do
+    frameCount <- frameCount + 1
+    let cmds =
         frame.Events
         |> List.choose (fun ev ->
             match ev with
@@ -31,8 +32,9 @@ let frames =
                 Some (MoveCommand unitId 4096.0f 100.0f 4096.0f)
             | _ -> None
         )
-    )
-printfn "Completed %d frames." frames.Length
+    if not cmds.IsEmpty then
+        client.SendCommands cmds
+printfn "Completed %d frames." frameCount
 
 printfn "\nStopping..."
 client.Stop()

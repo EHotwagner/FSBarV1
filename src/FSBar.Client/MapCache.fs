@@ -10,8 +10,8 @@ open System.Net.Sockets
 /// </summary>
 module MapCache =
 
-    let private gridCache = ConcurrentDictionary<string, Lazy<MapGrid>>()
-    let private passabilityCache = ConcurrentDictionary<string, Lazy<bool[,]>>()
+    let gridCache = ConcurrentDictionary<string, Lazy<MapGrid>>()
+    let passabilityCache = ConcurrentDictionary<string, Lazy<bool[,]>>()
 
     /// <summary>
     /// Loads a <see cref="T:FSBar.Client.MapGrid"/> from the engine, caching the result.

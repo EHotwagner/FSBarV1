@@ -7,7 +7,7 @@ open System.IO
 module EngineLauncher =
 
     /// Extract the guid portion from a socket path like /tmp/fsbar-abcd1234.sock
-    let private extractGuid (socketPath: string) =
+    let extractGuid (socketPath: string) =
         let fileName = Path.GetFileNameWithoutExtension(socketPath)
 
         if fileName.StartsWith("fsbar-") then
@@ -22,7 +22,7 @@ module EngineLauncher =
 
     /// Auto-detect SPRING_DATADIR from the engine binary location or standard paths.
     /// First tries walking up from the binary location, then checks the standard BAR data directory.
-    let private detectSpringDataDir (engineBin: string) : string option =
+    let detectSpringDataDir (engineBin: string) : string option =
         let tryBinaryParent () =
             try
                 let psi =
@@ -72,7 +72,7 @@ module EngineLauncher =
         tryBinaryParent () |> Option.orElseWith tryStandardPath
 
     /// Copy ArchiveCache20.lua from SPRING_DATADIR/cache/ to sessionDir/cache/ if available.
-    let private copyArchiveCache (springDataDir: string) (sessionDir: string) : unit =
+    let copyArchiveCache (springDataDir: string) (sessionDir: string) : unit =
         let sourcePath = Path.Combine(springDataDir, "cache", "ArchiveCache20.lua")
 
         if File.Exists(sourcePath) then
@@ -83,12 +83,12 @@ module EngineLauncher =
             printfn "Copied ArchiveCache20.lua to %s" destPath
 
     /// Write the PID to a .pid file alongside the socket path.
-    let private writePidFile (socketPath: string) (pid: int) : unit =
+    let writePidFile (socketPath: string) (pid: int) : unit =
         let pidPath = $"{socketPath}.pid"
         File.WriteAllText(pidPath, string pid)
 
     /// Launch an engine process with the given binary, config, and script content.
-    let private launchEngine (engineBinary: string) (config: EngineConfig) (scriptContent: string) : Process =
+    let launchEngine (engineBinary: string) (config: EngineConfig) (scriptContent: string) : Process =
         let sessionDir = getSessionDir config
         Directory.CreateDirectory(sessionDir) |> ignore
 

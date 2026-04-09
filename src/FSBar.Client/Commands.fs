@@ -4,11 +4,11 @@ module Commands =
 
     /// INTERNAL_ORDER flag (bit 3) used for AI-issued commands
     [<Literal>]
-    let private INTERNAL_ORDER = 8u
+    let INTERNAL_ORDER = 8u
 
     /// Maximum timeout value
     [<Literal>]
-    let private MAX_TIMEOUT = 2147483647
+    let MAX_TIMEOUT = 2147483647
 
     /// Create a move command for a unit to a position
     let MoveCommand (unitId: int) (x: float32) (y: float32) (z: float32) : Highbar.AICommand =

@@ -9,15 +9,17 @@ open FSBar
 let client = BarClient.startGraphical()
 
 printfn "Running 300 frames (observe the game window)..."
-client.Run(300, fun frame ->
-    frame.Events
-    |> List.choose (fun ev ->
-        match ev with
-        | GameEvent.UnitIdle unitId ->
-            Some (MoveCommand unitId 4096.0f 100.0f 4096.0f)
-        | _ -> None
-    )
-) |> ignore
+for frame in client.Frames |> Seq.truncate 300 do
+    let cmds =
+        frame.Events
+        |> List.choose (fun ev ->
+            match ev with
+            | GameEvent.UnitIdle unitId ->
+                Some (MoveCommand unitId 4096.0f 100.0f 4096.0f)
+            | _ -> None
+        )
+    if not cmds.IsEmpty then
+        client.SendCommands cmds
 
 printfn "Stopping..."
 client.Stop()

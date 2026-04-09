@@ -66,6 +66,21 @@ let ``defaultConfig_module_function_works`` () =
     Assert.Equal("Avalanche 3.4", config.MapName)
 
 [<Fact>]
+let ``frames_property_exists_on_client`` () =
+    let config = EngineConfig.defaultConfig ()
+    use client = BarClient.create config
+    let frames = client.Frames
+    Assert.NotNull(frames)
+
+[<Fact>]
+let ``send_commands_raises_when_idle`` () =
+    let config = EngineConfig.defaultConfig ()
+    use client = BarClient.create config
+    Assert.Throws<System.InvalidOperationException>(fun () ->
+        client.SendCommands []
+    ) |> ignore
+
+[<Fact>]
 let ``multiple_create_dispose_cycles`` () =
     for _ in 1..3 do
         let config = EngineConfig.defaultConfig ()

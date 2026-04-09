@@ -20,7 +20,7 @@ module MapQuery =
     let gridToElmo (x: int) (z: int) : int * int =
         (x * 8, z * 8)
 
-    let private boundsCheck (grid: MapGrid) (gx: int) (gz: int) (layerName: string) =
+    let boundsCheck (grid: MapGrid) (gx: int) (gz: int) (layerName: string) =
         let maxX = Array2D.length1 grid.HeightMap - 1
         let maxZ = Array2D.length2 grid.HeightMap - 1
         if gx < 0 || gx > maxX || gz < 0 || gz > maxZ then

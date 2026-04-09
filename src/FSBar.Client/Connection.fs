@@ -38,7 +38,7 @@ module Connection =
 
     /// Read exactly `count` bytes from the stream.
     /// Raises on premature end-of-stream.
-    let private readExact (stream: NetworkStream) (count: int) : byte[] =
+    let readExact (stream: NetworkStream) (count: int) : byte[] =
         let buffer = Array.zeroCreate<byte> count
         let mutable offset = 0
 

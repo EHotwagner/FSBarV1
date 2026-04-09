@@ -74,7 +74,7 @@ module MapGrid =
 
     // --- Private helpers: reshape flat lists to Array2D ---
 
-    let private toFloat32Array2D (width: int) (height: int) (layerName: string) (values: float32 list) : float32[,] =
+    let toFloat32Array2D (width: int) (height: int) (layerName: string) (values: float32 list) : float32[,] =
         let expected = width * height
         let arr = values |> List.toArray
         if arr.Length = 0 then
@@ -83,7 +83,7 @@ module MapGrid =
             failwith $"MapGrid: {layerName} dimension mismatch — expected {expected} ({width}x{height}), got {arr.Length}"
         Array2D.init width height (fun x z -> arr.[z * width + x])
 
-    let private toIntArray2D (width: int) (height: int) (layerName: string) (values: int list) : int[,] =
+    let toIntArray2D (width: int) (height: int) (layerName: string) (values: int list) : int[,] =
         let expected = width * height
         let arr = values |> List.toArray
         if arr.Length = 0 then
