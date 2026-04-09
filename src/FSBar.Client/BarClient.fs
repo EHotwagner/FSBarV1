@@ -4,31 +4,20 @@ open System
 open System.IO
 open System.Net.Sockets
 open System.Diagnostics
+open System.Threading
 open Highbar
 
-/// <summary>
-/// Represents the lifecycle state of a <see cref="T:FSBar.Client.BarClient"/> session.
-/// </summary>
+/// Represents the lifecycle state of a BarClient session.
 type SessionState =
-    /// <summary>No session is active. The client has not been started or has been fully stopped.</summary>
     | Idle
-    /// <summary>The client is in the process of launching the engine and establishing a connection.</summary>
     | Starting
-    /// <summary>The client is connected to the HighBar V2 proxy and ready to step through frames.</summary>
     | Connected
-    /// <summary>The client is actively processing a game frame.</summary>
     | Running
-    /// <summary>The session has ended and all resources have been cleaned up.</summary>
     | Stopped
-    /// <summary>The session encountered an error. Contains the error message.</summary>
     | Error of string
 
-/// <summary>
 /// High-level client for orchestrating a BAR AI game session.
 /// Manages the full lifecycle: engine launch, proxy connection, handshake, frame stepping, and cleanup.
-/// Implements <see cref="T:System.IDisposable"/> for deterministic resource cleanup.
-/// </summary>
-/// <param name="config">The engine configuration for this session.</param>
 type BarClient(config: EngineConfig) =
     let mutable state = Idle
     let mutable listener: Socket option = None
@@ -38,7 +27,12 @@ type BarClient(config: EngineConfig) =
     let mutable handshakeInfo: HandshakeInfo option = None
     let mutable sessionDir: string = ""
     let mutable pendingCommands: AICommand list = []
-    let mutable firstFrame: bool = true
+    let mutable gameState: GameState = GameState.empty
+
+    // Observable infrastructure
+    let subscribersLock = obj ()
+    let mutable subscribers: IObserver<GameFrame> list = []
+    let mutable frameThread: Thread option = None
 
     let requireStream () =
         match stream with
@@ -50,68 +44,119 @@ type BarClient(config: EngineConfig) =
         | Connected | Running -> ()
         | _ -> failwith $"No active session (state: {state})"
 
-    /// <summary>Gets the current lifecycle state of this session.</summary>
+    let notifyNext (frame: GameFrame) =
+        let subs = lock subscribersLock (fun () -> subscribers)
+        for obs in subs do
+            try obs.OnNext(frame) with _ -> ()
+
+    let notifyCompleted () =
+        let subs = lock subscribersLock (fun () -> subscribers)
+        for obs in subs do
+            try obs.OnCompleted() with _ -> ()
+
+    let notifyError (ex: exn) =
+        let subs = lock subscribersLock (fun () -> subscribers)
+        for obs in subs do
+            try obs.OnError(ex) with _ -> ()
+
+    let startFrameThread () =
+        let thread =
+            Thread(fun () ->
+                let s = requireStream ()
+                let mutable firstFrame = true
+                let mutable running = true
+                state <- Running
+                while running do
+                    try
+                        if not firstFrame then
+                            Protocol.sendFrameResponse s pendingCommands
+                            pendingCommands <- []
+                        else
+                            firstFrame <- false
+                        match Protocol.receiveFrame s with
+                        | Some frame ->
+                            // Update game state
+                            gameState <- GameState.processFrame gameState frame s
+                            // Notify subscribers
+                            notifyNext frame
+                        | None ->
+                            state <- Stopped
+                            running <- false
+                            notifyCompleted ()
+                    with
+                    | :? EngineDisconnectedException ->
+                        state <- Stopped
+                        running <- false
+                        notifyCompleted ()
+                    | ex ->
+                        state <- Error ex.Message
+                        running <- false
+                        notifyError ex)
+        thread.IsBackground <- true
+        thread.Name <- "BarClient-FrameLoop"
+        frameThread <- Some thread
+        thread.Start()
+
+    /// Gets the current lifecycle state of this session.
     member _.State = state
 
-    /// <summary>Gets the engine configuration used to create this client.</summary>
+    /// Gets the engine configuration used to create this client.
     member _.Config = config
 
-    /// <summary>Gets the handshake information received from the proxy, or <c>None</c> if not yet connected.</summary>
+    /// Gets the handshake information received from the proxy, or None if not yet connected.
     member _.Handshake = handshakeInfo
 
-    /// <summary>
     /// Gets the active network stream to the HighBar V2 proxy.
-    /// </summary>
-    /// <exception cref="T:System.Exception">Thrown if not currently connected to the proxy.</exception>
     member _.Stream = requireStream()
 
-    /// <summary>
-    /// Game frames as a lazy sequence. Iterating pulls frames from the engine one at a time.
-    /// Between iterations, any commands queued via SendCommands are delivered to the engine.
-    /// The sequence terminates when the engine disconnects or sends a shutdown message.
-    /// </summary>
-    member _.Frames : seq<GameFrame> =
-        seq {
-            requireConnected ()
-            state <- Running
-            firstFrame <- true
-            let s = requireStream ()
-            let mutable running = true
-            while running do
-                if not firstFrame then
-                    Protocol.sendFrameResponse s pendingCommands
-                    pendingCommands <- []
-                else
-                    firstFrame <- false
-                match Protocol.receiveFrame s with
-                | Some frame ->
-                    yield frame
-                | None ->
-                    state <- Stopped
-                    running <- false
-        }
+    /// Game frames as a push-based observable. Subscribers receive frames as they arrive from the engine.
+    /// The observable completes when the engine disconnects or sends a shutdown message.
+    member _.Frames : IObservable<GameFrame> =
+        { new IObservable<GameFrame> with
+            member _.Subscribe(observer: IObserver<GameFrame>) =
+                lock subscribersLock (fun () ->
+                    subscribers <- observer :: subscribers)
+                // Start the frame thread on first subscription if connected
+                if state = Connected && frameThread.IsNone then
+                    startFrameThread ()
+                { new IDisposable with
+                    member _.Dispose() =
+                        lock subscribersLock (fun () ->
+                            subscribers <- subscribers |> List.filter (fun o -> not (obj.ReferenceEquals(o, observer)))) } }
 
-    /// <summary>
     /// Queue commands to send with the next frame response.
-    /// Commands are delivered when the consumer requests the next frame from the Frames sequence.
-    /// </summary>
-    /// <exception cref="T:System.InvalidOperationException">Thrown if the session is not Connected or Running.</exception>
     member _.SendCommands(commands: AICommand list) =
         match state with
         | Connected | Running ->
             pendingCommands <- commands
         | s ->
-            raise (System.InvalidOperationException($"Cannot send commands: session is {s}"))
+            raise (InvalidOperationException($"Cannot send commands: session is {s}"))
 
-    /// <summary>
-    /// Launches the BAR engine, listens for the HighBar V2 proxy connection on the configured socket path,
-    /// performs the protocol handshake, and transitions to the <see cref="F:FSBar.Client.SessionState.Connected"/> state.
-    /// </summary>
-    /// <remarks>
-    /// Can only be called from <see cref="F:FSBar.Client.SessionState.Idle"/> or <see cref="F:FSBar.Client.SessionState.Stopped"/> states.
-    /// On failure, transitions to <see cref="F:FSBar.Client.SessionState.Error"/> and cleans up all resources before re-raising the exception.
-    /// </remarks>
-    /// <exception cref="T:System.Exception">Thrown if the client is in an invalid state to start, or if connection/handshake fails.</exception>
+    /// Gets the current game state snapshot.
+    member _.GameState = gameState
+
+    /// Blocks and collects up to N frames, calling the handler for each.
+    /// Useful for synchronous REPL-style stepping.
+    member this.WaitFrames (count: int) (handler: GameFrame -> unit) =
+        if count <= 0 then ()
+        else
+        requireConnected ()
+        let remaining = ref count
+        let completed = new ManualResetEventSlim(false)
+        use _sub = this.Frames.Subscribe(
+            { new IObserver<GameFrame> with
+                member _.OnNext(frame) =
+                    handler frame
+                    if Interlocked.Decrement(remaining) <= 0 then
+                        completed.Set()
+                member _.OnCompleted() =
+                    completed.Set()
+                member _.OnError(_) =
+                    completed.Set() })
+        completed.Wait()
+
+    /// Launches the BAR engine, listens for the HighBar V2 proxy connection,
+    /// performs the protocol handshake, and transitions to the Connected state.
     member this.Start() =
         if state <> Idle && state <> Stopped then
             failwith $"Cannot start from state {state}"
@@ -149,24 +194,23 @@ type BarClient(config: EngineConfig) =
             handshakeInfo <- Some hs
             printfn "Proxy connected. Handshake OK (protocol v%d, team %d)" hs.ProtocolVersion hs.TeamId
 
+            // Load unit definition cache
+            printfn "Loading unit definitions..."
+            let unitDefs = UnitDefCache.loadFromEngine netStream
+            let defCount = UnitDefCache.all unitDefs |> Seq.length
+            printfn "Loaded %d unit definitions." defCount
+            gameState <- { GameState.empty with UnitDefs = unitDefs }
+
             state <- Connected
         with ex ->
             state <- Error ex.Message
             this.CleanupResources()
             reraise ()
 
-    /// <summary>
     /// Resets the in-game state by sending cheat commands to drain and restore resources.
-    /// Runs several verification frames afterward to let the engine settle.
-    /// </summary>
-    /// <remarks>
-    /// Requires an active connected session. Uses the engine's cheat mode to manipulate resources.
-    /// Useful between test scenarios to start from a clean economic state.
-    /// </remarks>
     member _.Reset() =
         requireConnected ()
         let s = requireStream ()
-        // Send cheat commands on first frame
         match Protocol.receiveFrame s with
         | Some _ ->
             Protocol.sendFrameResponse s [
@@ -179,7 +223,6 @@ type BarClient(config: EngineConfig) =
         | None ->
             state <- Stopped
             failwith "Game ended (shutdown received)"
-        // Run verification frames
         for _ in 1..10 do
             match Protocol.receiveFrame s with
             | Some _ -> Protocol.sendFrameResponse s []
@@ -188,10 +231,7 @@ type BarClient(config: EngineConfig) =
                 failwith "Game ended during reset"
         printfn "Game state reset."
 
-    /// <summary>
-    /// Stops the session and cleans up all resources (sockets, streams, engine process).
-    /// Safe to call from any state. No-op if already stopped or idle.
-    /// </summary>
+    /// Stops the session and cleans up all resources. Safe to call from any state.
     member this.Stop() =
         match state with
         | Stopped | Idle -> ()
@@ -201,8 +241,23 @@ type BarClient(config: EngineConfig) =
             state <- Stopped
 
     member private _.CleanupResources() =
+        // Signal frame thread to stop
+        match frameThread with
+        | Some t when t.IsAlive ->
+            // Stream disposal will cause the frame thread to exit
+            ()
+        | _ -> ()
+
         stream |> Option.iter (fun s -> try s.Dispose() with _ -> ())
         stream <- None
+
+        // Wait for frame thread to finish
+        match frameThread with
+        | Some t when t.IsAlive ->
+            if not (t.Join(TimeSpan.FromSeconds(5.0))) then
+                printfn "Warning: frame thread did not exit within 5s"
+        | _ -> ()
+        frameThread <- None
 
         clientSocket |> Option.iter (fun s -> try s.Close(); s.Dispose() with _ -> ())
         clientSocket <- None
@@ -217,43 +272,27 @@ type BarClient(config: EngineConfig) =
 
         Connection.cleanup config.SocketPath None
 
+        // Notify subscribers of completion
+        notifyCompleted ()
+        lock subscribersLock (fun () -> subscribers <- [])
+
     interface IDisposable with
         member this.Dispose() = this.Stop()
 
-/// <summary>Convenience module functions for creating and starting <see cref="T:FSBar.Client.BarClient"/> instances.</summary>
+/// Convenience module functions for creating and starting BarClient instances.
 module BarClient =
-    /// <summary>Creates a default <see cref="T:FSBar.Client.EngineConfig"/> for headless testing.</summary>
-    /// <returns>A new default engine configuration.</returns>
     let defaultConfig () = EngineConfig.defaultConfig ()
 
-    /// <summary>
-    /// Creates a new <see cref="T:FSBar.Client.BarClient"/> with the given configuration without starting it.
-    /// Call <see cref="M:FSBar.Client.BarClient.Start"/> to launch the engine and connect.
-    /// </summary>
-    /// <param name="config">The engine configuration for the new client.</param>
-    /// <returns>A new <see cref="T:FSBar.Client.BarClient"/> in the <see cref="F:FSBar.Client.SessionState.Idle"/> state.</returns>
     let create (config: EngineConfig) =
         let client = new BarClient(config)
         client
 
-    /// <summary>
-    /// Creates and starts a headless <see cref="T:FSBar.Client.BarClient"/> with default configuration.
-    /// The engine runs without a graphical window.
-    /// </summary>
-    /// <returns>A started <see cref="T:FSBar.Client.BarClient"/> in the <see cref="F:FSBar.Client.SessionState.Connected"/> state.</returns>
-    /// <exception cref="T:System.Exception">Thrown if the engine fails to launch or the proxy connection times out.</exception>
     let startHeadless () =
         let config = defaultConfig ()
         let client = new BarClient(config)
         client.Start()
         client
 
-    /// <summary>
-    /// Creates and starts a graphical <see cref="T:FSBar.Client.BarClient"/> with default configuration.
-    /// The engine runs with a full graphical window, useful for visual debugging.
-    /// </summary>
-    /// <returns>A started <see cref="T:FSBar.Client.BarClient"/> in the <see cref="F:FSBar.Client.SessionState.Connected"/> state.</returns>
-    /// <exception cref="T:System.Exception">Thrown if the engine fails to launch or the proxy connection times out.</exception>
     let startGraphical () =
         let config = { defaultConfig () with Mode = Graphical }
         let client = new BarClient(config)

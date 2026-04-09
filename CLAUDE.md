@@ -26,6 +26,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-09
 - Filesystem (nupkg files, NuGet global cache) (015-fix-stale-dll-cache)
 - In-memory (Map, ConcurrentDictionary caches) (016-gamestate-api)
 - N/A (in-memory session state + Unix domain sockets) (016-idiomatic-fsharp-streams)
+- F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), System.IObservable (BCL — no external Rx needed) (017-observable-gamestate-api)
+- In-memory (Map, ConcurrentDictionary caches, Array2D grids) (017-observable-gamestate-api)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -51,9 +53,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 017-observable-gamestate-api: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), System.IObservable (BCL — no external Rx needed)
 - 016-idiomatic-fsharp-streams: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), FSBar.Proto (generated types), BarData (unit definitions)
 - 016-gamestate-api: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), FSBar.Proto (generated types), BarData (unit definitions)
-- 015-fix-stale-dll-cache: Added F# / .NET 10.0 + SkiaViewer (local nupkg), BarData (local nupkg), NuGet CLI tooling
 
 
 <!-- MANUAL ADDITIONS START -->

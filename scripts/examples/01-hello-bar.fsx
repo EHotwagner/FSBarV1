@@ -7,7 +7,7 @@ printfn "Starting headless BAR session..."
 use client = BarClient.startHeadless()
 
 printfn "Stepping 5 frames..."
-for frame in client.Frames |> Seq.truncate 5 do
+client.WaitFrames 5 (fun frame ->
     printfn "  Frame %d: %d events" frame.FrameNumber frame.Events.Length
     for ev in frame.Events do
         match ev with
@@ -15,7 +15,7 @@ for frame in client.Frames |> Seq.truncate 5 do
         | GameEvent.UnitCreated(uid, bid) -> printfn "    UnitCreated: %d (builder: %d)" uid bid
         | GameEvent.UnitFinished uid -> printfn "    UnitFinished: %d" uid
         | GameEvent.Update f -> printfn "    Update: frame %d" f
-        | _ -> ()
+        | _ -> ())
 
 printfn "Stopping..."
 client.Stop()

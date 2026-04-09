@@ -22,7 +22,7 @@ type EventTests(engine: EngineFixture) =
     [<Fact>]
     [<Trait("Category", "Events")>]
     member _.``Update events received with matching frame numbers``() =
-        let frames = engine.Client.Frames |> Seq.truncate 5 |> Seq.toList
+        let frames = let collected = System.Collections.Generic.List<_>() in engine.Client.WaitFrames 5 collected.Add; collected |> Seq.toList
 
         Assert.True(frames.Length >= 5, $"Should have at least 5 frames, got {frames.Length}")
 
@@ -75,7 +75,7 @@ type EventTests(engine: EngineFixture) =
     [<Fact>]
     [<Trait("Category", "Events")>]
     member _.``Unknown events do not crash the frame loop``() =
-        let frames = engine.Client.Frames |> Seq.truncate 10 |> Seq.toList
+        let frames = let collected = System.Collections.Generic.List<_>() in engine.Client.WaitFrames 10 collected.Add; collected |> Seq.toList
 
         Assert.True(frames.Length >= 10,
             $"Should have processed 10 frames without crashing, got {frames.Length}")

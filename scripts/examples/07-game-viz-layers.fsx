@@ -13,8 +13,7 @@ GameViz.start None
 GameViz.attachToClient client
 
 // Step a few frames to get initial data
-for frame in client.Frames |> Seq.truncate 30 do
-    GameViz.onFrame frame
+client.WaitFrames 30 (fun frame -> GameViz.onFrame frame)
 
 printfn "=== Layer Switching Demo ==="
 printfn "Switching through base layers..."
@@ -34,8 +33,7 @@ for (layer, name) in layers do
     System.Threading.Thread.Sleep(2000)
 
     // Keep feeding frames
-    for frame in client.Frames |> Seq.truncate 10 do
-        GameViz.onFrame frame
+    client.WaitFrames 10 (fun frame -> GameViz.onFrame frame)
 
 printfn ""
 printfn "=== Overlay Demo ==="

@@ -4,7 +4,7 @@
 //
 // Then use:
 //   let client = BarClient.startHeadless()
-//   for frame in client.Frames |> Seq.truncate 1 do printfn "%A" frame
+//   use sub = client.Frames.Subscribe(fun frame -> printfn "%A" frame)
 //   client.Stop()
 
 #r "nuget: FSBar.Viz, *-*"

@@ -15,6 +15,9 @@
     <Compile Include="EventsTests.fs" />
     <Compile Include="ConnectionTests.fs" />
     <Compile Include="ProtocolTests.fs" />
+    <Compile Include="MapQueryTests.fs" />
+    <Compile Include="UnitDefCacheTests.fs" />
+    <Compile Include="GameStateTests.fs" />
     <Compile Include="BarClientTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>

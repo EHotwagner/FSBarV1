@@ -51,6 +51,8 @@ let private lineDiff (expected: string) (actual: string) =
 [<InlineData("MapQuery")>]
 [<InlineData("Protocol")>]
 [<InlineData("ScriptGenerator")>]
+[<InlineData("UnitDefCache")>]
+[<InlineData("GameState")>]
 let ``baseline_matches_fsi_surface`` (moduleName: string) =
     let fsiPath = Path.Combine(clientSrcDir, sprintf "%s.fsi" moduleName)
     let baselinePath = Path.Combine(baselinesDir, sprintf "%s.baseline" moduleName)

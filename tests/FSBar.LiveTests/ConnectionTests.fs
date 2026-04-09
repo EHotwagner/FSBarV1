@@ -44,7 +44,7 @@ type ConnectionTests(engine: EngineFixture) =
     [<Trait("Category", "Connection")>]
     member _.``Empty command responses work for consecutive frames``() =
         let client = engine.Client
-        let frames = client.Frames |> Seq.truncate 5 |> Seq.toList
+        let frames = let collected = System.Collections.Generic.List<_>() in client.WaitFrames 5 collected.Add; collected |> Seq.toList
 
         Assert.True(frames.Length >= 5,
             $"Should have received at least 5 frames, got {frames.Length}")
@@ -57,6 +57,6 @@ type ConnectionTests(engine: EngineFixture) =
     [<Trait("Category", "Connection")>]
     member _.``Graceful disconnect after receiving frames``() =
         let client = engine.Client
-        let frames = client.Frames |> Seq.truncate 3 |> Seq.toList
+        let frames = let collected = System.Collections.Generic.List<_>() in client.WaitFrames 3 collected.Add; collected |> Seq.toList
         Assert.True(frames.Length >= 3, $"Should have processed at least 3 frames")
         Assert.True(engine.IsEngineAlive, "Engine should still be alive")

@@ -39,6 +39,16 @@ module MapCache =
     /// Clears all cached map grid and passability data.
     /// Call this when starting a new game session to avoid stale data.
     /// </summary>
+    let refreshDynamic (stream: NetworkStream) : unit =
+        match gridCache.TryGetValue("__engine__") with
+        | true, lazyGrid when lazyGrid.IsValueCreated ->
+            let grid = lazyGrid.Value
+            let refreshed = grid |> MapGrid.refreshLos stream |> MapGrid.refreshRadar stream
+            gridCache.["__engine__"] <- Lazy<MapGrid>(fun () -> refreshed)
+            // Clear passability cache since LOS/radar changed
+            passabilityCache.Clear()
+        | _ -> ()  // No grid loaded yet, nothing to refresh
+
     let clear () =
         gridCache.Clear()
         passabilityCache.Clear()

@@ -21,9 +21,9 @@ type GameVizIntegrationTests(engine: VizEngineFixture, output: ITestOutputHelper
     let stepFrames (n: int) =
         ensureVizRunning ()
         let mutable lastFrame = Unchecked.defaultof<GameFrame>
-        for frame in engine.Client.Frames |> Seq.truncate n do
+        engine.Client.WaitFrames n (fun frame ->
             lastFrame <- frame
-            GameViz.onFrame lastFrame
+            GameViz.onFrame lastFrame)
         lastFrame
 
     // --- US1: Live Map ---

@@ -101,6 +101,22 @@ module MapQuery =
     /// <param name="z2">Bottom edge Z coordinate in elmos.</param>
     /// <param name="threshold">Minimum resource value (exclusive) to include in results.</param>
     /// <returns>A list of (gridX, gridZ, resourceValue) tuples sorted by value descending.</returns>
+    let nearestMetalSpot (spots: (float32 * float32 * float32 * float32) array) (position: float32 * float32 * float32) : (float32 * float32 * float32 * float32) option =
+        if spots.Length = 0 then None
+        else
+            let px, _py, pz = position
+            let mutable bestDist = System.Single.MaxValue
+            let mutable bestIdx = 0
+            for i in 0 .. spots.Length - 1 do
+                let (sx, _sy, sz, _v) = spots.[i]
+                let dx = sx - px
+                let dz = sz - pz
+                let dist = dx * dx + dz * dz
+                if dist < bestDist then
+                    bestDist <- dist
+                    bestIdx <- i
+            Some spots.[bestIdx]
+
     let resourceHotspots (grid: MapGrid) (x1: int) (z1: int) (x2: int) (z2: int) (threshold: int) : (int * int * int) list =
         let rw = Array2D.length1 grid.ResourceMap
         let rh = Array2D.length2 grid.ResourceMap

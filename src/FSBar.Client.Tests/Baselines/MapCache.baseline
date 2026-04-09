@@ -29,4 +29,8 @@ module MapCache =
     /// Clears all cached map grid and passability data.
     /// Call this when starting a new game session to avoid stale data.
     /// </summary>
+    /// Refreshes dynamic map layers (LOS, radar) from the engine.
+    /// No-op if the map has not been loaded yet.
+    val refreshDynamic: stream: System.Net.Sockets.NetworkStream -> unit
+
     val clear: unit -> unit

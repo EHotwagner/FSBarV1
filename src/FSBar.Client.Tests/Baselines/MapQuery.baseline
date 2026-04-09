@@ -50,6 +50,10 @@ module MapQuery =
     /// <param name="z2">Bottom edge Z coordinate in elmos.</param>
     /// <param name="threshold">Minimum resource value (exclusive) to include in results.</param>
     /// <returns>A list of (gridX, gridZ, resourceValue) tuples sorted by value descending.</returns>
+    /// Finds the nearest metal spot to the given world position.
+    /// Returns None if the spots array is empty.
+    val nearestMetalSpot: spots: (float32 * float32 * float32 * float32) array -> position: float32 * float32 * float32 -> (float32 * float32 * float32 * float32) option
+
     val resourceHotspots: grid: MapGrid -> x1: int -> z1: int -> x2: int -> z2: int -> threshold: int -> (int * int * int) list
 
     /// <summary>Converts elmo (world) coordinates to heightmap grid indices by dividing by 8.</summary>

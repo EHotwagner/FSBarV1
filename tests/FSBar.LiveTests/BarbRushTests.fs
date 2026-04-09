@@ -44,8 +44,8 @@ type BarbFixture() =
             c.Start()
 
             let warmup = ResizeArray<GameFrame>()
-            for frame in c.Frames |> Seq.truncate 30 do
-                warmup.Add(frame)
+            c.WaitFrames 30 (fun frame ->
+                warmup.Add(frame))
 
             initialFrames <- warmup |> Seq.toList
             initialEvents <- initialFrames |> List.collect (fun f -> f.Events)
