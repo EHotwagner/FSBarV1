@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>FSBar.Proto</RootNamespace>
     <PackageId>FSBar.Proto</PackageId>
-    <VersionPrefix>0.1.1</VersionPrefix>
+    <VersionPrefix>0.1.2</VersionPrefix>
     <Description>F# protobuf bindings for HighBar V2 protocol</Description>
   </PropertyGroup>
 

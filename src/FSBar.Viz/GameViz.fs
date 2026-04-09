@@ -422,7 +422,7 @@ module GameViz =
             indicators <- indicators |> List.filter (fun i -> frameNum - i.FrameCreated < i.DurationFrames)
 
             // Query economy
-            let metalEcon =
+            let metalEcon : EconomyData =
                 try
                     { Current = Callbacks.getEconomyCurrent stream 0
                       Income = Callbacks.getEconomyIncome stream 0
@@ -431,7 +431,7 @@ module GameViz =
                 with
                 | _ -> VizDefaults.defaultEconomy
 
-            let energyEcon =
+            let energyEcon : EconomyData =
                 try
                     { Current = Callbacks.getEconomyCurrent stream 1
                       Income = Callbacks.getEconomyIncome stream 1
