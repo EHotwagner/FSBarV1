@@ -24,16 +24,15 @@ type CommandTests(engine: EngineFixture) =
         let uid = builderUnitId.Value
         let mutable moveSent = false
 
-        let frames =
-            engine.Client.Run(35, fun frame ->
-                if not moveSent then
-                    moveSent <- true
-                    [ Commands.MoveCommand uid 2048.0f 100.0f 2048.0f ]
-                else
-                    [])
+        let frames = ResizeArray<GameFrame>()
+        for frame in engine.Client.Frames |> Seq.truncate 35 do
+            frames.Add(frame)
+            if not moveSent then
+                moveSent <- true
+                engine.Client.SendCommands [ Commands.MoveCommand uid 2048.0f 100.0f 2048.0f ]
 
         Assert.True(moveSent, "Should have sent MoveCommand")
-        Assert.True(frames.Length >= 35, $"Should have run 35 frames, got {frames.Length}")
+        Assert.True(frames.Count >= 35, $"Should have run 35 frames, got {frames.Count}")
 
     [<Fact>]
     [<Trait("Category", "Commands")>]
@@ -45,19 +44,16 @@ type CommandTests(engine: EngineFixture) =
         let mutable buildSent = false
         let createdAfterBuild = ResizeArray<int>()
 
-        let _frames =
-            engine.Client.Run(70, fun frame ->
-                if buildSent then
-                    frame.Events |> List.iter (function
-                        | GameEvent.UnitCreated(newUid, _) -> createdAfterBuild.Add(newUid)
-                        | _ -> ())
+        for frame in engine.Client.Frames |> Seq.truncate 70 do
+            if buildSent then
+                frame.Events |> List.iter (function
+                    | GameEvent.UnitCreated(newUid, _) -> createdAfterBuild.Add(newUid)
+                    | _ -> ())
 
-                if not buildSent then
-                    buildSent <- true
-                    // Build unit def ID 1 (generic) at a position near the commander
-                    [ Commands.BuildCommand uid 1 600.0f 100.0f 600.0f 0 ]
-                else
-                    [])
+            if not buildSent then
+                buildSent <- true
+                // Build unit def ID 1 (generic) at a position near the commander
+                engine.Client.SendCommands [ Commands.BuildCommand uid 1 600.0f 100.0f 600.0f 0 ]
 
         Assert.True(buildSent, "Should have sent BuildCommand")
 
@@ -72,20 +68,19 @@ type CommandTests(engine: EngineFixture) =
         let mutable stopSent = false
         let mutable frameIdx = 0
 
-        let frames =
-            engine.Client.Run(25, fun _ ->
-                frameIdx <- frameIdx + 1
-                if not moveSent && frameIdx >= 3 then
-                    moveSent <- true
-                    [ Commands.MoveCommand uid 2048.0f 100.0f 2048.0f ]
-                elif moveSent && not stopSent && frameIdx >= 10 then
-                    stopSent <- true
-                    [ Commands.StopCommand uid ]
-                else
-                    [])
+        let frames = ResizeArray<GameFrame>()
+        for frame in engine.Client.Frames |> Seq.truncate 25 do
+            frames.Add(frame)
+            frameIdx <- frameIdx + 1
+            if not moveSent && frameIdx >= 3 then
+                moveSent <- true
+                engine.Client.SendCommands [ Commands.MoveCommand uid 2048.0f 100.0f 2048.0f ]
+            elif moveSent && not stopSent && frameIdx >= 10 then
+                stopSent <- true
+                engine.Client.SendCommands [ Commands.StopCommand uid ]
 
         Assert.True(stopSent, "Should have sent StopCommand")
-        Assert.True(frames.Length >= 25, $"Should have run 25 frames, got {frames.Length}")
+        Assert.True(frames.Count >= 25, $"Should have run 25 frames, got {frames.Count}")
 
     [<Fact>]
     [<Trait("Category", "Commands")>]
@@ -97,23 +92,24 @@ type CommandTests(engine: EngineFixture) =
         let mutable commandsSent = 0
         let mutable frameIdx = 0
 
-        let frames =
-            engine.Client.Run(30, fun _ ->
-                frameIdx <- frameIdx + 1
-                match frameIdx with
-                | 5 ->
-                    commandsSent <- commandsSent + 1
-                    [ Commands.PatrolCommand uid 1024.0f 100.0f 1024.0f ]
-                | 10 ->
-                    commandsSent <- commandsSent + 1
-                    [ Commands.GuardCommand uid uid ]
-                | 15 ->
-                    commandsSent <- commandsSent + 1
-                    [ Commands.AttackCommand uid 99999 ]
-                | 20 ->
-                    commandsSent <- commandsSent + 1
-                    [ Commands.FightCommand uid 1500.0f 100.0f 1500.0f ]
-                | _ -> [])
+        let frames = ResizeArray<GameFrame>()
+        for frame in engine.Client.Frames |> Seq.truncate 30 do
+            frames.Add(frame)
+            frameIdx <- frameIdx + 1
+            match frameIdx with
+            | 5 ->
+                commandsSent <- commandsSent + 1
+                engine.Client.SendCommands [ Commands.PatrolCommand uid 1024.0f 100.0f 1024.0f ]
+            | 10 ->
+                commandsSent <- commandsSent + 1
+                engine.Client.SendCommands [ Commands.GuardCommand uid uid ]
+            | 15 ->
+                commandsSent <- commandsSent + 1
+                engine.Client.SendCommands [ Commands.AttackCommand uid 99999 ]
+            | 20 ->
+                commandsSent <- commandsSent + 1
+                engine.Client.SendCommands [ Commands.FightCommand uid 1500.0f 100.0f 1500.0f ]
+            | _ -> ()
 
         Assert.True(commandsSent >= 4, $"Should have sent 4 commands, sent {commandsSent}")
-        Assert.True(frames.Length >= 30, "Should complete 30 frames without crashing")
+        Assert.True(frames.Count >= 30, "Should complete 30 frames without crashing")

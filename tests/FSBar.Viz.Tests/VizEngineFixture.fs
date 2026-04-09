@@ -70,8 +70,7 @@ type VizEngineFixture() =
             c.Start()
 
             let warmupFrames = ResizeArray<GameFrame>()
-            for _ in 1..30 do
-                let frame = c.Step()
+            for frame in c.Frames |> Seq.truncate 30 do
                 warmupFrames.Add(frame)
 
             initialFrames <- warmupFrames |> Seq.toList

@@ -48,10 +48,11 @@ module LiveSession =
             Thread(fun () ->
                 printfn "[LiveSession] Step loop started."
                 try
-                    while handle.IsRunning do
-                        let frame = client.Step()
-                        GameViz.onFrame frame
-                        handle.IncrementFrameCount()
+                    for frame in client.Frames do
+                        if not handle.IsRunning then ()
+                        else
+                            GameViz.onFrame frame
+                            handle.IncrementFrameCount()
                 with
                 | ex ->
                     if handle.IsRunning then

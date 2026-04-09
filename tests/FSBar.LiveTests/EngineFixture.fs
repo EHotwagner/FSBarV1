@@ -101,8 +101,7 @@ type EngineFixture() =
 
             // Warm-up: capture first 30 frames with one-time events
             let warmupFrames = ResizeArray<GameFrame>()
-            for _ in 1..30 do
-                let frame = c.Step()
+            for frame in c.Frames |> Seq.truncate 30 do
                 warmupFrames.Add(frame)
 
             initialFrames <- warmupFrames |> Seq.toList

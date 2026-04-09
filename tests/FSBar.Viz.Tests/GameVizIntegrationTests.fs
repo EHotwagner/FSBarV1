@@ -21,8 +21,8 @@ type GameVizIntegrationTests(engine: VizEngineFixture, output: ITestOutputHelper
     let stepFrames (n: int) =
         ensureVizRunning ()
         let mutable lastFrame = Unchecked.defaultof<GameFrame>
-        for _ in 1..n do
-            lastFrame <- engine.Client.Step()
+        for frame in engine.Client.Frames |> Seq.truncate n do
+            lastFrame <- frame
             GameViz.onFrame lastFrame
         lastFrame
 
