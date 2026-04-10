@@ -3,17 +3,13 @@ namespace FSBar.Viz
 open SkiaSharp
 open FSBar.Client
 
-/// Renders MapGrid data layers to SKBitmap images with color mapping.
+/// Renders map data layers to SKBitmap with caching.
 module LayerRenderer =
-    /// Render a map layer to a bitmap using the given color scheme.
-    /// Results are cached; call invalidateCache to force re-render.
+    /// Renders a map layer to a bitmap using the given color scheme.
     val renderLayer: grid: MapGrid -> layer: LayerKind -> scheme: ColorScheme -> SKBitmap
-
-    /// Invalidate cached bitmap for a specific layer kind.
+    /// Invalidates the cached bitmap for a specific layer.
     val invalidateCache: layer: LayerKind -> unit
-
-    /// Invalidate all cached bitmaps.
+    /// Invalidates all cached bitmaps.
     val invalidateAll: unit -> unit
-
-    /// Returns (cacheHits, cacheMisses) since last reset.
+    /// Returns (hits, misses) cache statistics.
     val cacheStats: unit -> int * int

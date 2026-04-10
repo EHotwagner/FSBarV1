@@ -21,6 +21,13 @@ type OverlayKind =
     | MetalSpots
     | EconomyHud
 
+[<RequireQualifiedAccess>]
+type EventKind =
+    | UnitCreated
+    | UnitDestroyed
+    | EnemySpotted
+    | Combat
+
 type ColorScheme =
     { Name: string
       MapValue: float32 -> SKColor }
@@ -43,13 +50,6 @@ type VizConfig =
       GridLineSpacing: int
       BackgroundColor: SKColor
       LabelColor: SKColor }
-
-[<RequireQualifiedAccess>]
-type EventKind =
-    | UnitCreated
-    | UnitDestroyed
-    | EnemySpotted
-    | Combat
 
 type UnitState =
     { UnitId: int
@@ -118,9 +118,9 @@ module VizDefaults =
         { BaseLayer = LayerKind.HeightMap
           ActiveOverlays = Set.empty
           ColorSchemes = Map.empty
-          UnitMarkerSize = 10.0f
-          OverlayOpacity = 0.7f
+          UnitMarkerSize = 6.0f
+          OverlayOpacity = 0.8f
           ShowGridLines = false
           GridLineSpacing = 16
-          BackgroundColor = SKColor(26uy, 31uy, 38uy)
+          BackgroundColor = SKColors.Black
           LabelColor = SKColors.White }

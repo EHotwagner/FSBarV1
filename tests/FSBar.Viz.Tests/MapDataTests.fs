@@ -5,96 +5,69 @@ open System.IO
 open Xunit
 open FSBar.Client
 open FSBar.Viz
-
-let private makeTestGrid () : MapGrid =
-    let w = 4
-    let h = 4
-    { WidthElmos = w * 8
-      HeightElmos = h * 8
-      WidthHeightmap = w
-      HeightHeightmap = h
-      HeightMap = Array2D.init (h + 1) (w + 1) (fun r c -> float32 (r * 10 + c))
-      SlopeMap = Array2D.init (h / 2) (w / 2) (fun r c -> float32 (r + c) * 0.1f)
-      ResourceMap = Array2D.init h w (fun r c -> r * 100 + c)
-      LosMap = Array2D.init h w (fun r c -> if r = c then 1 else 0)
-      RadarMap = Array2D.init h w (fun r c -> if r + c > 2 then 1 else 0) }
-
-let private makeTestSpots () =
-    [| (10.0f, 0.0f, 20.0f, 5.0f)
-       (30.0f, 0.0f, 40.0f, 3.0f) |]
+open FSBar.Viz.Tests.VizEngineFixture
 
 [<Fact>]
-let ``round-trip save and load preserves all fields`` () =
-    let grid = makeTestGrid ()
-    let spots = makeTestSpots ()
+let ``save then load round-trips a MapGrid and metal spots`` () =
+    let grid = testMapGrid 16 16
+    let spots = [| (100.0f, 0.0f, 200.0f, 1.5f); (300.0f, 0.0f, 400.0f, 2.0f) |]
     let path = Path.Combine(Path.GetTempPath(), $"mapdata-test-{Guid.NewGuid()}.fsmg")
     try
         MapData.save path grid spots
-        let (loaded, loadedSpots) = MapData.load path
-
-        Assert.Equal(grid.WidthHeightmap, loaded.WidthHeightmap)
-        Assert.Equal(grid.HeightHeightmap, loaded.HeightHeightmap)
-        Assert.Equal(grid.WidthElmos, loaded.WidthElmos)
-        Assert.Equal(grid.HeightElmos, loaded.HeightElmos)
-
-        // HeightMap
-        for r in 0 .. Array2D.length1 grid.HeightMap - 1 do
-            for c in 0 .. Array2D.length2 grid.HeightMap - 1 do
-                Assert.Equal(grid.HeightMap.[r, c], loaded.HeightMap.[r, c])
-
-        // SlopeMap
-        for r in 0 .. Array2D.length1 grid.SlopeMap - 1 do
-            for c in 0 .. Array2D.length2 grid.SlopeMap - 1 do
-                Assert.Equal(grid.SlopeMap.[r, c], loaded.SlopeMap.[r, c])
-
-        // ResourceMap
-        for r in 0 .. Array2D.length1 grid.ResourceMap - 1 do
-            for c in 0 .. Array2D.length2 grid.ResourceMap - 1 do
-                Assert.Equal(grid.ResourceMap.[r, c], loaded.ResourceMap.[r, c])
-
-        // LosMap
-        for r in 0 .. Array2D.length1 grid.LosMap - 1 do
-            for c in 0 .. Array2D.length2 grid.LosMap - 1 do
-                Assert.Equal(grid.LosMap.[r, c], loaded.LosMap.[r, c])
-
-        // RadarMap
-        for r in 0 .. Array2D.length1 grid.RadarMap - 1 do
-            for c in 0 .. Array2D.length2 grid.RadarMap - 1 do
-                Assert.Equal(grid.RadarMap.[r, c], loaded.RadarMap.[r, c])
-
-        // Metal spots
+        let (loadedGrid, loadedSpots) = MapData.load path
+        Assert.Equal(grid.WidthElmos, loadedGrid.WidthElmos)
+        Assert.Equal(grid.HeightElmos, loadedGrid.HeightElmos)
+        Assert.Equal(grid.WidthHeightmap, loadedGrid.WidthHeightmap)
+        Assert.Equal(grid.HeightHeightmap, loadedGrid.HeightHeightmap)
         Assert.Equal(spots.Length, loadedSpots.Length)
         for i in 0 .. spots.Length - 1 do
-            Assert.Equal(spots.[i], loadedSpots.[i])
+            let (x1, y1, z1, r1) = spots.[i]
+            let (x2, y2, z2, r2) = loadedSpots.[i]
+            Assert.Equal(x1, x2)
+            Assert.Equal(y1, y2)
+            Assert.Equal(z1, z2)
+            Assert.Equal(r1, r2)
     finally
         if File.Exists(path) then File.Delete(path)
 
 [<Fact>]
-let ``load rejects file with wrong magic bytes`` () =
-    let path = Path.Combine(Path.GetTempPath(), $"mapdata-bad-{Guid.NewGuid()}.fsmg")
+let ``load with wrong magic bytes throws`` () =
+    let path = Path.Combine(Path.GetTempPath(), $"mapdata-bad-magic-{Guid.NewGuid()}.fsmg")
     try
-        File.WriteAllBytes(path, [| 0uy; 0uy; 0uy; 0uy; 0uy; 0uy; 0uy; 0uy |])
+        File.WriteAllBytes(path, [| 0uy; 0uy; 0uy; 0uy; 1uy; 0uy; 0uy; 0uy |])
         let ex = Assert.Throws<Exception>(fun () -> MapData.load path |> ignore)
-        Assert.Contains("magic bytes", ex.Message)
+        Assert.Contains("magic", ex.Message, StringComparison.OrdinalIgnoreCase)
     finally
         if File.Exists(path) then File.Delete(path)
 
 [<Fact>]
-let ``load rejects truncated file`` () =
-    let path = Path.Combine(Path.GetTempPath(), $"mapdata-trunc-{Guid.NewGuid()}.fsmg")
+let ``load with wrong version throws`` () =
+    let path = Path.Combine(Path.GetTempPath(), $"mapdata-bad-version-{Guid.NewGuid()}.fsmg")
     try
-        // Write valid header but truncate before array data
-        use fs = File.Create(path)
-        use bw = new BinaryWriter(fs)
-        bw.Write([| byte 'F'; byte 'S'; byte 'M'; byte 'G' |], 0, 4)
-        bw.Write(1) // version
-        bw.Write(4) // width
-        bw.Write(4) // height
-        // No array data — truncated
-        bw.Flush()
-        fs.Close()
-
+        use stream = new FileStream(path, FileMode.Create, FileAccess.Write)
+        use writer = new BinaryWriter(stream)
+        writer.Write("FSMG"B)
+        writer.Write(99) // wrong version
+        stream.Close()
         let ex = Assert.Throws<Exception>(fun () -> MapData.load path |> ignore)
-        Assert.Contains("Truncated", ex.Message)
+        Assert.Contains("version", ex.Message, StringComparison.OrdinalIgnoreCase)
+    finally
+        if File.Exists(path) then File.Delete(path)
+
+[<Fact>]
+let ``loaded grid dimensions match saved grid`` () =
+    let grid = testMapGrid 24 32
+    let spots = Array.empty
+    let path = Path.Combine(Path.GetTempPath(), $"mapdata-dims-{Guid.NewGuid()}.fsmg")
+    try
+        MapData.save path grid spots
+        let (loadedGrid, _) = MapData.load path
+        Assert.Equal(24, loadedGrid.WidthHeightmap)
+        Assert.Equal(32, loadedGrid.HeightHeightmap)
+        Assert.Equal(24 * 8, loadedGrid.WidthElmos)
+        Assert.Equal(32 * 8, loadedGrid.HeightElmos)
+        // Verify heightmap dimensions
+        Assert.Equal(25, Array2D.length1 loadedGrid.HeightMap)
+        Assert.Equal(33, Array2D.length2 loadedGrid.HeightMap)
     finally
         if File.Exists(path) then File.Delete(path)

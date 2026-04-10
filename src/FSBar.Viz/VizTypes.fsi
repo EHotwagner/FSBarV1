@@ -3,7 +3,7 @@ namespace FSBar.Viz
 open SkiaSharp
 open FSBar.Client
 
-/// Identifies which base map layer to render.
+/// Selects which map data layer to render as the base.
 [<RequireQualifiedAccess>]
 type LayerKind =
     | HeightMap
@@ -14,7 +14,7 @@ type LayerKind =
     | TerrainClassification
     | Passability of MoveType
 
-/// Identifies toggleable overlay layers drawn on top of the base layer.
+/// Toggle-able visual overlays rendered on top of the base layer.
 [<RequireQualifiedAccess>]
 type OverlayKind =
     | Units
@@ -23,12 +23,20 @@ type OverlayKind =
     | MetalSpots
     | EconomyHud
 
-/// Defines how scalar values in [0..1] map to colors for a given layer.
+/// Transient visual event types for animated indicators.
+[<RequireQualifiedAccess>]
+type EventKind =
+    | UnitCreated
+    | UnitDestroyed
+    | EnemySpotted
+    | Combat
+
+/// Maps a normalized float32 value in [0..1] to a color.
 type ColorScheme =
     { Name: string
       MapValue: float32 -> SKColor }
 
-/// Camera/viewport state for the map view.
+/// Camera/viewport state controlling the current view.
 type ViewState =
     { Scale: float32
       OriginX: float32
@@ -37,7 +45,7 @@ type ViewState =
       WindowHeight: int
       AutoFit: bool }
 
-/// User-customizable visualization settings.
+/// Visualization configuration record.
 type VizConfig =
     { BaseLayer: LayerKind
       ActiveOverlays: Set<OverlayKind>
@@ -49,15 +57,7 @@ type VizConfig =
       BackgroundColor: SKColor
       LabelColor: SKColor }
 
-/// Kind of visual event indicator.
-[<RequireQualifiedAccess>]
-type EventKind =
-    | UnitCreated
-    | UnitDestroyed
-    | EnemySpotted
-    | Combat
-
-/// Tracked state of a single game unit.
+/// Tracked unit snapshot for visualization.
 type UnitState =
     { UnitId: int
       PositionX: float32
@@ -69,7 +69,7 @@ type UnitState =
       MaxHealth: float32
       IsEnemy: bool }
 
-/// Transient visual indicator for a game event.
+/// Transient visual effect with lifecycle.
 type EventIndicator =
     { PositionX: float32
       PositionY: float32
@@ -78,14 +78,14 @@ type EventIndicator =
       FrameCreated: int
       DurationFrames: int }
 
-/// Economy data for a single resource.
+/// Resource economy snapshot for HUD display.
 type EconomyData =
     { Current: float32
       Income: float32
       Usage: float32
       Storage: float32 }
 
-/// Complete game state for a single visualization frame.
+/// Complete game state for one rendered frame.
 type GameSnapshot =
     { FrameNumber: int
       MapGrid: MapGrid
@@ -96,7 +96,7 @@ type GameSnapshot =
       MetalSpots: (float32 * float32 * float32 * float32) array
       Connected: bool }
 
-/// Unified command type for all user interactions.
+/// User interaction commands.
 [<RequireQualifiedAccess>]
 type VizCommand =
     | SetBaseLayer of LayerKind
@@ -110,7 +110,7 @@ type VizCommand =
     | ToggleGridLines
     | Stop
 
-/// Default configuration values.
+/// Default values for visualization state.
 module VizDefaults =
     val defaultViewState: ViewState
     val defaultEconomy: EconomyData

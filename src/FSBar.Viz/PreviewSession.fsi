@@ -1,19 +1,14 @@
 namespace FSBar.Viz
 
-open System
 open FSBar.Client
 
-/// Offline preview session: renders saved map data and mock game states via SkiaViewer.
-/// All interactive controls (pan, zoom, layer switching, overlay toggling) work during preview.
+/// Offline preview and playback via SkiaViewer.
 module PreviewSession =
-    /// Start a viewer showing a static map with default overlays.
-    val startWithMap: grid: MapGrid -> IDisposable
-
-    /// Start a viewer showing a full game snapshot with all overlays.
-    val startWithSnapshot: snapshot: GameSnapshot -> IDisposable
-
-    /// Play back a sequence of snapshots at the specified game-fps. Viewer renders at 60fps.
-    val startPlayback: frames: GameSnapshot seq -> gameFps': int -> IDisposable
-
-    /// Stop any running preview session.
+    /// Opens a viewer showing the given map grid with the default layer.
+    val startWithMap: grid: MapGrid -> System.IDisposable
+    /// Opens a viewer showing a single static snapshot.
+    val startWithSnapshot: snapshot: GameSnapshot -> System.IDisposable
+    /// Opens a viewer playing back a sequence of snapshots at the given game FPS, looping.
+    val startPlayback: frames: GameSnapshot seq -> gameFps: int -> System.IDisposable
+    /// Stops the current preview session.
     val stop: unit -> unit

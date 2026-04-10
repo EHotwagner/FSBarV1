@@ -1,501 +1,358 @@
 namespace FSBar.Viz
 
 open System
-open FSBar.Client
+open SkiaSharp
 open SkiaViewer
+open FSBar.Client
+open Silk.NET.Input
 
 module GameViz =
+
     let private stateLock = obj ()
     let mutable private config = VizDefaults.defaultConfig
     let mutable private viewState = VizDefaults.defaultViewState
     let mutable private snapshot: GameSnapshot option = None
     let mutable private viewer: ViewerHandle option = None
+    let mutable private sceneEvent: Event<Scene> option = None
+    let mutable private inputSub: IDisposable option = None
     let mutable private clientRef: BarClient option = None
     let mutable private mapGridRef: MapGrid option = None
     let mutable private myTeamId = 0
     let mutable private units: Map<int, UnitState> = Map.empty
     let mutable private indicators: EventIndicator list = []
+    let mutable private metalSpots: (float32 * float32 * float32 * float32) array = [||]
+    let mutable private dragStart: (float32 * float32) option = None
+    let mutable private dragOrigin: (float32 * float32) option = None
+    let mutable private autoFitDone = false
 
-    let private emptySnapshot =
-        { FrameNumber = 0
-          MapGrid =
-            { WidthElmos = 0
-              HeightElmos = 0
-              WidthHeightmap = 0
-              HeightHeightmap = 0
-              HeightMap = Array2D.zeroCreate 1 1
-              SlopeMap = Array2D.zeroCreate 1 1
-              ResourceMap = Array2D.zeroCreate 1 1
-              LosMap = Array2D.zeroCreate 1 1
-              RadarMap = Array2D.zeroCreate 1 1 }
-          Units = Map.empty
-          EventIndicators = []
-          EconomyMetal = VizDefaults.defaultEconomy
-          EconomyEnergy = VizDefaults.defaultEconomy
-          MetalSpots = [||]
-          Connected = true }
+    let private computeAutoFit (grid: MapGrid) =
+        let mapW = float32 grid.WidthHeightmap
+        let mapH = float32 grid.HeightHeightmap
+        let scaleX = float32 viewState.WindowWidth / mapW
+        let scaleY = float32 viewState.WindowHeight / mapH
+        let scale = min scaleX scaleY
+        viewState <- { viewState with Scale = scale; OriginX = 0.0f; OriginY = 0.0f; AutoFit = false }
 
-    let private getSnapshot () =
-        lock stateLock (fun () -> snapshot |> Option.defaultValue emptySnapshot)
+    let private buildSnapshot (grid: MapGrid) (frameNum: int) (connected: bool) (metalEcon: EconomyData) (energyEcon: EconomyData) =
+        { FrameNumber = frameNum
+          MapGrid = grid
+          Units = units
+          EventIndicators = indicators
+          EconomyMetal = metalEcon
+          EconomyEnergy = energyEcon
+          MetalSpots = metalSpots
+          Connected = connected }
 
-    let private getConfig () = lock stateLock (fun () -> config)
-    let private getViewState () = lock stateLock (fun () -> viewState)
+    let private emitScene () =
+        match sceneEvent, snapshot with
+        | Some evt, Some snap ->
+            let scene = SceneBuilder.buildScene snap config viewState
+            evt.Trigger scene
+        | _ -> ()
 
-    let private computeAutoFit (grid: MapGrid) (ww: int) (wh: int) =
-        if grid.WidthHeightmap <= 0 || grid.HeightHeightmap <= 0 then
-            ()
-        else
-            let scaleX = float32 ww / float32 grid.WidthHeightmap
-            let scaleY = float32 wh / float32 grid.HeightHeightmap
-            let s = min scaleX scaleY
-            let ox = (float32 ww - float32 grid.WidthHeightmap * s) / 2.0f
-            let oy = (float32 wh - float32 grid.HeightHeightmap * s) / 2.0f
-
-            lock stateLock (fun () ->
-                viewState <-
-                    { viewState with
-                        Scale = s
-                        OriginX = ox
-                        OriginY = oy
-                        WindowWidth = ww
-                        WindowHeight = wh })
-
-    let private processCommand (cmd: VizCommand) =
+    let private processKey (key: Key) =
         lock stateLock (fun () ->
-            match cmd with
-            | VizCommand.SetBaseLayer layer -> config <- { config with BaseLayer = layer }
-            | VizCommand.ToggleOverlay overlay ->
-                if config.ActiveOverlays.Contains overlay then
-                    config <- { config with ActiveOverlays = config.ActiveOverlays.Remove overlay }
-                else
-                    config <- { config with ActiveOverlays = config.ActiveOverlays.Add overlay }
-            | VizCommand.Pan(dx, dy) ->
-                viewState <-
-                    { viewState with
-                        OriginX = viewState.OriginX + dx
-                        OriginY = viewState.OriginY + dy
-                        AutoFit = false }
-            | VizCommand.Zoom(factor, cx, cy) ->
-                let newScale = viewState.Scale * factor |> max 0.1f |> min 100.0f
-                let ratio = newScale / viewState.Scale
-                let newOx = cx - (cx - viewState.OriginX) * ratio
-                let newOy = cy - (cy - viewState.OriginY) * ratio
-
-                viewState <-
-                    { viewState with
-                        Scale = newScale
-                        OriginX = newOx
-                        OriginY = newOy
-                        AutoFit = false }
-            | VizCommand.ResetView ->
-                viewState <- { viewState with AutoFit = true }
-
-                match mapGridRef with
-                | Some g -> computeAutoFit g viewState.WindowWidth viewState.WindowHeight
-                | None -> ()
-            | VizCommand.SetColorScheme(layer, scheme) ->
-                config <-
-                    { config with
-                        ColorSchemes = config.ColorSchemes.Add(layer, scheme) }
-
-                LayerRenderer.invalidateCache layer
-            | VizCommand.SetMarkerSize size -> config <- { config with UnitMarkerSize = size }
-            | VizCommand.SetOverlayOpacity opacity ->
-                config <- { config with OverlayOpacity = opacity |> max 0.0f |> min 1.0f }
-            | VizCommand.ToggleGridLines -> config <- { config with ShowGridLines = not config.ShowGridLines }
-            | VizCommand.Stop -> ())
-
-    let private processKeyDown (key: Silk.NET.Input.Key) =
-        let cmd =
             match key with
-            | Silk.NET.Input.Key.Number1 -> Some(VizCommand.SetBaseLayer LayerKind.HeightMap)
-            | Silk.NET.Input.Key.Number2 -> Some(VizCommand.SetBaseLayer LayerKind.SlopeMap)
-            | Silk.NET.Input.Key.Number3 -> Some(VizCommand.SetBaseLayer LayerKind.ResourceMap)
-            | Silk.NET.Input.Key.Number4 -> Some(VizCommand.SetBaseLayer LayerKind.LosMap)
-            | Silk.NET.Input.Key.Number5 -> Some(VizCommand.SetBaseLayer LayerKind.RadarMap)
-            | Silk.NET.Input.Key.Number6 -> Some(VizCommand.SetBaseLayer LayerKind.TerrainClassification)
-            | Silk.NET.Input.Key.Number7 -> Some(VizCommand.SetBaseLayer(LayerKind.Passability MoveType.Kbot))
-            | Silk.NET.Input.Key.Number8 -> Some(VizCommand.SetBaseLayer(LayerKind.Passability MoveType.Tank))
-            | Silk.NET.Input.Key.Number9 -> Some(VizCommand.SetBaseLayer(LayerKind.Passability MoveType.Hover))
-            | Silk.NET.Input.Key.Number0 -> Some(VizCommand.SetBaseLayer(LayerKind.Passability MoveType.Ship))
-            | Silk.NET.Input.Key.U -> Some(VizCommand.ToggleOverlay OverlayKind.Units)
-            | Silk.NET.Input.Key.E -> Some(VizCommand.ToggleOverlay OverlayKind.Events)
-            | Silk.NET.Input.Key.G -> Some(VizCommand.ToggleOverlay OverlayKind.Grid)
-            | Silk.NET.Input.Key.M -> Some(VizCommand.ToggleOverlay OverlayKind.MetalSpots)
-            | Silk.NET.Input.Key.Home -> Some VizCommand.ResetView
-            | _ -> None
+            | Key.Number1 -> config <- { config with BaseLayer = LayerKind.HeightMap }
+            | Key.Number2 -> config <- { config with BaseLayer = LayerKind.SlopeMap }
+            | Key.Number3 -> config <- { config with BaseLayer = LayerKind.ResourceMap }
+            | Key.Number4 -> config <- { config with BaseLayer = LayerKind.LosMap }
+            | Key.Number5 -> config <- { config with BaseLayer = LayerKind.RadarMap }
+            | Key.Number6 -> config <- { config with BaseLayer = LayerKind.TerrainClassification }
+            | Key.Number7 -> config <- { config with BaseLayer = LayerKind.Passability MoveType.Kbot }
+            | Key.Number8 -> config <- { config with BaseLayer = LayerKind.Passability MoveType.Tank }
+            | Key.Number9 -> config <- { config with BaseLayer = LayerKind.Passability MoveType.Hover }
+            | Key.Number0 -> config <- { config with BaseLayer = LayerKind.Passability MoveType.Ship }
+            | Key.U ->
+                let ov = if Set.contains OverlayKind.Units config.ActiveOverlays then Set.remove OverlayKind.Units config.ActiveOverlays else Set.add OverlayKind.Units config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
+            | Key.E ->
+                let ov = if Set.contains OverlayKind.Events config.ActiveOverlays then Set.remove OverlayKind.Events config.ActiveOverlays else Set.add OverlayKind.Events config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
+            | Key.G -> config <- { config with ShowGridLines = not config.ShowGridLines; ActiveOverlays = Set.add OverlayKind.Grid config.ActiveOverlays }
+            | Key.M ->
+                let ov = if Set.contains OverlayKind.MetalSpots config.ActiveOverlays then Set.remove OverlayKind.MetalSpots config.ActiveOverlays else Set.add OverlayKind.MetalSpots config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
+            | Key.H ->
+                let ov = if Set.contains OverlayKind.EconomyHud config.ActiveOverlays then Set.remove OverlayKind.EconomyHud config.ActiveOverlays else Set.add OverlayKind.EconomyHud config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
+            | Key.Home ->
+                mapGridRef |> Option.iter computeAutoFit
+            | _ -> ())
 
-        match cmd with
-        | Some c -> processCommand c
-        | None -> ()
+    let private handleInput (evt: InputEvent) =
+        match evt with
+        | InputEvent.KeyDown key -> processKey key
+        | InputEvent.MouseScroll(delta, x, y) ->
+            lock stateLock (fun () ->
+                let factor = if delta > 0.0f then 1.1f else 1.0f / 1.1f
+                let mapX = x / viewState.Scale + viewState.OriginX
+                let mapY = y / viewState.Scale + viewState.OriginY
+                let newScale = viewState.Scale * factor
+                viewState <- { viewState with Scale = newScale; OriginX = mapX - x / newScale; OriginY = mapY - y / newScale; AutoFit = false })
+        | InputEvent.MouseDown(_, x, y) ->
+            lock stateLock (fun () ->
+                dragStart <- Some (x, y)
+                dragOrigin <- Some (viewState.OriginX, viewState.OriginY))
+        | InputEvent.MouseMove(x, y) ->
+            lock stateLock (fun () ->
+                match dragStart, dragOrigin with
+                | Some (sx, sy), Some (ox, oy) ->
+                    let dx = (x - sx) / viewState.Scale
+                    let dy = (y - sy) / viewState.Scale
+                    viewState <- { viewState with OriginX = ox - dx; OriginY = oy - dy; AutoFit = false }
+                | _ -> ())
+        | InputEvent.MouseUp _ ->
+            lock stateLock (fun () -> dragStart <- None; dragOrigin <- None)
+        | InputEvent.WindowResize(w, h) ->
+            lock stateLock (fun () -> viewState <- { viewState with WindowWidth = w; WindowHeight = h })
+        | InputEvent.FrameTick _ ->
+            lock stateLock (fun () ->
+                if not autoFitDone then
+                    mapGridRef |> Option.iter (fun g ->
+                        if g.WidthHeightmap > 0 then
+                            computeAutoFit g
+                            autoFitDone <- true)
+                emitScene ())
+        | _ -> ()
 
-    let private doStop () =
-        match viewer with
-        | Some v ->
-            (v :> IDisposable).Dispose()
+    let start (cfg: VizConfig option) =
+        lock stateLock (fun () ->
+            config <- cfg |> Option.defaultValue VizDefaults.defaultConfig
+            viewState <- VizDefaults.defaultViewState
+            units <- Map.empty
+            indicators <- []
+            autoFitDone <- false
+            let evt = Event<Scene>()
+            sceneEvent <- Some evt
+            let viewerConfig: ViewerConfig =
+                { Title = "FSBar GameViz"
+                  Width = 1024
+                  Height = 640
+                  TargetFps = 60
+                  ClearColor = SKColors.Black
+                  PreferredBackend = Some Backend.GL }
+            let handle, inputs = Viewer.run viewerConfig evt.Publish
+            viewer <- Some handle
+            let sub = inputs |> Observable.subscribe handleInput
+            inputSub <- Some sub
+            eprintfn "[GameViz] Viewer started")
+
+    let stop () =
+        lock stateLock (fun () ->
+            inputSub |> Option.iter (fun s -> s.Dispose())
+            inputSub <- None
+            viewer |> Option.iter (fun v -> (v :> IDisposable).Dispose())
             viewer <- None
-            LayerRenderer.invalidateAll ()
+            sceneEvent <- None
             units <- Map.empty
             indicators <- []
             mapGridRef <- None
             clientRef <- None
             snapshot <- None
-        | None -> ()
-
-    let start (config': VizConfig option) =
-        // Stop any existing visualization before starting a new one
-        doStop ()
-
-        match config' with
-        | Some c -> lock stateLock (fun () -> config <- c)
-        | None -> ()
-
-        let viewerConfig: ViewerConfig =
-            { Title = "FSBar GameViz"
-              Width = 1024
-              Height = 640
-              TargetFps = 60
-              ClearColor = config.BackgroundColor
-              OnRender =
-                fun canvas _fbSize ->
-                    let snap = getSnapshot ()
-                    let cfg = getConfig ()
-                    let vs = getViewState ()
-                    SceneBuilder.drawFrame canvas snap cfg vs
-              OnResize =
-                fun w h ->
-                    lock stateLock (fun () ->
-                        viewState <-
-                            { viewState with
-                                WindowWidth = w
-                                WindowHeight = h })
-
-                    if viewState.AutoFit then
-                        match mapGridRef with
-                        | Some g -> computeAutoFit g w h
-                        | None -> ()
-              OnKeyDown = processKeyDown
-              OnMouseScroll =
-                fun delta cx cy ->
-                    let factor = if delta > 0.0f then 1.1f else 0.9f
-                    processCommand (VizCommand.Zoom(factor, cx, cy))
-              OnMouseDrag = fun dx dy -> processCommand (VizCommand.Pan(dx, dy))
-              PreferredBackend = None }
-
-        viewer <- Some(Viewer.run viewerConfig)
-        printfn "[GameViz] Visualization started."
-
-    let stop () =
-        doStop ()
-        printfn "[GameViz] Visualization stopped."
+            metalSpots <- [||]
+            autoFitDone <- false
+            LayerRenderer.invalidateAll ()
+            eprintfn "[GameViz] Stopped")
 
     let attachToClient (client: BarClient) =
-        clientRef <- Some client
-        myTeamId <- Callbacks.getMyTeam client.Stream
-
-        // Load map grid — may fail mid-session due to LOS dimension mismatch;
-        // in that case, defer full load to first onFrame call
-        let grid =
-            try
-                MapGrid.loadFromEngine client.Stream
-            with
-            | ex ->
-                printfn "[GameViz] Warning: initial loadFromEngine failed (%s), will retry on first frame" ex.Message
-                // Build a minimal grid from dimensions only
-                let w = Callbacks.getMapWidth client.Stream
-                let h = Callbacks.getMapHeight client.Stream
-                { WidthElmos = w * 8
-                  HeightElmos = h * 8
-                  WidthHeightmap = w
-                  HeightHeightmap = h
-                  HeightMap = Array2D.zeroCreate (h + 1) (w + 1)
-                  SlopeMap = Array2D.zeroCreate (h / 2) (w / 2)
-                  ResourceMap = Array2D.zeroCreate h w
-                  LosMap = Array2D.zeroCreate h w
-                  RadarMap = Array2D.zeroCreate h w }
-
-        mapGridRef <- Some grid
-
-        let metalSpots =
-            try Callbacks.getMetalSpots client.Stream
-            with _ -> [||]
-
         lock stateLock (fun () ->
-            snapshot <-
-                Some
-                    { emptySnapshot with
-                        MapGrid = grid
-                        MetalSpots = metalSpots
-                        Connected = true })
-
-        if viewState.AutoFit then
-            computeAutoFit grid viewState.WindowWidth viewState.WindowHeight
-
-        printfn "[GameViz] Attached to client. Map: %dx%d" grid.WidthHeightmap grid.HeightHeightmap
+            clientRef <- Some client
+            try
+                let grid = MapGrid.loadFromEngine client.Stream
+                mapGridRef <- Some grid
+                metalSpots <- Callbacks.getMetalSpots client.Stream
+                myTeamId <- Callbacks.getMyTeam client.Stream
+                eprintfn "[GameViz] Attached to client, map %dx%d" grid.WidthHeightmap grid.HeightHeightmap
+            with ex ->
+                eprintfn "[GameViz] Failed to load map data: %s" ex.Message)
 
     let seedUnits (unitStates: UnitState list) =
-        for u in unitStates do
-            units <- units.Add(u.UnitId, u)
         lock stateLock (fun () ->
-            snapshot <- snapshot |> Option.map (fun s -> { s with Units = units }))
+            for u in unitStates do
+                units <- Map.add u.UnitId u units)
 
     let onFrame (frame: GameFrame) =
-        match clientRef with
-        | None -> ()
-        | Some client ->
-            let stream = client.Stream
+        lock stateLock (fun () ->
             let grid =
-                match mapGridRef with
-                | Some g when g.HeightMap.Length > 1 && g.HeightMap.[0, 0] <> 0.0f ->
-                    // Map data loaded — just refresh dynamic layers
-                    let g = try MapGrid.refreshLos stream g with _ -> g
-                    let g = try MapGrid.refreshRadar stream g with _ -> g
-                    mapGridRef <- Some g
-                    g
-                | Some g ->
-                    // HeightMap is still empty (all zeros) — retry full load
+                match mapGridRef, clientRef with
+                | Some g, Some c ->
                     try
-                        let loaded = MapGrid.loadFromEngine stream
-                        mapGridRef <- Some loaded
-                        loaded
-                    with _ ->
-                        g
-                | None ->
-                    try
-                        let g = MapGrid.loadFromEngine stream
+                        let g = MapGrid.refreshLos c.Stream g
+                        let g = MapGrid.refreshRadar c.Stream g
                         mapGridRef <- Some g
                         g
-                    with _ ->
-                        emptySnapshot.MapGrid
+                    with ex ->
+                        eprintfn "[GameViz] LOS/Radar refresh failed: %s" ex.Message
+                        g
+                | Some g, None -> g
+                | None, _ ->
+                    { WidthElmos = 0; HeightElmos = 0; WidthHeightmap = 0; HeightHeightmap = 0
+                      HeightMap = Array2D.zeroCreate 0 0; SlopeMap = Array2D.zeroCreate 0 0
+                      ResourceMap = Array2D.zeroCreate 0 0; LosMap = Array2D.zeroCreate 0 0
+                      RadarMap = Array2D.zeroCreate 0 0 }
 
-            let frameNum = int frame.FrameNumber
-
-            // Process events
-            for event in frame.Events do
-                match event with
+            for evt in frame.Events do
+                match evt with
                 | GameEvent.UnitCreated(unitId, _) ->
-                    try
-                        let (px, py, pz) = Callbacks.getUnitPos stream unitId
-                        let hp = Callbacks.getUnitHealth stream unitId
-                        let maxHp = Callbacks.getUnitMaxHealth stream unitId
-                        let defId = Callbacks.getUnitDef stream unitId
-
-                        let u =
-                            { UnitId = unitId
-                              PositionX = px
-                              PositionY = py
-                              PositionZ = pz
-                              TeamId = myTeamId
-                              DefId = defId
-                              Health = hp
-                              MaxHealth = maxHp
-                              IsEnemy = false }
-
-                        units <- units.Add(unitId, u)
-
-                        indicators <-
-                            { PositionX = px
-                              PositionY = py
-                              PositionZ = pz
-                              Kind = EventKind.UnitCreated
-                              FrameCreated = frameNum
-                              DurationFrames = 60 }
-                            :: indicators
-                    with
-                    | _ -> ()
+                    match clientRef with
+                    | Some c ->
+                        try
+                            let pos = Callbacks.getUnitPos c.Stream unitId
+                            let defId = Callbacks.getUnitDef c.Stream unitId
+                            let hp = Callbacks.getUnitHealth c.Stream unitId
+                            let maxHp = Callbacks.getUnitMaxHealth c.Stream unitId
+                            let (px, py, pz) = pos
+                            let u = { UnitId = unitId; PositionX = px; PositionY = py; PositionZ = pz
+                                      TeamId = myTeamId; DefId = defId; Health = hp; MaxHealth = maxHp; IsEnemy = false }
+                            units <- Map.add unitId u units
+                            indicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.UnitCreated; FrameCreated = int frame.FrameNumber; DurationFrames = 30 } :: indicators
+                        with _ -> ()
+                    | None -> ()
                 | GameEvent.UnitFinished unitId ->
-                    try
-                        let (px, py, pz) = Callbacks.getUnitPos stream unitId
-                        let hp = Callbacks.getUnitHealth stream unitId
-                        let maxHp = Callbacks.getUnitMaxHealth stream unitId
-
-                        match units.TryFind unitId with
-                        | Some u ->
-                            units <-
-                                units.Add(
-                                    unitId,
-                                    { u with
-                                        PositionX = px
-                                        PositionY = py
-                                        PositionZ = pz
-                                        Health = hp
-                                        MaxHealth = maxHp }
-                                )
-                        | None -> ()
-                    with
-                    | _ -> ()
+                    match clientRef with
+                    | Some c ->
+                        try
+                            let pos = Callbacks.getUnitPos c.Stream unitId
+                            let (px, py, pz) = pos
+                            units <- units |> Map.change unitId (Option.map (fun u -> { u with PositionX = px; PositionY = py; PositionZ = pz }))
+                        with _ -> ()
+                    | None -> ()
                 | GameEvent.UnitDestroyed(unitId, _) ->
-                    match units.TryFind unitId with
+                    match Map.tryFind unitId units with
                     | Some u ->
-                        indicators <-
-                            { PositionX = u.PositionX
-                              PositionY = u.PositionY
-                              PositionZ = u.PositionZ
-                              Kind = EventKind.UnitDestroyed
-                              FrameCreated = frameNum
-                              DurationFrames = 90 }
-                            :: indicators
-
-                        units <- units.Remove unitId
+                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = int frame.FrameNumber; DurationFrames = 45 } :: indicators
+                        units <- Map.remove unitId units
                     | None -> ()
                 | GameEvent.EnemyEnterLOS enemyId ->
-                    try
-                        let (px, py, pz) = Callbacks.getUnitPos stream enemyId
-                        let hp = Callbacks.getUnitHealth stream enemyId
-                        let maxHp = Callbacks.getUnitMaxHealth stream enemyId
-                        let defId = Callbacks.getUnitDef stream enemyId
-
-                        let u =
-                            { UnitId = enemyId
-                              PositionX = px
-                              PositionY = py
-                              PositionZ = pz
-                              TeamId = -1
-                              DefId = defId
-                              Health = hp
-                              MaxHealth = maxHp
-                              IsEnemy = true }
-
-                        units <- units.Add(enemyId, u)
-
-                        indicators <-
-                            { PositionX = px
-                              PositionY = py
-                              PositionZ = pz
-                              Kind = EventKind.EnemySpotted
-                              FrameCreated = frameNum
-                              DurationFrames = 60 }
-                            :: indicators
-                    with
-                    | _ -> ()
-                | GameEvent.EnemyLeaveLOS enemyId -> units <- units.Remove enemyId
+                    match clientRef with
+                    | Some c ->
+                        try
+                            let pos = Callbacks.getUnitPos c.Stream enemyId
+                            let (px, py, pz) = pos
+                            let defId = try Callbacks.getUnitDef c.Stream enemyId with _ -> 0
+                            let hp = try Callbacks.getUnitHealth c.Stream enemyId with _ -> 100.0f
+                            let maxHp = try Callbacks.getUnitMaxHealth c.Stream enemyId with _ -> 100.0f
+                            let u = { UnitId = enemyId; PositionX = px; PositionY = py; PositionZ = pz
+                                      TeamId = 1; DefId = defId; Health = hp; MaxHealth = maxHp; IsEnemy = true }
+                            units <- Map.add enemyId u units
+                            indicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.EnemySpotted; FrameCreated = int frame.FrameNumber; DurationFrames = 40 } :: indicators
+                        with _ -> ()
+                    | None -> ()
+                | GameEvent.EnemyLeaveLOS enemyId ->
+                    units <- Map.remove enemyId units
                 | GameEvent.EnemyDestroyed(enemyId, _) ->
-                    match units.TryFind enemyId with
+                    match Map.tryFind enemyId units with
                     | Some u ->
-                        indicators <-
-                            { PositionX = u.PositionX
-                              PositionY = u.PositionY
-                              PositionZ = u.PositionZ
-                              Kind = EventKind.UnitDestroyed
-                              FrameCreated = frameNum
-                              DurationFrames = 90 }
-                            :: indicators
-
-                        units <- units.Remove enemyId
+                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = int frame.FrameNumber; DurationFrames = 45 } :: indicators
+                        units <- Map.remove enemyId units
                     | None -> ()
                 | GameEvent.UnitDamaged(unitId, _, _, _, _) ->
-                    match units.TryFind unitId with
+                    match Map.tryFind unitId units with
                     | Some u ->
-                        indicators <-
-                            { PositionX = u.PositionX
-                              PositionY = u.PositionY
-                              PositionZ = u.PositionZ
-                              Kind = EventKind.Combat
-                              FrameCreated = frameNum
-                              DurationFrames = 30 }
-                            :: indicators
+                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.Combat; FrameCreated = int frame.FrameNumber; DurationFrames = 20 } :: indicators
                     | None -> ()
                 | GameEvent.Update _ ->
-                    // Refresh positions of known friendly units
-                    let updatedUnits =
-                        units
-                        |> Map.map (fun id u ->
+                    // Refresh friendly unit positions
+                    match clientRef with
+                    | Some c ->
+                        units <- units |> Map.map (fun uid u ->
                             if not u.IsEnemy then
                                 try
-                                    let (px, py, pz) = Callbacks.getUnitPos stream id
-                                    let hp = Callbacks.getUnitHealth stream id
-
-                                    { u with
-                                        PositionX = px
-                                        PositionY = py
-                                        PositionZ = pz
-                                        Health = hp }
-                                with
-                                | _ -> u
-                            else
-                                u)
-
-                    units <- updatedUnits
+                                    let (px, py, pz) = Callbacks.getUnitPos c.Stream uid
+                                    let hp = Callbacks.getUnitHealth c.Stream uid
+                                    { u with PositionX = px; PositionY = py; PositionZ = pz; Health = hp }
+                                with _ -> u
+                            else u)
+                    | None -> ()
                 | _ -> ()
 
             // Prune expired indicators
-            indicators <- indicators |> List.filter (fun i -> frameNum - i.FrameCreated < i.DurationFrames)
+            let frameNum = int frame.FrameNumber
+            indicators <- indicators |> List.filter (fun ev ->
+                frameNum - ev.FrameCreated < ev.DurationFrames)
 
             // Query economy
-            let metalEcon : EconomyData =
-                try
-                    { Current = Callbacks.getEconomyCurrent stream 0
-                      Income = Callbacks.getEconomyIncome stream 0
-                      Usage = Callbacks.getEconomyUsage stream 0
-                      Storage = Callbacks.getEconomyStorage stream 0 }
-                with
-                | _ -> VizDefaults.defaultEconomy
+            let metalEcon, energyEcon =
+                match clientRef with
+                | Some c ->
+                    try
+                        ({ Current = Callbacks.getEconomyCurrent c.Stream 0
+                           Income = Callbacks.getEconomyIncome c.Stream 0
+                           Usage = Callbacks.getEconomyUsage c.Stream 0
+                           Storage = Callbacks.getEconomyStorage c.Stream 0 } : EconomyData),
+                        ({ Current = Callbacks.getEconomyCurrent c.Stream 1
+                           Income = Callbacks.getEconomyIncome c.Stream 1
+                           Usage = Callbacks.getEconomyUsage c.Stream 1
+                           Storage = Callbacks.getEconomyStorage c.Stream 1 } : EconomyData)
+                    with _ ->
+                        VizDefaults.defaultEconomy, VizDefaults.defaultEconomy
+                | None -> VizDefaults.defaultEconomy, VizDefaults.defaultEconomy
 
-            let energyEcon : EconomyData =
-                try
-                    { Current = Callbacks.getEconomyCurrent stream 1
-                      Income = Callbacks.getEconomyIncome stream 1
-                      Usage = Callbacks.getEconomyUsage stream 1
-                      Storage = Callbacks.getEconomyStorage stream 1 }
-                with
-                | _ -> VizDefaults.defaultEconomy
-
-            lock stateLock (fun () ->
-                snapshot <-
-                    Some
-                        { FrameNumber = frameNum
-                          MapGrid = grid
-                          Units = units
-                          EventIndicators = indicators
-                          EconomyMetal = metalEcon
-                          EconomyEnergy = energyEcon
-                          MetalSpots =
-                            match snapshot with
-                            | Some s -> s.MetalSpots
-                            | None -> [||]
-                          Connected = true })
+            snapshot <- Some (buildSnapshot grid frameNum true metalEcon energyEcon))
 
     let setDisconnected () =
         lock stateLock (fun () ->
-            snapshot <-
-                snapshot
-                |> Option.map (fun s -> { s with Connected = false }))
+            snapshot <- snapshot |> Option.map (fun s -> { s with Connected = false })
+            eprintfn "[GameViz] Disconnected")
 
-    let resetView () = processCommand VizCommand.ResetView
-    let setBaseLayer layer = processCommand (VizCommand.SetBaseLayer layer)
-
-    let toggleOverlay overlay =
-        processCommand (VizCommand.ToggleOverlay overlay)
-
-    let enableOverlay overlay =
+    let resetView () =
         lock stateLock (fun () ->
-            config <- { config with ActiveOverlays = config.ActiveOverlays.Add overlay })
+            mapGridRef |> Option.iter computeAutoFit)
 
-    let disableOverlay overlay =
+    let setBaseLayer (layer: LayerKind) =
         lock stateLock (fun () ->
-            config <- { config with ActiveOverlays = config.ActiveOverlays.Remove overlay })
+            config <- { config with BaseLayer = layer })
 
-    let setConfig (config': VizConfig) = lock stateLock (fun () -> config <- config')
+    let toggleOverlay (overlay: OverlayKind) =
+        lock stateLock (fun () ->
+            let ov = if Set.contains overlay config.ActiveOverlays then Set.remove overlay config.ActiveOverlays else Set.add overlay config.ActiveOverlays
+            config <- { config with ActiveOverlays = ov })
 
-    let updateConfig f =
+    let enableOverlay (overlay: OverlayKind) =
+        lock stateLock (fun () ->
+            config <- { config with ActiveOverlays = Set.add overlay config.ActiveOverlays })
+
+    let disableOverlay (overlay: OverlayKind) =
+        lock stateLock (fun () ->
+            config <- { config with ActiveOverlays = Set.remove overlay config.ActiveOverlays })
+
+    let setConfig (cfg: VizConfig) =
+        lock stateLock (fun () -> config <- cfg)
+
+    let updateConfig (f: VizConfig -> VizConfig) =
         lock stateLock (fun () -> config <- f config)
 
-    let setColorScheme layer scheme =
-        processCommand (VizCommand.SetColorScheme(layer, scheme))
+    let setColorScheme (layer: LayerKind) (scheme: ColorScheme) =
+        lock stateLock (fun () ->
+            config <- { config with ColorSchemes = Map.add layer scheme config.ColorSchemes }
+            LayerRenderer.invalidateCache layer)
 
-    let setMarkerSize size =
-        processCommand (VizCommand.SetMarkerSize size)
+    let setMarkerSize (size: float32) =
+        lock stateLock (fun () ->
+            config <- { config with UnitMarkerSize = size })
 
-    let setOverlayOpacity opacity =
-        processCommand (VizCommand.SetOverlayOpacity opacity)
+    let setOverlayOpacity (opacity: float32) =
+        lock stateLock (fun () ->
+            config <- { config with OverlayOpacity = max 0.0f (min 1.0f opacity) })
 
-    let toggleGridLines () = processCommand VizCommand.ToggleGridLines
-    let pan dx dy = processCommand (VizCommand.Pan(dx, dy))
+    let toggleGridLines () =
+        lock stateLock (fun () ->
+            config <- { config with ShowGridLines = not config.ShowGridLines })
 
-    let zoom factor centerX centerY =
-        processCommand (VizCommand.Zoom(factor, centerX, centerY))
+    let pan (dx: float32) (dy: float32) =
+        lock stateLock (fun () ->
+            viewState <- { viewState with OriginX = viewState.OriginX + dx; OriginY = viewState.OriginY + dy; AutoFit = false })
+
+    let zoom (factor: float32) (centerX: float32) (centerY: float32) =
+        lock stateLock (fun () ->
+            let mapX = centerX / viewState.Scale + viewState.OriginX
+            let mapY = centerY / viewState.Scale + viewState.OriginY
+            let newScale = viewState.Scale * factor
+            viewState <- { viewState with Scale = newScale; OriginX = mapX - centerX / newScale; OriginY = mapY - centerY / newScale; AutoFit = false })
 
     let screenshot (folder: string) : Result<string, string> =
-        match viewer with
-        | Some v -> v.Screenshot(folder)
-        | None -> Result.Error "Viz not running"
+        lock stateLock (fun () ->
+            match viewer with
+            | Some v -> v.Screenshot(folder)
+            | None -> Result.Error "No viewer running")

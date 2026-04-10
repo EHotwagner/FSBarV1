@@ -30,6 +30,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-10
 - In-memory (Map, ConcurrentDictionary caches, Array2D grids) (017-observable-gamestate-api)
 - F# / .NET 10.0 + FSBar.Client (in-repo, for types only — GameState, TrackedUnit, TrackedEnemy, EconomySnapshot, UnitDefCache, GameEvent, GameFrame) (018-synthetic-viz-data)
 - N/A (in-memory only, pure functions) (018-synthetic-viz-data)
+- F# / .NET 10.0 + SkiaViewer (latest prerelease, declarative Scene API), SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.SyntheticData (in-repo) (019-revamp-viz-library)
+- Filesystem (MapData binary format for save/load, screenshots) (019-revamp-viz-library)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -55,9 +57,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 019-revamp-viz-library: Added F# / .NET 10.0 + SkiaViewer (latest prerelease, declarative Scene API), SkiaSharp 2.88.6, FSBar.Client (in-repo), FSBar.SyntheticData (in-repo)
 - 018-synthetic-viz-data: Added F# / .NET 10.0 + FSBar.Client (in-repo, for types only — GameState, TrackedUnit, TrackedEnemy, EconomySnapshot, UnitDefCache, GameEvent, GameFrame)
 - 017-observable-gamestate-api: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), System.IObservable (BCL — no external Rx needed)
-- 016-idiomatic-fsharp-streams: Added F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), FSBar.Proto (generated types), BarData (unit definitions)
 
 
 <!-- MANUAL ADDITIONS START -->

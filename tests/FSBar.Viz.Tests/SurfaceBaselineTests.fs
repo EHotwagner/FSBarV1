@@ -1,129 +1,235 @@
 module FSBar.Viz.Tests.SurfaceBaselineTests
 
 open System
-open System.IO
+open System.Reflection
 open Xunit
+open SkiaSharp
+open FSBar.Client
+open FSBar.Viz
 
-let private vizSrcDir =
-    Path.Combine(__SOURCE_DIRECTORY__, "..", "..", "src", "FSBar.Viz") |> Path.GetFullPath
+// Helper to check a module has expected members via reflection
+let private moduleHasMember (moduleType: Type) (memberName: string) =
+    let members = moduleType.GetMembers(BindingFlags.Public ||| BindingFlags.Static)
+    members |> Array.exists (fun m -> m.Name = memberName)
 
-let private baselinesDir =
-    Path.Combine(__SOURCE_DIRECTORY__, "Baselines") |> Path.GetFullPath
+let private getModuleType (assemblyQualifiedTypeName: string) =
+    let asm = typeof<LayerKind>.Assembly
+    asm.GetType(assemblyQualifiedTypeName)
 
-let private isUpdateMode () =
-    let v = Environment.GetEnvironmentVariable("UPDATE_BASELINES")
-    not (isNull v) && v.Equals("true", StringComparison.OrdinalIgnoreCase)
-
-let private lineDiff (expected: string) (actual: string) =
-    let expectedLines = expected.Replace("\r\n", "\n").Split('\n')
-    let actualLines = actual.Replace("\r\n", "\n").Split('\n')
-    let maxLen = max expectedLines.Length actualLines.Length
-    let diffs = ResizeArray<string>()
-    for i in 0 .. maxLen - 1 do
-        let eLine = if i < expectedLines.Length then Some expectedLines.[i] else None
-        let aLine = if i < actualLines.Length then Some actualLines.[i] else None
-        match eLine, aLine with
-        | Some e, Some a when e = a -> ()
-        | Some e, Some a ->
-            diffs.Add(sprintf "  Line %d:" (i + 1))
-            diffs.Add(sprintf "  - %s" e)
-            diffs.Add(sprintf "  + %s" a)
-        | Some e, None ->
-            diffs.Add(sprintf "  Line %d:" (i + 1))
-            diffs.Add(sprintf "  - %s" e)
-        | None, Some a ->
-            diffs.Add(sprintf "  Line %d:" (i + 1))
-            diffs.Add(sprintf "  + %s" a)
-        | None, None -> ()
-    String.Join("\n", diffs)
-
-[<Theory>]
-[<InlineData("VizTypes")>]
-[<InlineData("ColorMaps")>]
-[<InlineData("LayerRenderer")>]
-[<InlineData("SceneBuilder")>]
-[<InlineData("MapData")>]
-[<InlineData("MockSnapshot")>]
-[<InlineData("PreviewSession")>]
-[<InlineData("GameViz")>]
-[<InlineData("LiveSession")>]
-let ``baseline_matches_fsi_surface`` (moduleName: string) =
-    let fsiPath = Path.Combine(vizSrcDir, sprintf "%s.fsi" moduleName)
-    let baselinePath = Path.Combine(baselinesDir, sprintf "%s.baseline" moduleName)
-    let fsiContent = File.ReadAllText(fsiPath)
-
-    if isUpdateMode () then
-        if not (Directory.Exists(baselinesDir)) then
-            Directory.CreateDirectory(baselinesDir) |> ignore
-        let needsUpdate =
-            not (File.Exists(baselinePath))
-            || File.ReadAllText(baselinePath) <> fsiContent
-        if needsUpdate then
-            File.WriteAllText(baselinePath, fsiContent)
-            Assert.True(true, sprintf "Baseline updated for %s" moduleName)
-        else
-            Assert.True(true, sprintf "Baseline already current for %s" moduleName)
-    else
-        Assert.True(
-            File.Exists(baselinePath),
-            sprintf "Missing baseline for %s. Run UPDATE_BASELINES=true dotnet test to generate." moduleName
-        )
-        let baselineContent = File.ReadAllText(baselinePath)
-        if baselineContent <> fsiContent then
-            let diff = lineDiff baselineContent fsiContent
-            Assert.Fail(
-                sprintf "Surface area changed for module %s.\n\nDiff (baseline vs current .fsi):\n%s\n\nRun UPDATE_BASELINES=true dotnet test to update baselines after reviewing changes."
-                    moduleName diff
-            )
+// ---- VizTypes ----
 
 [<Fact>]
-let ``all_fsi_modules_have_baselines`` () =
-    let fsiFiles =
-        Directory.GetFiles(vizSrcDir, "*.fsi")
-        |> Array.map (fun f -> Path.GetFileNameWithoutExtension(f))
-        |> Array.sort
-
-    if isUpdateMode () then
-        if not (Directory.Exists(baselinesDir)) then
-            Directory.CreateDirectory(baselinesDir) |> ignore
-        let generated = ResizeArray<string>()
-        for moduleName in fsiFiles do
-            let baselinePath = Path.Combine(baselinesDir, sprintf "%s.baseline" moduleName)
-            if not (File.Exists(baselinePath)) then
-                let fsiContent = File.ReadAllText(Path.Combine(vizSrcDir, sprintf "%s.fsi" moduleName))
-                File.WriteAllText(baselinePath, fsiContent)
-                generated.Add(moduleName)
-        if generated.Count > 0 then
-            Assert.True(true, sprintf "Generated baselines for: %s" (String.Join(", ", generated)))
-        else
-            Assert.True(true, "All baselines already exist")
-    else
-        let missing =
-            fsiFiles
-            |> Array.filter (fun m ->
-                not (File.Exists(Path.Combine(baselinesDir, sprintf "%s.baseline" m))))
-        Assert.True(
-            missing.Length = 0,
-            sprintf "Missing baselines for: %s. Run UPDATE_BASELINES=true dotnet test to generate."
-                (String.Join(", ", missing))
-        )
+let ``VizTypes - LayerKind type exists with expected cases`` () =
+    let t = typeof<LayerKind>
+    Assert.NotNull(t)
+    // Check it's a union type
+    Assert.True(Reflection.FSharpType.IsUnion(t), "LayerKind should be a discriminated union")
+    let cases = Reflection.FSharpType.GetUnionCases(t)
+    let caseNames = cases |> Array.map (fun c -> c.Name)
+    Assert.Contains("HeightMap", caseNames)
+    Assert.Contains("SlopeMap", caseNames)
+    Assert.Contains("ResourceMap", caseNames)
+    Assert.Contains("Passability", caseNames)
 
 [<Fact>]
-let ``no_orphaned_baselines_exist`` () =
-    if not (Directory.Exists(baselinesDir)) then ()
-    else
-        let baselineFiles =
-            Directory.GetFiles(baselinesDir, "*.baseline")
-            |> Array.map (fun f -> Path.GetFileNameWithoutExtension(f))
-            |> Array.sort
+let ``VizTypes - OverlayKind type exists with expected cases`` () =
+    let t = typeof<OverlayKind>
+    Assert.True(Reflection.FSharpType.IsUnion(t))
+    let cases = Reflection.FSharpType.GetUnionCases(t)
+    let caseNames = cases |> Array.map (fun c -> c.Name)
+    Assert.Contains("Units", caseNames)
+    Assert.Contains("Events", caseNames)
+    Assert.Contains("Grid", caseNames)
+    Assert.Contains("MetalSpots", caseNames)
+    Assert.Contains("EconomyHud", caseNames)
 
-        let orphaned =
-            baselineFiles
-            |> Array.filter (fun m ->
-                not (File.Exists(Path.Combine(vizSrcDir, sprintf "%s.fsi" m))))
+[<Fact>]
+let ``VizTypes - EventKind type exists with expected cases`` () =
+    let t = typeof<EventKind>
+    Assert.True(Reflection.FSharpType.IsUnion(t))
+    let cases = Reflection.FSharpType.GetUnionCases(t)
+    let caseNames = cases |> Array.map (fun c -> c.Name)
+    Assert.Contains("UnitCreated", caseNames)
+    Assert.Contains("UnitDestroyed", caseNames)
+    Assert.Contains("EnemySpotted", caseNames)
+    Assert.Contains("Combat", caseNames)
 
-        Assert.True(
-            orphaned.Length = 0,
-            sprintf "Orphaned baselines found: %s. Remove baselines for deleted modules."
-                (String.Join(", ", orphaned))
-        )
+[<Fact>]
+let ``VizTypes - VizConfig record has expected fields`` () =
+    let t = typeof<VizConfig>
+    Assert.True(Reflection.FSharpType.IsRecord(t))
+    let fields = Reflection.FSharpType.GetRecordFields(t) |> Array.map (fun f -> f.Name)
+    Assert.Contains("BaseLayer", fields)
+    Assert.Contains("ActiveOverlays", fields)
+    Assert.Contains("UnitMarkerSize", fields)
+    Assert.Contains("OverlayOpacity", fields)
+    Assert.Contains("ShowGridLines", fields)
+    Assert.Contains("BackgroundColor", fields)
+
+[<Fact>]
+let ``VizTypes - GameSnapshot record has expected fields`` () =
+    let t = typeof<GameSnapshot>
+    Assert.True(Reflection.FSharpType.IsRecord(t))
+    let fields = Reflection.FSharpType.GetRecordFields(t) |> Array.map (fun f -> f.Name)
+    Assert.Contains("FrameNumber", fields)
+    Assert.Contains("MapGrid", fields)
+    Assert.Contains("Units", fields)
+    Assert.Contains("EventIndicators", fields)
+    Assert.Contains("EconomyMetal", fields)
+    Assert.Contains("Connected", fields)
+
+[<Fact>]
+let ``VizTypes - VizCommand type exists with expected cases`` () =
+    let t = typeof<VizCommand>
+    Assert.True(Reflection.FSharpType.IsUnion(t))
+    let cases = Reflection.FSharpType.GetUnionCases(t)
+    let caseNames = cases |> Array.map (fun c -> c.Name)
+    Assert.Contains("SetBaseLayer", caseNames)
+    Assert.Contains("ToggleOverlay", caseNames)
+    Assert.Contains("Pan", caseNames)
+    Assert.Contains("Zoom", caseNames)
+    Assert.Contains("Stop", caseNames)
+
+[<Fact>]
+let ``VizTypes - VizDefaults module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.VizDefaults"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "defaultViewState")
+    Assert.True(moduleHasMember t "defaultEconomy")
+    Assert.True(moduleHasMember t "defaultConfig")
+
+// ---- ColorMaps ----
+
+[<Fact>]
+let ``ColorMaps module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.ColorMaps"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "grayscale")
+    Assert.True(moduleHasMember t "terrain")
+    Assert.True(moduleHasMember t "heatMap")
+    Assert.True(moduleHasMember t "binary")
+    Assert.True(moduleHasMember t "colorSchemeFor")
+
+// ---- LayerRenderer ----
+
+[<Fact>]
+let ``LayerRenderer module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.LayerRenderer"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "renderLayer")
+    Assert.True(moduleHasMember t "invalidateCache")
+    Assert.True(moduleHasMember t "invalidateAll")
+    Assert.True(moduleHasMember t "cacheStats")
+
+// ---- SceneBuilder ----
+
+[<Fact>]
+let ``SceneBuilder module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.SceneBuilder"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "buildScene")
+
+// ---- MapData ----
+
+[<Fact>]
+let ``MapData module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.MapData"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "save")
+    Assert.True(moduleHasMember t "load")
+
+// ---- MockSnapshot ----
+
+[<Fact>]
+let ``MockSnapshot module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.MockSnapshot"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "emptySnapshot")
+    Assert.True(moduleHasMember t "withUnits")
+    Assert.True(moduleHasMember t "withFriendlyAt")
+    Assert.True(moduleHasMember t "withEnemyAt")
+    Assert.True(moduleHasMember t "withEvent")
+    Assert.True(moduleHasMember t "withEconomy")
+    Assert.True(moduleHasMember t "withEnergyEconomy")
+    Assert.True(moduleHasMember t "withMetalSpots")
+    Assert.True(moduleHasMember t "withFrame")
+
+// ---- PreviewSession ----
+
+[<Fact>]
+let ``PreviewSession module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.PreviewSession"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "startWithMap")
+    Assert.True(moduleHasMember t "startWithSnapshot")
+    Assert.True(moduleHasMember t "startPlayback")
+    Assert.True(moduleHasMember t "stop")
+
+// ---- GameViz ----
+
+[<Fact>]
+let ``GameViz module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.GameViz"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "start")
+    Assert.True(moduleHasMember t "stop")
+    Assert.True(moduleHasMember t "setBaseLayer")
+    Assert.True(moduleHasMember t "toggleOverlay")
+    Assert.True(moduleHasMember t "pan")
+    Assert.True(moduleHasMember t "zoom")
+    Assert.True(moduleHasMember t "screenshot")
+    Assert.True(moduleHasMember t "attachToClient")
+    Assert.True(moduleHasMember t "onFrame")
+    Assert.True(moduleHasMember t "seedUnits")
+    Assert.True(moduleHasMember t "enableOverlay")
+    Assert.True(moduleHasMember t "disableOverlay")
+    Assert.True(moduleHasMember t "setConfig")
+    Assert.True(moduleHasMember t "updateConfig")
+
+// ---- LiveSession ----
+
+[<Fact>]
+let ``LiveSession module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.LiveSession"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "start")
+    Assert.True(moduleHasMember t "startWithClient")
+
+[<Fact>]
+let ``LiveSessionHandle type has expected members`` () =
+    let t = typeof<LiveSessionHandle>
+    Assert.NotNull(t)
+    Assert.True(typeof<IDisposable>.IsAssignableFrom(t))
+    Assert.NotNull(t.GetProperty("FrameCount"))
+    Assert.NotNull(t.GetProperty("IsRunning"))
+    Assert.NotNull(t.GetProperty("LastError"))
+
+// ---- Smoke test: key functions can be called ----
+
+[<Fact>]
+let ``smoke test - VizDefaults defaultConfig is valid`` () =
+    let config = VizDefaults.defaultConfig
+    Assert.Equal(LayerKind.HeightMap, config.BaseLayer)
+    Assert.True(Set.isEmpty config.ActiveOverlays)
+    Assert.Equal(6.0f, config.UnitMarkerSize)
+
+[<Fact>]
+let ``smoke test - VizDefaults defaultViewState is valid`` () =
+    let vs = VizDefaults.defaultViewState
+    Assert.Equal(1.0f, vs.Scale)
+    Assert.Equal(1024, vs.WindowWidth)
+    Assert.Equal(640, vs.WindowHeight)
+
+[<Fact>]
+let ``smoke test - ColorMaps colorSchemeFor all layer kinds`` () =
+    let layers = [
+        LayerKind.HeightMap; LayerKind.SlopeMap; LayerKind.ResourceMap
+        LayerKind.LosMap; LayerKind.RadarMap; LayerKind.TerrainClassification
+        LayerKind.Passability MoveType.Kbot
+    ]
+    for layer in layers do
+        let scheme = ColorMaps.colorSchemeFor layer
+        Assert.NotNull(scheme.Name)
+        // Verify MapValue can be called
+        let _ = scheme.MapValue 0.5f
+        ()

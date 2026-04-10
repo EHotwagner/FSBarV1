@@ -1,100 +1,156 @@
-namespace FSBar.Viz.Tests
+module FSBar.Viz.Tests.VizEngineFixture
 
-open System
-open System.Diagnostics
-open System.IO
-open Xunit
+open System.Runtime.InteropServices
 open FSBar.Client
+open FSBar.Viz
+open FSBar.SyntheticData
+open SkiaViewer
 
-/// Manages the lifecycle of a headless BAR engine instance for viz integration tests.
-type VizEngineFixture() =
-    let mutable client: BarClient option = None
-    let mutable initialFrames: GameFrame list = []
-    let mutable initialEvents: GameEvent list = []
+// Preload native libraries to avoid crashes when SkiaSharp types are used.
+[<DllImport("libdl.so.2")>]
+extern nativeint dlopen(string filename, int flags)
 
-    let testsDir =
-        let assemblyDir = Path.GetDirectoryName(typeof<VizEngineFixture>.Assembly.Location)
-        let testProjectDir = Path.GetFullPath(Path.Combine(assemblyDir, "..", "..", ".."))
-        // Navigate to tests/ directory which contains check-prerequisites.sh
-        Path.GetFullPath(Path.Combine(testProjectDir, "..", "..", "tests"))
+let private nativePath =
+    System.IO.Path.Combine(
+        System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location),
+        "runtimes/linux-x64/native")
 
-    let checkPrereqScript = Path.Combine(testsDir, "check-prerequisites.sh")
+let private _skiaLoaded = dlopen(nativePath + "/libSkiaSharp.so", 0x2 ||| 0x100)
 
-    let checkPrerequisites () =
-        let psi = ProcessStartInfo()
-        psi.FileName <- "/usr/bin/env"
-        psi.ArgumentList.Add("bash")
-        psi.ArgumentList.Add(checkPrereqScript)
-        psi.ArgumentList.Add("--json")
-        psi.UseShellExecute <- false
-        psi.RedirectStandardOutput <- true
-        psi.RedirectStandardError <- true
+/// Create a test MapGrid with the given heightmap dimensions.
+/// All arrays are initialized with simple test data.
+let testMapGrid (w: int) (h: int) : MapGrid =
+    let heightMap = Array2D.init (w + 1) (h + 1) (fun x z ->
+        float32 x * 0.1f + float32 z * 0.05f)
+    let slopeMap = Array2D.init (w / 2) (h / 2) (fun x z ->
+        float32 x * 0.01f + float32 z * 0.02f)
+    let resourceMap = Array2D.init w h (fun x z -> (x + z) % 10)
+    let losMap = Array2D.init w h (fun x z -> if (x + z) % 3 = 0 then 1 else 0)
+    let radarMap = Array2D.init w h (fun x z -> if (x + z) % 5 = 0 then 1 else 0)
+    { WidthElmos = w * 8
+      HeightElmos = h * 8
+      WidthHeightmap = w
+      HeightHeightmap = h
+      HeightMap = heightMap
+      SlopeMap = slopeMap
+      ResourceMap = resourceMap
+      LosMap = losMap
+      RadarMap = radarMap }
 
-        use proc = Process.Start(psi)
-        let stdout = proc.StandardOutput.ReadToEnd()
-        let stderr = proc.StandardError.ReadToEnd()
-        proc.WaitForExit()
+/// Convert a FSBar.Client.GameState to a FSBar.Viz.GameSnapshot using scene metadata.
+let convertToSnapshot (scene: FSBar.SyntheticData.Scene) (gs: GameState) : GameSnapshot =
+    let mapW = int scene.MapWidth / 8
+    let mapH = int scene.MapHeight / 8
+    let grid = testMapGrid mapW mapH
 
-        if proc.ExitCode = 2 then
-            failwith $"Prerequisites check script error: {stderr}{stdout}"
-        elif proc.ExitCode <> 0 then
-            failwith $"Prerequisites not met — skipping live engine tests.\n{stdout}"
+    let units =
+        let friendlyUnits =
+            gs.Units |> Map.toList |> List.map (fun (uid, u: TrackedUnit) ->
+                let (px, py, pz) = u.Position
+                let us : UnitState =
+                    { UnitId = uid
+                      PositionX = px
+                      PositionY = py
+                      PositionZ = pz
+                      TeamId = gs.TeamId
+                      DefId = u.DefId
+                      Health = u.Health
+                      MaxHealth = u.MaxHealth
+                      IsEnemy = false }
+                (uid, us))
+        let enemyUnits =
+            gs.Enemies |> Map.toList |> List.map (fun (eid, e: TrackedEnemy) ->
+                let (px, py, pz) = e.Position
+                let us : UnitState =
+                    { UnitId = eid
+                      PositionX = px
+                      PositionY = py
+                      PositionZ = pz
+                      TeamId = 1
+                      DefId = e.DefId |> Option.defaultValue 0
+                      Health = e.Health |> Option.defaultValue 100.0f
+                      MaxHealth = 100.0f
+                      IsEnemy = true }
+                (eid, us))
+        (friendlyUnits @ enemyUnits) |> Map.ofList
 
-        let json = stdout.Trim()
+    let economyMetal : EconomyData =
+        { Current = gs.Metal.Current
+          Income = gs.Metal.Income
+          Usage = gs.Metal.Usage
+          Storage = gs.Metal.Storage }
+    let economyEnergy : EconomyData =
+        { Current = gs.Energy.Current
+          Income = gs.Energy.Income
+          Usage = gs.Energy.Usage
+          Storage = gs.Energy.Storage }
 
-        let extractValue (s: string) (prefix: string) =
-            let start = s.IndexOf(prefix) + prefix.Length
-            let endIdx = s.IndexOf("\"", start)
-            s.Substring(start, endIdx - start)
+    { FrameNumber = int gs.FrameNumber
+      MapGrid = grid
+      Units = units
+      EventIndicators = []
+      EconomyMetal = economyMetal
+      EconomyEnergy = economyEnergy
+      MetalSpots = Array.empty
+      Connected = true }
 
-        let enginePath = extractValue json "\"engine\":\""
-        let dataDir = extractValue json "\"datadir\":\""
-        (enginePath, dataDir)
+/// Check if DISPLAY is available for graphical tests.
+let hasDisplay () =
+    System.Environment.GetEnvironmentVariable("DISPLAY") <> null
 
-    member _.Client =
-        client |> Option.defaultWith (fun () -> failwith "Client not initialized")
+/// Recursively collect all elements from a Scene into a flat list.
+let rec flattenElement (e: Element) : Element list =
+    match e with
+    | Element.Group(_, _, _, children) -> e :: (children |> List.collect flattenElement)
+    | _ -> [e]
 
-    member _.InitialFrames = initialFrames
-    member _.InitialEvents = initialEvents
+let collectElements (scene: Scene) : Element list =
+    scene.Elements |> List.collect flattenElement
 
-    interface IAsyncLifetime with
-        member _.InitializeAsync() = task {
-            let (enginePath, dataDir) = checkPrerequisites ()
+/// Check if an element is an Ellipse.
+let isEllipse (e: Element) =
+    match e with
+    | Element.Ellipse _ -> true
+    | _ -> false
 
-            let config =
-                { EngineConfig.defaultConfig () with
-                    EngineBin = enginePath
-                    SpringDataDir = Some dataDir }
+/// Check if an element is an Image.
+let isImage (e: Element) =
+    match e with
+    | Element.Image _ -> true
+    | _ -> false
 
-            let c = new BarClient(config)
-            c.Start()
+/// Check if an element is a Text.
+let isText (e: Element) =
+    match e with
+    | Element.Text _ -> true
+    | _ -> false
 
-            let warmupFrames = ResizeArray<GameFrame>()
-            c.WaitFrames 30 (fun frame ->
-                warmupFrames.Add(frame))
+/// Check if an element is a Rect.
+let isRect (e: Element) =
+    match e with
+    | Element.Rect _ -> true
+    | _ -> false
 
-            initialFrames <- warmupFrames |> Seq.toList
-            initialEvents <- initialFrames |> List.collect (fun f -> f.Events)
-            client <- Some c
-        }
+/// Check if an element is a Line.
+let isLine (e: Element) =
+    match e with
+    | Element.Line _ -> true
+    | _ -> false
 
-        member _.DisposeAsync() =
-            let sessionDir =
-                client |> Option.map (fun c -> EngineLauncher.getSessionDir c.Config)
+/// Check if an element is a Group.
+let isGroup (e: Element) =
+    match e with
+    | Element.Group _ -> true
+    | _ -> false
 
-            client |> Option.iter (fun c ->
-                try c.Stop() with _ -> ()
-            )
-            client <- None
+/// Check if an element is a Path.
+let isPath (e: Element) =
+    match e with
+    | Element.Path _ -> true
+    | _ -> false
 
-            sessionDir |> Option.iter (fun dir ->
-                if Directory.Exists(dir) then
-                    try Directory.Delete(dir, true) with _ -> ()
-            )
-
-            Threading.Tasks.Task.CompletedTask
-
-
-[<CollectionDefinition("VizEngine")>]
-type VizEngineCollection() =
-    interface ICollectionFixture<VizEngineFixture>
+/// Extract text content from a Text element.
+let textContent (e: Element) =
+    match e with
+    | Element.Text(text, _, _, _, _) -> Some text
+    | _ -> None

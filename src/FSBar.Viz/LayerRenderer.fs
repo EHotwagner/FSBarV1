@@ -1,70 +1,47 @@
 namespace FSBar.Viz
 
-open System.Collections.Concurrent
-open System.Runtime.InteropServices
 open SkiaSharp
 open FSBar.Client
+open System.Collections.Concurrent
+open System.Runtime.InteropServices
 
 module LayerRenderer =
+
     let private cache = ConcurrentDictionary<string, SKBitmap>()
     let mutable private hits = 0
     let mutable private misses = 0
 
     let private cacheKey (layer: LayerKind) =
         match layer with
-        | LayerKind.HeightMap -> "HeightMap"
-        | LayerKind.SlopeMap -> "SlopeMap"
-        | LayerKind.ResourceMap -> "ResourceMap"
-        | LayerKind.LosMap -> "LosMap"
-        | LayerKind.RadarMap -> "RadarMap"
-        | LayerKind.TerrainClassification -> "TerrainClassification"
+        | LayerKind.HeightMap -> "height"
+        | LayerKind.SlopeMap -> "slope"
+        | LayerKind.ResourceMap -> "resource"
+        | LayerKind.LosMap -> "los"
+        | LayerKind.RadarMap -> "radar"
+        | LayerKind.TerrainClassification -> "terrain"
         | LayerKind.Passability mt ->
             match mt with
-            | MoveType.Kbot -> "Passability_Kbot"
-            | MoveType.Tank -> "Passability_Tank"
-            | MoveType.Hover -> "Passability_Hover"
-            | MoveType.Ship -> "Passability_Ship"
+            | MoveType.Kbot -> "pass-kbot"
+            | MoveType.Tank -> "pass-tank"
+            | MoveType.Hover -> "pass-hover"
+            | MoveType.Ship -> "pass-ship"
 
-    let private copyPixelsToBitmap (bmp: SKBitmap) (pixels: byte[]) (w: int) (h: int) =
-        let handle = GCHandle.Alloc(pixels, GCHandleType.Pinned)
-        try
-            let src = handle.AddrOfPinnedObject()
-            let dst = bmp.GetPixels()
-            System.Buffer.MemoryCopy(src.ToPointer(), dst.ToPointer(), int64 (w * h * 4), int64 (w * h * 4))
-        finally
-            handle.Free()
+    let private isDynamic (layer: LayerKind) =
+        match layer with
+        | LayerKind.LosMap | LayerKind.RadarMap -> true
+        | _ -> false
 
-    let private renderHeightMap (grid: MapGrid) (scheme: ColorScheme) =
-        let w = grid.WidthHeightmap
-        let h = grid.HeightHeightmap
-        let hm = grid.HeightMap
-        // Find min/max for normalization
-        let mutable minH = System.Single.MaxValue
-        let mutable maxH = System.Single.MinValue
-        for z = 0 to h - 1 do
-            for x = 0 to w - 1 do
-                let v = hm.[z, x]
-                if v < minH then minH <- v
-                if v > maxH then maxH <- v
-        let range = maxH - minH
-        let range = if range < 0.001f then 1.0f else range
-        let bmp = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul)
-        let pixels = Array.zeroCreate<byte> (w * h * 4)
-        for z = 0 to h - 1 do
-            for x = 0 to w - 1 do
-                let v = (hm.[z, x] - minH) / range
-                let c = scheme.MapValue v
-                let idx = (z * w + x) * 4
-                pixels.[idx] <- c.Red
-                pixels.[idx + 1] <- c.Green
-                pixels.[idx + 2] <- c.Blue
-                pixels.[idx + 3] <- 255uy
-        copyPixelsToBitmap bmp pixels w h
-        bmp
+    let private copyPixelsToBitmap (pixels: byte[]) (bmp: SKBitmap) =
+        let ptr = bmp.GetPixels()
+        if ptr <> 0n then
+            Marshal.Copy(pixels, 0, ptr, pixels.Length)
 
     let private renderFloatArray (data: float32[,]) (scheme: ColorScheme) =
         let h = Array2D.length1 data
         let w = Array2D.length2 data
+        if h = 0 || w = 0 then
+            new SKBitmap(1, 1)
+        else
         let mutable minV = System.Single.MaxValue
         let mutable maxV = System.Single.MinValue
         for z = 0 to h - 1 do
@@ -73,113 +50,120 @@ module LayerRenderer =
                 if v < minV then minV <- v
                 if v > maxV then maxV <- v
         let range = maxV - minV
-        let range = if range < 0.001f then 1.0f else range
         let bmp = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul)
         let pixels = Array.zeroCreate<byte> (w * h * 4)
         for z = 0 to h - 1 do
             for x = 0 to w - 1 do
-                let v = (data.[z, x] - minV) / range
-                let c = scheme.MapValue v
-                let idx = (z * w + x) * 4
-                pixels.[idx] <- c.Red
-                pixels.[idx + 1] <- c.Green
-                pixels.[idx + 2] <- c.Blue
-                pixels.[idx + 3] <- 255uy
-        copyPixelsToBitmap bmp pixels w h
+                let norm = if range > 0.0f then (data.[z, x] - minV) / range else 0.5f
+                let c = scheme.MapValue norm
+                let i = (z * w + x) * 4
+                pixels.[i] <- c.Red
+                pixels.[i + 1] <- c.Green
+                pixels.[i + 2] <- c.Blue
+                pixels.[i + 3] <- c.Alpha
+        copyPixelsToBitmap pixels bmp
         bmp
 
     let private renderIntArray (data: int[,]) (scheme: ColorScheme) =
         let h = Array2D.length1 data
         let w = Array2D.length2 data
-        let mutable maxV = 1
+        if h = 0 || w = 0 then
+            new SKBitmap(1, 1)
+        else
+        let mutable maxV = 0
         for z = 0 to h - 1 do
             for x = 0 to w - 1 do
                 let v = data.[z, x]
                 if v > maxV then maxV <- v
-        let maxF = float32 maxV
         let bmp = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul)
         let pixels = Array.zeroCreate<byte> (w * h * 4)
         for z = 0 to h - 1 do
             for x = 0 to w - 1 do
-                let v = float32 data.[z, x] / maxF
-                let c = scheme.MapValue v
-                let idx = (z * w + x) * 4
-                pixels.[idx] <- c.Red
-                pixels.[idx + 1] <- c.Green
-                pixels.[idx + 2] <- c.Blue
-                pixels.[idx + 3] <- 255uy
-        copyPixelsToBitmap bmp pixels w h
+                let norm = if maxV > 0 then float32 data.[z, x] / float32 maxV else 0.0f
+                let c = scheme.MapValue norm
+                let i = (z * w + x) * 4
+                pixels.[i] <- c.Red
+                pixels.[i + 1] <- c.Green
+                pixels.[i + 2] <- c.Blue
+                pixels.[i + 3] <- c.Alpha
+        copyPixelsToBitmap pixels bmp
         bmp
 
     let private renderBoolArray (data: bool[,]) (scheme: ColorScheme) =
         let h = Array2D.length1 data
         let w = Array2D.length2 data
+        if h = 0 || w = 0 then
+            new SKBitmap(1, 1)
+        else
         let bmp = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul)
         let pixels = Array.zeroCreate<byte> (w * h * 4)
         for z = 0 to h - 1 do
             for x = 0 to w - 1 do
-                let v = if data.[z, x] then 1.0f else 0.0f
-                let c = scheme.MapValue v
-                let idx = (z * w + x) * 4
-                pixels.[idx] <- c.Red
-                pixels.[idx + 1] <- c.Green
-                pixels.[idx + 2] <- c.Blue
-                pixels.[idx + 3] <- 255uy
-        copyPixelsToBitmap bmp pixels w h
+                let norm = if data.[z, x] then 1.0f else 0.0f
+                let c = scheme.MapValue norm
+                let i = (z * w + x) * 4
+                pixels.[i] <- c.Red
+                pixels.[i + 1] <- c.Green
+                pixels.[i + 2] <- c.Blue
+                pixels.[i + 3] <- c.Alpha
+        copyPixelsToBitmap pixels bmp
         bmp
 
     let private renderTerrainClassification (grid: MapGrid) (scheme: ColorScheme) =
-        let w = grid.WidthHeightmap
         let h = grid.HeightHeightmap
+        let w = grid.WidthHeightmap
+        if h = 0 || w = 0 then
+            new SKBitmap(1, 1)
+        else
         let bmp = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul)
         let pixels = Array.zeroCreate<byte> (w * h * 4)
         for z = 0 to h - 1 do
             for x = 0 to w - 1 do
-                let t = MapGrid.terrainAt grid x z
-                let c =
-                    match t with
-                    | Terrain.Land _ -> SKColor(34uy, 139uy, 34uy)
-                    | Terrain.Water _ -> SKColor(0uy, 80uy, 200uy)
-                    | Terrain.Cliff _ -> SKColor(139uy, 90uy, 43uy)
-                let idx = (z * w + x) * 4
-                pixels.[idx] <- c.Red
-                pixels.[idx + 1] <- c.Green
-                pixels.[idx + 2] <- c.Blue
-                pixels.[idx + 3] <- 255uy
-        copyPixelsToBitmap bmp pixels w h
+                let terrain = MapGrid.terrainAt grid x z
+                let norm =
+                    match terrain with
+                    | Terrain.Water _ -> 0.0f
+                    | Terrain.Land hardness -> 0.25f + hardness * 0.5f
+                    | Terrain.Cliff _ -> 0.9f
+                let c = scheme.MapValue norm
+                let i = (z * w + x) * 4
+                pixels.[i] <- c.Red
+                pixels.[i + 1] <- c.Green
+                pixels.[i + 2] <- c.Blue
+                pixels.[i + 3] <- c.Alpha
+        copyPixelsToBitmap pixels bmp
         bmp
-
-    let private renderFresh (grid: MapGrid) (layer: LayerKind) (scheme: ColorScheme) =
-        match layer with
-        | LayerKind.HeightMap -> renderHeightMap grid scheme
-        | LayerKind.SlopeMap -> renderFloatArray grid.SlopeMap scheme
-        | LayerKind.ResourceMap -> renderIntArray grid.ResourceMap scheme
-        | LayerKind.LosMap -> renderIntArray grid.LosMap scheme
-        | LayerKind.RadarMap -> renderIntArray grid.RadarMap scheme
-        | LayerKind.TerrainClassification -> renderTerrainClassification grid scheme
-        | LayerKind.Passability mt -> renderBoolArray (MapGrid.passability grid mt) scheme
 
     let renderLayer (grid: MapGrid) (layer: LayerKind) (scheme: ColorScheme) =
         let key = cacheKey layer
-        // LOS and Radar change every frame, don't cache
-        match layer with
-        | LayerKind.LosMap | LayerKind.RadarMap ->
-            misses <- misses + 1
-            renderFresh grid layer scheme
-        | _ ->
-            match cache.TryGetValue key with
+        if not (isDynamic layer) then
+            match cache.TryGetValue(key) with
             | true, bmp ->
-                hits <- hits + 1
+                System.Threading.Interlocked.Increment(&hits) |> ignore
                 bmp
             | _ ->
-                misses <- misses + 1
-                let bmp = renderFresh grid layer scheme
+                System.Threading.Interlocked.Increment(&misses) |> ignore
+                let bmp =
+                    match layer with
+                    | LayerKind.HeightMap -> renderFloatArray grid.HeightMap scheme
+                    | LayerKind.SlopeMap -> renderFloatArray grid.SlopeMap scheme
+                    | LayerKind.ResourceMap -> renderIntArray grid.ResourceMap scheme
+                    | LayerKind.LosMap -> renderIntArray grid.LosMap scheme
+                    | LayerKind.RadarMap -> renderIntArray grid.RadarMap scheme
+                    | LayerKind.TerrainClassification -> renderTerrainClassification grid scheme
+                    | LayerKind.Passability mt -> renderBoolArray (MapGrid.passability grid mt) scheme
                 cache.[key] <- bmp
                 bmp
+        else
+            System.Threading.Interlocked.Increment(&misses) |> ignore
+            match layer with
+            | LayerKind.LosMap -> renderIntArray grid.LosMap scheme
+            | LayerKind.RadarMap -> renderIntArray grid.RadarMap scheme
+            | _ -> renderFloatArray grid.HeightMap scheme
 
     let invalidateCache (layer: LayerKind) =
         let key = cacheKey layer
-        match cache.TryRemove key with
+        match cache.TryRemove(key) with
         | true, bmp -> bmp.Dispose()
         | _ -> ()
 
@@ -187,5 +171,7 @@ module LayerRenderer =
         for kvp in cache do
             kvp.Value.Dispose()
         cache.Clear()
+        hits <- 0
+        misses <- 0
 
     let cacheStats () = (hits, misses)

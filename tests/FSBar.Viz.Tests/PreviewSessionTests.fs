@@ -1,94 +1,63 @@
-namespace FSBar.Viz.Tests
+module FSBar.Viz.Tests.PreviewSessionTests
 
 open System
-open System.IO
-open System.Threading
 open Xunit
 open FSBar.Client
 open FSBar.Viz
+open FSBar.Viz.Tests.VizEngineFixture
 
-[<Collection("Viewer")>]
-type PreviewSessionTests() =
+[<Fact>]
+let ``startWithSnapshot opens and stops without exception`` () =
+    let grid = testMapGrid 32 32
+    let snap =
+        MockSnapshot.emptySnapshot grid
+        |> MockSnapshot.withFriendlyAt (100.0f, 0.0f, 100.0f)
+        |> MockSnapshot.withFriendlyAt (300.0f, 0.0f, 200.0f)
+        |> MockSnapshot.withEnemyAt (500.0f, 0.0f, 400.0f)
+        |> MockSnapshot.withEconomy 500.0f 10.0f 5.0f 1000.0f
+        |> MockSnapshot.withEnergyEconomy 800.0f 20.0f 15.0f 1000.0f
+    let config =
+        { VizDefaults.defaultConfig with
+            ActiveOverlays = Set.ofList [ OverlayKind.Units; OverlayKind.EconomyHud ] }
+    GameViz.setConfig config
+    use handle = PreviewSession.startWithSnapshot snap
+    System.Threading.Thread.Sleep(2000)
 
-    static let makeTestGrid () : MapGrid =
-        let w = 8
-        let h = 8
-        { WidthElmos = w * 8
-          HeightElmos = h * 8
-          WidthHeightmap = w
-          HeightHeightmap = h
-          HeightMap = Array2D.init (h + 1) (w + 1) (fun r c -> float32 (r + c) * 10.0f)
-          SlopeMap = Array2D.init (h / 2) (w / 2) (fun r c -> float32 (r + c) * 0.05f)
-          ResourceMap = Array2D.init h w (fun r c -> r * 10 + c)
-          LosMap = Array2D.init h w (fun _ _ -> 1)
-          RadarMap = Array2D.init h w (fun _ _ -> 1) }
+[<Fact>]
+let ``startWithMap works`` () =
+    let grid = testMapGrid 64 64
+    use handle = PreviewSession.startWithMap grid
+    System.Threading.Thread.Sleep(2000)
 
-    // --- US1: Save/Load + Preview ---
-
-    [<Fact>]
-    member _.``US1 load saved map and render in viewer`` () =
-        let grid = makeTestGrid ()
-        let spots = [| (10.0f, 0.0f, 10.0f, 5.0f); (50.0f, 0.0f, 50.0f, 3.0f) |]
-        let path = Path.Combine(Path.GetTempPath(), $"preview-test-{Guid.NewGuid()}.fsmg")
-        try
-            MapData.save path grid spots
-            let (loadedGrid, _) = MapData.load path
-
-            use _ = PreviewSession.startWithMap loadedGrid
-            Thread.Sleep(2000)
-            Assert.True(true)
-        finally
-            if File.Exists(path) then File.Delete(path)
-
-    [<Fact>]
-    member _.``US1 layer switching works during preview`` () =
-        let grid = makeTestGrid ()
-        use _ = PreviewSession.startWithMap grid
-        Thread.Sleep(2000)
-        Assert.True(true)
-
-    // --- US3: Animated Playback ---
-
-    [<Fact>]
-    member _.``US3 animated playback renders 60 frame sequence`` () =
-        let grid = makeTestGrid ()
-        let frames =
-            [| for i in 0..59 ->
-                MockSnapshot.emptySnapshot grid
-                |> MockSnapshot.withFriendlyAt (float32 i, 0.0f, 30.0f)
-                |> MockSnapshot.withFrame i |]
-
-        use _ = PreviewSession.startPlayback frames 30
-        Thread.Sleep(3000)
-        Assert.True(true)
-
-    [<Fact>]
-    member _.``US3 playback loops back to start`` () =
-        let grid = makeTestGrid ()
-        let frames =
-            [| for i in 0..9 ->
-                MockSnapshot.emptySnapshot grid
-                |> MockSnapshot.withFriendlyAt (float32 i * 5.0f, 0.0f, 30.0f)
-                |> MockSnapshot.withFrame i |]
-
-        use _ = PreviewSession.startPlayback frames 30
-        // At 30 game-fps, 10 frames = 0.33s per loop. 2 seconds = ~6 loops.
-        Thread.Sleep(2000)
-        Assert.True(true)
-
-    // --- US4: Interactive Navigation ---
-
-    [<Fact>]
-    member _.``US4 pan and zoom work during preview`` () =
-        let grid = makeTestGrid ()
-        use _ = PreviewSession.startWithMap grid
-        Thread.Sleep(2000)
-        Assert.True(true)
-
-    [<Fact>]
-    member _.``US4 preview session start stop cycle`` () =
-        let grid = makeTestGrid ()
-        for _ in 1..5 do
-            use _ = PreviewSession.startWithMap grid
-            Thread.Sleep(500)
-        Assert.True(true)
+[<Fact>]
+let ``startPlayback with synthetic data runs and stops cleanly`` () =
+    let synScene = FSBar.SyntheticData.Scenes.generate FSBar.SyntheticData.SceneId.SceneA
+    let mapW = int synScene.MapWidth / 8
+    let mapH = int synScene.MapHeight / 8
+    let grid = testMapGrid mapW mapH
+    let snapshots =
+        synScene.Frames
+        |> Array.map (fun gs ->
+            let units =
+                let friendlies =
+                    gs.Units |> Map.toList |> List.map (fun (uid, u: TrackedUnit) ->
+                        let (px, py, pz) = u.Position
+                        uid, ({ UnitId = uid; PositionX = px; PositionY = py; PositionZ = pz
+                                TeamId = 0; DefId = u.DefId; Health = u.Health
+                                MaxHealth = u.MaxHealth; IsEnemy = false } : UnitState))
+                let enemies =
+                    gs.Enemies |> Map.toList |> List.map (fun (eid, e: TrackedEnemy) ->
+                        let (px, py, pz) = e.Position
+                        eid, ({ UnitId = eid; PositionX = px; PositionY = py; PositionZ = pz
+                                TeamId = 1; DefId = (e.DefId |> Option.defaultValue 0)
+                                Health = (e.Health |> Option.defaultValue 100.0f)
+                                MaxHealth = 100.0f; IsEnemy = true } : UnitState))
+                (friendlies @ enemies) |> Map.ofList
+            { FrameNumber = int gs.FrameNumber; MapGrid = grid; Units = units
+              EventIndicators = []
+              EconomyMetal = { Current = gs.Metal.Current; Income = gs.Metal.Income; Usage = gs.Metal.Usage; Storage = gs.Metal.Storage }
+              EconomyEnergy = { Current = gs.Energy.Current; Income = gs.Energy.Income; Usage = gs.Energy.Usage; Storage = gs.Energy.Storage }
+              MetalSpots = [||]; Connected = true })
+    use handle = PreviewSession.startPlayback snapshots 30
+    // Let playback run for 3 seconds — should render several frames visibly
+    System.Threading.Thread.Sleep(3000)

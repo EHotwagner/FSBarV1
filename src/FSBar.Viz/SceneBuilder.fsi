@@ -1,8 +1,8 @@
 namespace FSBar.Viz
 
-open SkiaSharp
+open SkiaViewer
 
-/// Assembles composited visualization frames: base layer + overlays + HUD.
+/// Builds declarative Scene trees from game snapshots.
 module SceneBuilder =
-    /// Draw a complete visualization frame onto the canvas.
-    val drawFrame: canvas: SKCanvas -> snapshot: GameSnapshot -> config: VizConfig -> viewState: ViewState -> unit
+    /// Builds a complete Scene from a game snapshot, viz config, and view state.
+    val buildScene: snapshot: GameSnapshot -> config: VizConfig -> viewState: ViewState -> Scene

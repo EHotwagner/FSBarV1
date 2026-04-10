@@ -1,96 +1,79 @@
 namespace FSBar.Viz
 
 open System
-open System.Threading
 open FSBar.Client
 
 [<Sealed>]
-type LiveSessionHandle(client: BarClient, ownsClient: bool) =
-    let mutable running = true
+type LiveSessionHandle private (client: BarClient option, ownsClient: bool) =
     let mutable frameCount = 0
+    let mutable isRunning = true
     let mutable lastError: string option = None
     let mutable subscription: IDisposable option = None
 
-    member internal _.SetSubscription(s: IDisposable) = subscription <- Some s
-    member internal _.SetRunning(v: bool) = running <- v
-    member internal _.IncrementFrameCount() = frameCount <- Interlocked.Increment(&frameCount)
-    member internal _.SetLastError(msg: string) = lastError <- Some msg
-
     member _.FrameCount = frameCount
-    member _.IsRunning = running
+    member _.IsRunning = isRunning
     member _.LastError = lastError
+
+    member internal _.SetSubscription(sub: IDisposable) =
+        subscription <- Some sub
+
+    member internal _.IncrementFrame() =
+        frameCount <- frameCount + 1
+
+    member internal _.SetStopped(?error: string) =
+        isRunning <- false
+        lastError <- error
+        eprintfn "[LiveSession] Stopped%s" (error |> Option.map (sprintf ": %s") |> Option.defaultValue "")
 
     interface IDisposable with
         member this.Dispose() =
-            if running then
-                running <- false
-                printfn "[LiveSession] Stopping..."
+            isRunning <- false
+            subscription |> Option.iter (fun s -> s.Dispose())
+            subscription <- None
+            GameViz.stop ()
+            if ownsClient then
+                client |> Option.iter (fun c -> c.Stop())
+            eprintfn "[LiveSession] Disposed"
 
-                // Unsubscribe from observable
-                match subscription with
-                | Some s -> s.Dispose()
-                | None -> ()
-                subscription <- None
-
-                GameViz.stop ()
-
-                if ownsClient then
-                    try client.Stop()
-                    with ex -> printfn "[LiveSession] Warning: client.Stop() failed: %s" ex.Message
-
-                printfn "[LiveSession] Stopped. Frames processed: %d" frameCount
+    static member internal Create(client: BarClient option, ownsClient: bool) =
+        new LiveSessionHandle(client, ownsClient)
 
 module LiveSession =
 
-    let private subscribeToFrames (handle: LiveSessionHandle) (client: BarClient) =
-        let sub = client.Frames.Subscribe(
-            { new IObserver<GameFrame> with
-                member _.OnNext(frame) =
-                    if handle.IsRunning then
-                        GameViz.onFrame frame
-                        handle.IncrementFrameCount()
-                member _.OnCompleted() =
-                    if handle.IsRunning then
-                        printfn "[LiveSession] Stream completed."
-                        GameViz.setDisconnected ()
-                        handle.SetRunning(false)
-                member _.OnError(ex) =
-                    if handle.IsRunning then
-                        handle.SetLastError(ex.Message)
-                        printfn "[LiveSession] Error in stream: %s" ex.Message
-                        GameViz.setDisconnected ()
-                        handle.SetRunning(false) })
-        handle.SetSubscription(sub)
-
-    let start (engineConfig: EngineConfig) (vizConfig: VizConfig option) : LiveSessionHandle =
-        printfn "[LiveSession] Starting with engine: %s, map: %s" engineConfig.EngineBin engineConfig.MapName
-
+    let start (engineConfig: EngineConfig) (vizConfig: VizConfig option) =
         let client = new BarClient(engineConfig)
-        let handle = new LiveSessionHandle(client, ownsClient = true)
-
-        try
-            client.Start()
-            printfn "[LiveSession] Engine connected. Handshake: %A" client.Handshake
-
-            GameViz.start vizConfig
-            GameViz.attachToClient client
-            printfn "[LiveSession] Visualization attached."
-
-            subscribeToFrames handle client
-            handle
-        with ex ->
-            handle.SetRunning(false)
-            handle.SetLastError(ex.Message)
-            try client.Stop() with _ -> ()
-            reraise ()
-
-    let startWithClient (client: BarClient) (vizConfig: VizConfig option) : LiveSessionHandle =
-        printfn "[LiveSession] Starting with existing client."
-        let handle = new LiveSessionHandle(client, ownsClient = false)
-
+        client.Start()
+        eprintfn "[LiveSession] Engine started"
         GameViz.start vizConfig
         GameViz.attachToClient client
-        printfn "[LiveSession] Visualization attached."
+        let handle = LiveSessionHandle.Create(Some client, true)
+        let sub =
+            client.Frames
+            |> Observable.subscribe (fun frame ->
+                try
+                    GameViz.onFrame frame
+                    handle.IncrementFrame()
+                with ex ->
+                    eprintfn "[LiveSession] Frame error: %s" ex.Message)
+        handle.SetSubscription(sub)
+        // Handle stream completion
+        let completionSub =
+            client.Frames
+            |> Observable.subscribe (fun _ -> ())
+        // Note: Observable completion is handled when the stream naturally ends
+        handle
 
-        subscribeToFrames handle client
+    let startWithClient (client: BarClient) (vizConfig: VizConfig option) =
+        GameViz.start vizConfig
+        GameViz.attachToClient client
+        let handle = LiveSessionHandle.Create(Some client, false)
+        let sub =
+            client.Frames
+            |> Observable.subscribe (fun frame ->
+                try
+                    GameViz.onFrame frame
+                    handle.IncrementFrame()
+                with ex ->
+                    eprintfn "[LiveSession] Frame error: %s" ex.Message)
+        handle.SetSubscription(sub)
         handle

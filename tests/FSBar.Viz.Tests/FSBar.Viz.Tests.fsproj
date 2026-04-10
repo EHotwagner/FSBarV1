@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -6,20 +6,28 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="SurfaceBaselineTests.fs" />
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="VizEngineFixture.fs" />
+    <Compile Include="ColorMapsTests.fs" />
     <Compile Include="LayerRendererTests.fs" />
     <Compile Include="MapDataTests.fs" />
     <Compile Include="MockSnapshotTests.fs" />
+    <Compile Include="SceneBuilderTests.fs" />
     <Compile Include="PreviewSessionTests.fs" />
     <Compile Include="ViewerTests.fs" />
     <Compile Include="GameVizIntegrationTests.fs" />
     <Compile Include="LiveSessionTests.fs" />
     <Compile Include="LiveSessionIntegrationTests.fs" />
+    <Compile Include="SyntheticVizTests.fs" />
+    <Compile Include="SurfaceBaselineTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../src/FSBar.Viz/FSBar.Viz.fsproj" />
+    <ProjectReference Include="../../src/FSBar.SyntheticData/FSBar.SyntheticData.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

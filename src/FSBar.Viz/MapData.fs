@@ -1,120 +1,120 @@
 namespace FSBar.Viz
 
-open System
 open System.IO
 open FSBar.Client
 
 module MapData =
 
-    let private magic = [| byte 'F'; byte 'S'; byte 'M'; byte 'G' |]
+    let private magic = "FSMG"B
     let private version = 1
 
-    let private writeFloat32Array2D (bw: BinaryWriter) (arr: float32[,]) =
-        let rows = Array2D.length1 arr
-        let cols = Array2D.length2 arr
-        for r in 0 .. rows - 1 do
-            for c in 0 .. cols - 1 do
-                bw.Write(arr.[r, c])
+    let save (path: string) (grid: MapGrid) (metalSpots: (float32 * float32 * float32 * float32) array) : unit =
+        use stream = new FileStream(path, FileMode.Create, FileAccess.Write)
+        use writer = new BinaryWriter(stream)
 
-    let private writeInt32Array2D (bw: BinaryWriter) (arr: int[,]) =
-        let rows = Array2D.length1 arr
-        let cols = Array2D.length2 arr
-        for r in 0 .. rows - 1 do
-            for c in 0 .. cols - 1 do
-                bw.Write(arr.[r, c])
+        // Magic + version
+        writer.Write(magic)
+        writer.Write(version)
 
-    let private readFloat32Array2D (br: BinaryReader) (rows: int) (cols: int) =
-        let arr = Array2D.zeroCreate<float32> rows cols
-        for r in 0 .. rows - 1 do
-            for c in 0 .. cols - 1 do
-                arr.[r, c] <- br.ReadSingle()
-        arr
+        // Dimensions
+        writer.Write(grid.WidthElmos)
+        writer.Write(grid.HeightElmos)
+        writer.Write(grid.WidthHeightmap)
+        writer.Write(grid.HeightHeightmap)
 
-    let private readInt32Array2D (br: BinaryReader) (rows: int) (cols: int) =
-        let arr = Array2D.zeroCreate<int> rows cols
-        for r in 0 .. rows - 1 do
-            for c in 0 .. cols - 1 do
-                arr.[r, c] <- br.ReadInt32()
-        arr
+        let w = grid.WidthHeightmap
+        let h = grid.HeightHeightmap
 
-    let save (path: string) (grid: MapGrid) (metalSpots: (float32 * float32 * float32 * float32) array) =
-        use fs = File.Create(path)
-        use bw = new BinaryWriter(fs)
+        // HeightMap: (w+1) * (h+1)
+        for z = 0 to h do
+            for x = 0 to w do
+                writer.Write(grid.HeightMap.[x, z])
 
-        bw.Write(magic, 0, 4)
-        bw.Write(version)
-        bw.Write(grid.WidthHeightmap)
-        bw.Write(grid.HeightHeightmap)
+        // SlopeMap: (w/2) * (h/2)
+        let sw = w / 2
+        let sh = h / 2
+        for z = 0 to sh - 1 do
+            for x = 0 to sw - 1 do
+                writer.Write(grid.SlopeMap.[x, z])
 
-        writeFloat32Array2D bw grid.HeightMap
-        writeFloat32Array2D bw grid.SlopeMap
-        writeInt32Array2D bw grid.ResourceMap
-        writeInt32Array2D bw grid.LosMap
-        writeInt32Array2D bw grid.RadarMap
+        // ResourceMap: w * h
+        for z = 0 to h - 1 do
+            for x = 0 to w - 1 do
+                writer.Write(grid.ResourceMap.[x, z])
 
-        bw.Write(metalSpots.Length)
-        for (x, y, z, v) in metalSpots do
-            bw.Write(x)
-            bw.Write(y)
-            bw.Write(z)
-            bw.Write(v)
+        // LosMap: w * h
+        for z = 0 to h - 1 do
+            for x = 0 to w - 1 do
+                writer.Write(grid.LosMap.[x, z])
+
+        // RadarMap: w * h
+        for z = 0 to h - 1 do
+            for x = 0 to w - 1 do
+                writer.Write(grid.RadarMap.[x, z])
+
+        // MetalSpots
+        writer.Write(metalSpots.Length)
+        for (x, y, z, richness) in metalSpots do
+            writer.Write(x)
+            writer.Write(y)
+            writer.Write(z)
+            writer.Write(richness)
 
     let load (path: string) : MapGrid * (float32 * float32 * float32 * float32) array =
-        use fs = File.OpenRead(path)
-        use br = new BinaryReader(fs)
+        use stream = new FileStream(path, FileMode.Open, FileAccess.Read)
+        use reader = new BinaryReader(stream)
 
-        let fileMagic = br.ReadBytes(4)
-        if fileMagic <> magic then
-            failwithf "Invalid FSMG file: expected magic bytes 'FSMG' but got '%s'" (Text.Encoding.ASCII.GetString(fileMagic))
+        // Validate magic
+        let magicBytes = reader.ReadBytes(4)
+        if magicBytes <> magic then
+            failwith $"MapData.load: invalid magic bytes — expected FSMG, got %A{magicBytes}"
 
-        let fileVersion = br.ReadInt32()
-        if fileVersion <> version then
-            failwithf "Unsupported FSMG version: expected %d but got %d" version fileVersion
+        // Validate version
+        let ver = reader.ReadInt32()
+        if ver <> 1 then
+            failwith $"MapData.load: unsupported version %d{ver}, expected 1"
 
-        let w = br.ReadInt32()
-        let h = br.ReadInt32()
+        // Dimensions
+        let widthElmos = reader.ReadInt32()
+        let heightElmos = reader.ReadInt32()
+        let w = reader.ReadInt32()
+        let h = reader.ReadInt32()
 
-        if w <= 0 || h <= 0 then
-            failwithf "Invalid map dimensions: %dx%d" w h
-
+        // HeightMap: (w+1) * (h+1)
         let heightMap =
-            try readFloat32Array2D br (h + 1) (w + 1)
-            with :? EndOfStreamException -> failwithf "Truncated file: could not read HeightMap (%dx%d)" (h + 1) (w + 1)
+            Array2D.init (w + 1) (h + 1) (fun _ _ -> reader.ReadSingle())
 
+        // SlopeMap: (w/2) * (h/2)
+        let sw = w / 2
+        let sh = h / 2
         let slopeMap =
-            try readFloat32Array2D br (h / 2) (w / 2)
-            with :? EndOfStreamException -> failwithf "Truncated file: could not read SlopeMap (%dx%d)" (h / 2) (w / 2)
+            Array2D.init sw sh (fun _ _ -> reader.ReadSingle())
 
+        // ResourceMap: w * h
         let resourceMap =
-            try readInt32Array2D br h w
-            with :? EndOfStreamException -> failwithf "Truncated file: could not read ResourceMap (%dx%d)" h w
+            Array2D.init w h (fun _ _ -> reader.ReadInt32())
 
+        // LosMap: w * h
         let losMap =
-            try readInt32Array2D br h w
-            with :? EndOfStreamException -> failwithf "Truncated file: could not read LosMap (%dx%d)" h w
+            Array2D.init w h (fun _ _ -> reader.ReadInt32())
 
+        // RadarMap: w * h
         let radarMap =
-            try readInt32Array2D br h w
-            with :? EndOfStreamException -> failwithf "Truncated file: could not read RadarMap (%dx%d)" h w
+            Array2D.init w h (fun _ _ -> reader.ReadInt32())
 
-        let spotCount =
-            try br.ReadInt32()
-            with :? EndOfStreamException -> failwith "Truncated file: could not read metal spot count"
-
+        // MetalSpots
+        let spotCount = reader.ReadInt32()
         let metalSpots =
             Array.init spotCount (fun _ ->
-                try
-                    let x = br.ReadSingle()
-                    let y = br.ReadSingle()
-                    let z = br.ReadSingle()
-                    let v = br.ReadSingle()
-                    (x, y, z, v)
-                with :? EndOfStreamException ->
-                    failwith "Truncated file: could not read metal spots")
+                let x = reader.ReadSingle()
+                let y = reader.ReadSingle()
+                let z = reader.ReadSingle()
+                let richness = reader.ReadSingle()
+                (x, y, z, richness))
 
         let grid: MapGrid =
-            { WidthElmos = w * 8
-              HeightElmos = h * 8
+            { WidthElmos = widthElmos
+              HeightElmos = heightElmos
               WidthHeightmap = w
               HeightHeightmap = h
               HeightMap = heightMap
