@@ -33,6 +33,10 @@ type BarClient(config: EngineConfig) =
     let subscribersLock = obj ()
     let mutable subscribers: IObserver<GameFrame> list = []
     let mutable frameThread: Thread option = None
+    // True once the first frame has been received and we owe the engine
+    // a frame response before the next receive. Shared between the sync
+    // WaitFrames loop and the async frame thread so they stay consistent.
+    let mutable firstFrameSent = false
 
     let requireStream () =
         match stream with
@@ -63,16 +67,15 @@ type BarClient(config: EngineConfig) =
         let thread =
             Thread(fun () ->
                 let s = requireStream ()
-                let mutable firstFrame = true
                 let mutable running = true
                 state <- Running
                 while running do
                     try
-                        if not firstFrame then
+                        if firstFrameSent then
                             Protocol.sendFrameResponse s pendingCommands
                             pendingCommands <- []
                         else
-                            firstFrame <- false
+                            firstFrameSent <- true
                         match Protocol.receiveFrame s with
                         | Some frame ->
                             // Update game state
@@ -136,24 +139,40 @@ type BarClient(config: EngineConfig) =
     member _.GameState = gameState
 
     /// Blocks and collects up to N frames, calling the handler for each.
-    /// Useful for synchronous REPL-style stepping.
+    /// Reads frames synchronously on the calling thread — does NOT spawn a
+    /// background frame thread. Safe to follow with synchronous callback
+    /// queries (e.g. Callbacks.getMyTeam) because no other thread is reading
+    /// the stream once this method returns. Mixing WaitFrames with
+    /// `c.Frames.Subscribe` concurrently is unsupported.
     member this.WaitFrames (count: int) (handler: GameFrame -> unit) =
         if count <= 0 then ()
         else
         requireConnected ()
-        let remaining = ref count
-        let completed = new ManualResetEventSlim(false)
-        use _sub = this.Frames.Subscribe(
-            { new IObserver<GameFrame> with
-                member _.OnNext(frame) =
-                    handler frame
-                    if Interlocked.Decrement(remaining) <= 0 then
-                        completed.Set()
-                member _.OnCompleted() =
-                    completed.Set()
-                member _.OnError(_) =
-                    completed.Set() })
-        completed.Wait()
+        let s = requireStream ()
+        let mutable remaining = count
+        let mutable stopped = false
+        while remaining > 0 && not stopped do
+            try
+                if firstFrameSent then
+                    Protocol.sendFrameResponse s pendingCommands
+                    pendingCommands <- []
+                else
+                    firstFrameSent <- true
+                match Protocol.receiveFrame s with
+                | Some frame ->
+                    gameState <- GameState.processFrame gameState frame s
+                    notifyNext frame
+                    try handler frame with _ -> ()
+                    remaining <- remaining - 1
+                | None ->
+                    state <- Stopped
+                    notifyCompleted ()
+                    stopped <- true
+            with
+            | :? EngineDisconnectedException ->
+                state <- Stopped
+                notifyCompleted ()
+                stopped <- true
 
     /// Launches the BAR engine, listens for the HighBar V2 proxy connection,
     /// performs the protocol handshake, and transitions to the Connected state.
@@ -194,12 +213,40 @@ type BarClient(config: EngineConfig) =
             handshakeInfo <- Some hs
             printfn "Proxy connected. Handshake OK (protocol v%d, team %d)" hs.ProtocolVersion hs.TeamId
 
-            // Load unit definition cache
+            // Mini warmup: read ~60 frames BEFORE loading unit defs so we
+            // capture early spawn events (e.g. commander UnitCreated at
+            // ~frame 30) while the frame-reading path is still fast and
+            // hasn't been polluted by the 2500-callback UnitDefCache batch
+            // (which drops interleaved frames).
+            printfn "Warming up (reading early frames)..."
+            let mutable warmFrames = 0
+            let mutable warmStopped = false
+            while warmFrames < 60 && not warmStopped do
+                try
+                    if firstFrameSent then
+                        Protocol.sendFrameResponse netStream []
+                    else
+                        firstFrameSent <- true
+                    match Protocol.receiveFrame netStream with
+                    | Some frame ->
+                        gameState <- GameState.processFrame gameState frame netStream
+                        warmFrames <- warmFrames + 1
+                    | None ->
+                        warmStopped <- true
+                with
+                | :? EngineDisconnectedException ->
+                    warmStopped <- true
+            printfn "Warmup read %d frames (game frame %d, units tracked: %d)" warmFrames gameState.FrameNumber gameState.Units.Count
+
+            // Load unit definition cache. Interleaved frames during this
+            // batch will drop events, but the critical early spawn events
+            // have already been captured by the mini warmup above.
             printfn "Loading unit definitions..."
             let unitDefs = UnitDefCache.loadFromEngine netStream
             let defCount = UnitDefCache.all unitDefs |> Seq.length
             printfn "Loaded %d unit definitions." defCount
-            gameState <- { GameState.empty with UnitDefs = unitDefs }
+            // Preserve any units captured during mini warmup.
+            gameState <- { gameState with UnitDefs = unitDefs }
 
             state <- Connected
         with ex ->

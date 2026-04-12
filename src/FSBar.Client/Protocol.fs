@@ -120,7 +120,12 @@ module Protocol =
             | ProxyMessage.MessageCase.CallbackResponse resp -> resp
             | ProxyMessage.MessageCase.Frame _ ->
                 // Engine sent a frame while we're waiting for callback response.
-                // Respond with empty commands and keep reading.
+                // Respond with empty commands and keep reading. The frame's
+                // events are intentionally dropped here — the caller is
+                // expected to drive important event capture through the
+                // regular frame-reading path (BarClient.WaitFrames) rather
+                // than relying on bulk-callback batches like UnitDefCache
+                // loading to preserve them.
                 sendFrameResponse stream []
                 readUntilCallback (attempts + 1)
             | ProxyMessage.MessageCase.SaveRequest _ ->

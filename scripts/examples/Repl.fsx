@@ -94,8 +94,24 @@ let private processFrame (frame: GameFrame) =
 
 // ── Lifecycle ────────────────────────────────────────────────
 
+let private seedUnitsFromGameState () =
+    let c = client ()
+    let s = c.Stream
+    for KeyValue(id, u) in c.GameState.Units do
+        try
+            let (px, _, pz) = u.Position
+            let name =
+                match UnitDefCache.tryFindById c.GameState.UnitDefs u.DefId with
+                | Some info -> info.Name
+                | None -> Callbacks.getUnitDefName s u.DefId
+            _units <- _units.Add(id, {| Id = id; DefId = u.DefId; Name = name; X = px; Z = pz; Hp = u.Health; MaxHp = u.MaxHealth |})
+        with _ -> ()
+
 let private warmup () =
     let c = client ()
+    // Seed REPL state from units already tracked in c.GameState — these were
+    // picked up by the interleaved-frame handler during unit-def loading.
+    seedUnitsFromGameState ()
     c.WaitFrames 30 processFrame
     printfn "Connected! Team %d | Frame %d | Units: %d" (Callbacks.getMyTeam c.Stream) _frame.FrameNumber _units.Count
 
