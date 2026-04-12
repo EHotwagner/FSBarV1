@@ -1,0 +1,8 @@
+[ENGINE] Loading unit defs
+[HB] unsupported command oneof case=99 (proxy switch table miss)
+[HB] frame 1234 dispatched ok
+[HB] unsupported command oneof case=45 (proxy switch table miss)
+[HB] unsupported command oneof case=99 (proxy switch table miss)
+[OTHER] rc=-2 happened but not from the HB prefix
+[HB] unsupported command oneof case=999 (proxy switch table miss)
+[ENGINE] Simulation tick complete

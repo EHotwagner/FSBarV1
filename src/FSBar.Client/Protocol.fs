@@ -68,6 +68,9 @@ module Protocol =
     /// proxy. A clean socket close without a Shutdown envelope still raises
     /// <see cref="T:FSBar.Client.EngineDisconnectedException"/> from the
     /// underlying read.
+    ///
+    /// See ../HighBarV2/specs/030-proxy-contract-docs/contracts/shutdown-wire-shape.md
+    /// for the authoritative wire-shape contract.
     let rec receiveFrame (stream: NetworkStream) : GameFrame option =
         let bytes = Connection.recvBytes stream
         let proxyMsg = decode<ProxyMessage> bytes

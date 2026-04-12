@@ -1,0 +1,4 @@
+[ENGINE] Loading unit defs
+[HB] frame 1 dispatched ok
+[HB] frame 2 dispatched ok
+[ENGINE] Simulation tick complete

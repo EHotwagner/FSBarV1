@@ -22,6 +22,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Unwired-command parsing lives in lib/parse_unwired.sh — see that file's header
+# for the upstream contract reference (../HighBarV2/specs/030-proxy-contract-docs/
+# contracts/unwired-command-log.md) and the parser corrections vs. feature 021.
+# shellcheck source=lib/parse_unwired.sh
+source "$SCRIPT_DIR/lib/parse_unwired.sh"
+
 LADDER="$SCRIPT_DIR/ladder.json"
 BOT_FSX="$SCRIPT_DIR/bot.fsx"
 
@@ -201,28 +207,10 @@ else
   touch "$run_dir/engine.stdout" "$run_dir/engine.stderr" "$run_dir/engine.infolog"
 fi
 
-# Post-match rc=-2 grep per 021 FR-004 / contracts delta Change 2.
-# Surfaces "proxy didn't wire this command type" by scanning the copied engine
-# logs for rc=-2 markers and grouping by the protobuf oneof case name.
-# Always writes unwired_commands.json, even when count is zero.
-rc_total=0
-declare -A rc_by_case
-for f in "$run_dir/engine.infolog" "$run_dir/engine.stdout" "$run_dir/engine.stderr"; do
-  [[ -f "$f" ]] || continue
-  while IFS= read -r line; do
-    rc_total=$((rc_total + 1))
-    case_name="$(printf '%s\n' "$line" | sed -n 's/.*case=\([A-Za-z_][A-Za-z0-9_]*\).*/\1/p')"
-    [[ -z "$case_name" ]] && case_name="unknown"
-    rc_by_case[$case_name]=$(( ${rc_by_case[$case_name]:-0} + 1 ))
-  done < <(grep -F 'rc=-2' "$f" 2>/dev/null || true)
-done
-by_case_json='{}'
-for k in "${!rc_by_case[@]}"; do
-  by_case_json="$(jq -n --arg k "$k" --argjson v "${rc_by_case[$k]}" --argjson base "$by_case_json" '$base + {($k): $v}')"
-done
-jq -n --argjson total "$rc_total" --argjson by_case "$by_case_json" \
-  '{rc_minus_2_count: $total, by_case: $by_case}' > "$run_dir/unwired_commands.json"
-echo "[run.sh] unwired_commands.json: rc_minus_2_count=$rc_total"
+# Post-match unwired-command parsing per 022 FR-001..FR-004.
+# Always writes unwired_commands.json (FR-003 always-emit invariant).
+parse_unwired_stderr "$run_dir/engine.stderr" "$run_dir/unwired_commands.json"
+echo "[run.sh] unwired_commands.json: rc_minus_2_count=$(jq -r '.rc_minus_2_count' "$run_dir/unwired_commands.json")"
 
 write_stub_if_missing "bot-exit-without-result" "dotnet fsi exited with code $bot_exit"
 
