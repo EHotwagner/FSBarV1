@@ -96,6 +96,14 @@ Then classify the root cause:
 - **`out-of-scope`** — the cause is outside what we can fix on this branch
   (e.g. engine crash, new API surface required). Write a short report to
   `bots/runs/REPORT.md`, **HALT**, and ask the user.
+- **`cross-repo-defect`** *(021 FR-021)* — the root cause is a defect in
+  a sibling repo (today: HighBarV2 proxy behaviour). File an inbound
+  mailbox per §11, **HALT** the loop on this rung, and do NOT edit the
+  sibling repo from inside this feature.
+- **`budget-exhausted`** *(021 FR-016a)* — the rung has consumed its
+  10-iteration hard cap without clearing. File a budget-exhaustion
+  mailbox per §10, suffix the HISTORY line with `[budget-exhausted]`,
+  and **HALT** the loop on this rung.
 
 Pick exactly one label per iteration. Write it into `HISTORY.md`.
 
@@ -214,3 +222,63 @@ Halt and ask the user before continuing if any of these hold:
 - Three consecutive iterations all classified `infrastructure-regression`.
 - Any `dotnet test` failure on `FSBar.Client.Tests`.
 - A push has failed twice in a row on unrelated error messages.
+- The 10-iteration per-rung budget has been exhausted (see §10).
+- A cross-repo defect has been identified (see §11).
+
+---
+
+## 10. Per-rung iteration budget (021 FR-016a)
+
+Each rung in this feature's session has a **hard cap of 10 iterations**.
+If a rung has not produced at least one clean canonical `win`
+(`victory_signal=engine-shutdown-gameover`, derived from the real
+`GameEvent.Shutdown` path — not a shim) within those 10 iterations,
+do **not** start an 11th. Instead:
+
+1. File a budget-exhaustion mailbox at
+   `Mailbox/<YYYY-MM-DD>_from_FSBarV1_budget_exhausted_<rung-slug>.md`
+   where `<rung-slug>` is the rung name with `/` replaced by `-` and
+   lowercased. Examples:
+   - `NullAI` → `nullai`
+   - `BARb/dev` → `barb-dev`
+
+2. The mailbox MUST contain: the rung name, the list of all 10
+   iteration ids, each iteration's outcome, the trajectory of the
+   telemetry fields used in the stall check (FramesSurvived,
+   EnemyKilled, UnitsBuilt, PeakMetal, PeakEnergy), and a short
+   hypothesis for why the rung did not clear.
+
+3. Append the last iteration's HISTORY line with the literal suffix
+   `[budget-exhausted]` (no space around the brackets).
+
+4. **HALT** the loop on that rung. The operator may restart the rung
+   only after either (a) an out-of-band fix lands on the feature
+   branch that invalidates the budget-exhaustion hypothesis, or (b)
+   an explicit operator decision to re-open the budget per a new
+   `/speckit.clarify` round.
+
+---
+
+## 11. Cross-repo defect routing (021 FR-021)
+
+If an iteration's classification is `cross-repo-defect` — meaning the
+root cause is a defect in a sibling repo such as HighBarV2 proxy — do
+**not** edit the sibling repo from inside this feature. Instead:
+
+1. File an inbound mailbox to the sibling repo at
+   `Mailbox/<YYYY-MM-DD>_to_HighBarV2_<short-symptom-slug>.md`
+   using the same slug rule as §10 (`/` → `-`, lowercased, no
+   spaces). Examples:
+   - AttackCommand issues → `attack-command-stationary`
+   - Callback NaN on unexpected resource id → `economy-callback-nan`
+
+2. The mailbox MUST contain: a pointer to the run directory that
+   exhibits the defect, the relevant `frames.jsonl` excerpt, the
+   relevant `engine.infolog` excerpt, and a minimal repro plan if the
+   sibling repo's test harness can host it.
+
+3. **HALT** the loop. Do not start another iteration on the current
+   rung until the sibling repo responds with a fix or a disposition.
+
+Iterations made while a cross-repo defect is outstanding are not
+counted against the §10 budget — a halted loop is halted.

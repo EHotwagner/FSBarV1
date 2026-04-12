@@ -133,13 +133,19 @@ let logFrame
         printfn "[frame %d] %s%s%s%s" frame ed.Type idPart actorPart detailPart
 
 /// Telemetry record passed to writeResult. Keys match contracts/result.schema.json.
+///
+/// PeakMetal and PeakEnergy are float option: None serializes as JSON null,
+/// used when the proxy returned Single.NaN for the resource on every frame
+/// (per 021 FR-003 / contracts delta Change 1). A real zero accumulation
+/// must still serialize as 0.0 so the stall check doesn't confuse
+/// "callback unavailable" with "bot built nothing".
 type TrainerTelemetry = {
     CommandsTotal: int
     UnitsBuilt: int
     UnitsLost: int
     EnemyUnitsKilled: int
-    PeakMetal: float
-    PeakEnergy: float
+    PeakMetal: float option
+    PeakEnergy: float option
     FramesSurvived: int
 }
 
@@ -173,8 +179,12 @@ let writeResult
     writer.WriteNumber("units_built", telemetry.UnitsBuilt)
     writer.WriteNumber("units_lost", telemetry.UnitsLost)
     writer.WriteNumber("enemy_units_killed", telemetry.EnemyUnitsKilled)
-    writer.WriteNumber("peak_metal", telemetry.PeakMetal)
-    writer.WriteNumber("peak_energy", telemetry.PeakEnergy)
+    (match telemetry.PeakMetal with
+     | Some v -> writer.WriteNumber("peak_metal", v)
+     | None -> writer.WriteNull("peak_metal"))
+    (match telemetry.PeakEnergy with
+     | Some v -> writer.WriteNumber("peak_energy", v)
+     | None -> writer.WriteNull("peak_energy"))
     writer.WriteNumber("frames_survived", telemetry.FramesSurvived)
     writer.WriteEndObject()
     writer.WriteEndObject()
@@ -189,8 +199,8 @@ let writeError (logger: TrainerLogger) (ex: exn) : unit =
         UnitsBuilt = 0
         UnitsLost = 0
         EnemyUnitsKilled = 0
-        PeakMetal = 0.0
-        PeakEnergy = 0.0
+        PeakMetal = None
+        PeakEnergy = None
         FramesSurvived = 0
     }
     writeResult

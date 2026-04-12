@@ -80,3 +80,33 @@ The feature is "done" when:
 
 See `specs/020-bot-iterative-trainer/spec.md` §Success Criteria for the
 full list.
+
+## 021-rerun-trainer-highbar integration note
+
+Feature `021-rerun-trainer-highbar` re-ran the iteration loop against the
+integrated HighBarV2 `029-fix-trainer-issues` proxy. Summary of the
+integration is in the outbound mailbox
+`Mailbox/2026-04-12_from_FSBarV1_integration_complete.md`, and a
+follow-up probe report is in
+`Mailbox/2026-04-12_to_HighBarV2_attack-command-stationary.md`.
+
+Key outcomes:
+- The four feature-020 trainer-side workarounds (`botDeclaredVictory`,
+  "No active session" sniffer, `enum_move=42`, real-path `peak_metal: 0`)
+  are gone from shipping code.
+- Canonical end-of-game flows through `GameEvent.Shutdown` in the frame
+  event stream. `FSBar.Client.Protocol.fs` was updated to synthesize a
+  terminal frame for the proxy's standalone `Shutdown` envelope, because
+  the proxy delivers it out-of-band (not inside a final `Frame` message).
+- `bots/trainer/helpers/perception.fsx` gained its first substantive
+  helper — `pickEnemyCommanderPos`, used from two organic call sites in
+  `bot.fsx`.
+- `PLAYBOOK.md` §10 (10-iteration per-rung budget) and §11 (cross-repo
+  defect routing) added for future iteration sessions.
+- The `NullAI` rung was dropped from the iteration loop in 021 because
+  the engine does not declare `Spring.GameOver` for the scenario; its
+  MVP contribution (economy fix verification) is still captured in the
+  `smoke-021` / `smoke-021b` HISTORY entries.
+
+The 021 spec, plan, tasks, research, data-model, contracts delta, and
+quickstart live under `specs/021-rerun-trainer-highbar/`.

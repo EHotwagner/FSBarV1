@@ -40,7 +40,7 @@ fi
 
 # Verify we are on the feature branch (warn but do not block — caller may be on a detached state)
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")"
-if [[ "$current_branch" != "020-bot-iterative-trainer" ]]; then
+if [[ "$current_branch" != "021-rerun-trainer-highbar" ]]; then
   echo "[run.sh] WARNING: not on feature branch (current: $current_branch)" >&2
 fi
 
@@ -200,6 +200,29 @@ else
   echo "[run.sh] WARNING: no /tmp/fsbar-* session dir found"
   touch "$run_dir/engine.stdout" "$run_dir/engine.stderr" "$run_dir/engine.infolog"
 fi
+
+# Post-match rc=-2 grep per 021 FR-004 / contracts delta Change 2.
+# Surfaces "proxy didn't wire this command type" by scanning the copied engine
+# logs for rc=-2 markers and grouping by the protobuf oneof case name.
+# Always writes unwired_commands.json, even when count is zero.
+rc_total=0
+declare -A rc_by_case
+for f in "$run_dir/engine.infolog" "$run_dir/engine.stdout" "$run_dir/engine.stderr"; do
+  [[ -f "$f" ]] || continue
+  while IFS= read -r line; do
+    rc_total=$((rc_total + 1))
+    case_name="$(printf '%s\n' "$line" | sed -n 's/.*case=\([A-Za-z_][A-Za-z0-9_]*\).*/\1/p')"
+    [[ -z "$case_name" ]] && case_name="unknown"
+    rc_by_case[$case_name]=$(( ${rc_by_case[$case_name]:-0} + 1 ))
+  done < <(grep -F 'rc=-2' "$f" 2>/dev/null || true)
+done
+by_case_json='{}'
+for k in "${!rc_by_case[@]}"; do
+  by_case_json="$(jq -n --arg k "$k" --argjson v "${rc_by_case[$k]}" --argjson base "$by_case_json" '$base + {($k): $v}')"
+done
+jq -n --argjson total "$rc_total" --argjson by_case "$by_case_json" \
+  '{rc_minus_2_count: $total, by_case: $by_case}' > "$run_dir/unwired_commands.json"
+echo "[run.sh] unwired_commands.json: rc_minus_2_count=$rc_total"
 
 write_stub_if_missing "bot-exit-without-result" "dotnet fsi exited with code $bot_exit"
 

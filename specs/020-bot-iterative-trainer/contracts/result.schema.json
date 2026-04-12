@@ -65,14 +65,14 @@
           "description": "Count of EnemyDestroyed events attributable to friendly units."
         },
         "peak_metal": {
-          "type": "number",
+          "type": ["number", "null"],
           "minimum": 0,
-          "description": "Highest observed Metal.Current during the match."
+          "description": "Highest observed Metal.Current during the match. Null when the proxy returned Single.NaN for the resource for every frame of the match (e.g. an invalid resource id was queried), per feature 021 FR-003."
         },
         "peak_energy": {
-          "type": "number",
+          "type": ["number", "null"],
           "minimum": 0,
-          "description": "Highest observed Energy.Current during the match."
+          "description": "Highest observed Energy.Current during the match. Null when the proxy returned Single.NaN for the resource for every frame of the match (e.g. an invalid resource id was queried), per feature 021 FR-003."
         },
         "frames_survived": {
           "type": "integer",

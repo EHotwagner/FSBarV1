@@ -91,25 +91,10 @@ logStart logger config
 
 let moveRefreshInterval = 500
 
-// Identify the enemy commander: pick the enemy whose DefId is unique across all enemies.
-// (NullAI's 8 spawns include 7 identical buildings and 1 unique commander.)
-let pickEnemyCommanderPos (gs: GameState) : (float32 * float32 * float32) option =
-    if Map.isEmpty gs.Enemies then None
-    else
-        let defCounts =
-            gs.Enemies
-            |> Map.toSeq
-            |> Seq.choose (fun (_, e) -> e.DefId)
-            |> Seq.countBy id
-            |> Map.ofSeq
-        let uniqueEnemy =
-            gs.Enemies
-            |> Map.toSeq
-            |> Seq.tryFind (fun (_, e) ->
-                match e.DefId with
-                | Some d -> Map.tryFind d defCounts = Some 1
-                | None -> false)
-        uniqueEnemy |> Option.map (fun (_, e) -> e.Position)
+// pickEnemyCommanderPos was extracted into helpers/perception.fsx (021 T032):
+// it was being called from two organic sites in this file — the periodic
+// progress log and the per-refresh MoveCommand target selection — which is
+// the substance bar SC-006 wants. See helpers/perception.fsx for the body.
 
 let mutable lastMoveFrame = -10000
 let mutable strategyAnnounced = false
@@ -192,6 +177,104 @@ let tacticsFn : TrainerTacticsFn =
                     []
             { Commands = cmds; VictoryDeclared = victoryNow }
 
+// 021 US4 — Issue 1 AttackCommand getUnitPos probe. Gated by env var
+// HIGHBAR_PROBE_ATTACK=1. Runs ONCE before the main trainer loop: captures
+// the issuing commander's position, fires one AttackCommand at the nearest
+// enemy (or first enemy if distances unavailable), waits 30 frames without
+// issuing further commands, re-reads the commander's position, classifies
+// the delta, and writes attack_probe.json into the run directory per
+// contracts/result-record.delta.md Change 3. Intentionally non-invasive:
+// if the probe fails or the env var is unset, the main trainer loop
+// continues unchanged.
+let probeEnabled =
+    match Environment.GetEnvironmentVariable("HIGHBAR_PROBE_ATTACK") with
+    | "1" -> true
+    | _ -> false
+
+let runAttackProbe (client: BarClient) : unit =
+    try
+        let cidOpt =
+            if Map.isEmpty client.GameState.Units then None
+            else Some (client.GameState.Units |> Map.toSeq |> Seq.head |> fst)
+        // Prefer the unique-def enemy (usually the enemy commander) as
+        // the probe target, so the result is not dominated by Spring
+        // refusing to chase a distant critter. Fall back to the first
+        // enemy only if no unique-def enemy exists.
+        let enemyOpt =
+            if Map.isEmpty client.GameState.Enemies then None
+            else
+                let defCounts =
+                    client.GameState.Enemies
+                    |> Map.toSeq
+                    |> Seq.choose (fun (_, e) -> e.DefId)
+                    |> Seq.countBy id
+                    |> Map.ofSeq
+                let unique =
+                    client.GameState.Enemies
+                    |> Map.toSeq
+                    |> Seq.tryFind (fun (_, e) ->
+                        match e.DefId with
+                        | Some d -> Map.tryFind d defCounts = Some 1
+                        | None -> false)
+                match unique with
+                | Some pair -> Some pair
+                | None -> Some (client.GameState.Enemies |> Map.toSeq |> Seq.head)
+        match cidOpt, enemyOpt with
+        | Some cid, Some (eid, enemy) ->
+            let issuingDefName =
+                match client.GameState.Units |> Map.tryFind cid with
+                | Some u ->
+                    try Callbacks.getUnitDefName client.Stream u.DefId with _ -> "unknown"
+                | None -> "unknown"
+            let (bx, by, bz) = Callbacks.getUnitPos client.Stream cid
+            let frameAtSend = int client.GameState.FrameNumber
+            printfn "[probe] frame=%d commander=%d def=%s pos_before=(%.1f,%.1f,%.1f) target=%d"
+                frameAtSend cid issuingDefName bx by bz eid
+            client.SendCommands [ AttackCommand cid eid ]
+            client.WaitFrames 30 (fun _ -> ())
+            let frameAtCheck = int client.GameState.FrameNumber
+            let destroyed = not (client.GameState.Units |> Map.containsKey cid)
+            let (ax, ay, az, outcome) =
+                if destroyed then
+                    (0.0f, 0.0f, 0.0f, "destroyed")
+                else
+                    let (ax, ay, az) = Callbacks.getUnitPos client.Stream cid
+                    let dx = float (ax - bx)
+                    let dy = float (ay - by)
+                    let dz = float (az - bz)
+                    let dist = sqrt (dx * dx + dy * dy + dz * dz)
+                    let outcome = if dist > 5.0 then "moved" else "stationary"
+                    (ax, ay, az, outcome)
+            printfn "[probe] frame=%d pos_after=(%.1f,%.1f,%.1f) outcome=%s"
+                frameAtCheck ax ay az outcome
+            use ms = new MemoryStream()
+            use writer = new Utf8JsonWriter(ms, JsonWriterOptions(Indented = true))
+            writer.WriteStartObject()
+            writer.WriteNumber("issuing_unit_id", cid)
+            writer.WriteString("issuing_unit_def", issuingDefName)
+            writer.WriteNumber("target_unit_id", eid)
+            writer.WriteNumber("frame_at_send", frameAtSend)
+            writer.WriteStartArray("pos_before")
+            writer.WriteNumberValue(bx)
+            writer.WriteNumberValue(by)
+            writer.WriteNumberValue(bz)
+            writer.WriteEndArray()
+            writer.WriteNumber("frame_at_check", frameAtCheck)
+            writer.WriteStartArray("pos_after")
+            writer.WriteNumberValue(ax)
+            writer.WriteNumberValue(ay)
+            writer.WriteNumberValue(az)
+            writer.WriteEndArray()
+            writer.WriteString("outcome", outcome)
+            writer.WriteEndObject()
+            writer.Flush()
+            File.WriteAllBytes(Path.Combine(runDir, "attack_probe.json"), ms.ToArray())
+            printfn "[probe] wrote attack_probe.json"
+        | _ ->
+            printfn "[probe] skipped — no commander or no enemy in GameState at probe time"
+    with ex ->
+        printfn "[probe] ERROR: %s" ex.Message
+
 let mutable clientOpt : BarClient option = None
 try
     try
@@ -200,6 +283,7 @@ try
         printfn "[trainer] BarClient.Start()"
         client.Start()
         printfn "[trainer] BarClient connected"
+        if probeEnabled then runAttackProbe client
         let result = trainerLoopRun client logger maxFrames tacticsFn
         writeResult
             logger

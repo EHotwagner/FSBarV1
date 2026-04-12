@@ -53,7 +53,21 @@ module Protocol =
             }
         | _ -> failwith "Expected Handshake message from proxy"
 
-    /// Receive one frame from the proxy. Returns None on Shutdown.
+    /// Receive one frame from the proxy.
+    ///
+    /// Returns <c>Some frame</c> for a normal game frame, or <c>Some</c> a
+    /// synthetic terminal frame carrying a single <c>GameEvent.Shutdown</c>
+    /// event when the proxy delivers the standalone Shutdown envelope on
+    /// game-over (the proxy sends it as a top-level <c>ProxyMessage</c> after
+    /// its final <c>send_frame</c>, then closes the socket). The synthetic
+    /// frame has <c>FrameNumber = 0u</c> as a sentinel; callers that need the
+    /// last real game-frame number must rewrite it before dispatching.
+    ///
+    /// Returns <c>None</c> only for legacy code paths that still expected the
+    /// old "Shutdown = None" behaviour — which is now unreachable from the
+    /// proxy. A clean socket close without a Shutdown envelope still raises
+    /// <see cref="T:FSBar.Client.EngineDisconnectedException"/> from the
+    /// underlying read.
     let rec receiveFrame (stream: NetworkStream) : GameFrame option =
         let bytes = Connection.recvBytes stream
         let proxyMsg = decode<ProxyMessage> bytes
@@ -67,8 +81,20 @@ module Protocol =
                 FrameNumber = frame.FrameNumber
                 Events = events
             }
-        | ProxyMessage.MessageCase.Shutdown _ ->
-            None
+        | ProxyMessage.MessageCase.Shutdown sd ->
+            // Inline the ShutdownReason→string mapping rather than calling
+            // Events.shutdownReasonToString (which is not in Events.fsi, so
+            // exposing it here would force a Tier 1 surface change).
+            let reason =
+                match sd.Reason with
+                | Highbar.ShutdownReason.GameOver -> "GameOver"
+                | Highbar.ShutdownReason.Disconnect -> "Disconnect"
+                | Highbar.ShutdownReason.Error -> "Error"
+                | _ -> "Unknown"
+            Some {
+                FrameNumber = 0u
+                Events = [ GameEvent.Shutdown reason ]
+            }
         | ProxyMessage.MessageCase.SaveRequest _ ->
             // Respond with empty save state
             let resp : AIMessage = {

@@ -38,6 +38,17 @@ type BarClient(config: EngineConfig) =
     // WaitFrames loop and the async frame thread so they stay consistent.
     let mutable firstFrameSent = false
 
+    // Detects the synthetic terminal frame that Protocol.receiveFrame emits
+    // when the proxy delivers its standalone Shutdown envelope on game-over.
+    // The frame carries FrameNumber=0u as a sentinel and must be rewritten
+    // before it reaches subscribers / WaitFrames handlers (see the receive
+    // loops below).
+    let isShutdownFrame (frame: GameFrame) =
+        frame.Events
+        |> List.exists (function
+            | GameEvent.Shutdown _ -> true
+            | _ -> false)
+
     let requireStream () =
         match stream with
         | Some s -> s
@@ -77,6 +88,19 @@ type BarClient(config: EngineConfig) =
                         else
                             firstFrameSent <- true
                         match Protocol.receiveFrame s with
+                        | Some frame when isShutdownFrame frame ->
+                            // Terminal Shutdown envelope from the proxy.
+                            // Rewrite the sentinel FrameNumber=0u to the last
+                            // real game frame so subscribers see a monotonic
+                            // sequence, notify, then exit cleanly WITHOUT
+                            // calling GameState.processFrame (which would
+                            // rewind state to frame 0).
+                            let shutdownFrame =
+                                { frame with FrameNumber = gameState.FrameNumber }
+                            notifyNext shutdownFrame
+                            state <- Stopped
+                            running <- false
+                            notifyCompleted ()
                         | Some frame ->
                             // Update game state
                             gameState <- GameState.processFrame gameState frame s
@@ -159,6 +183,16 @@ type BarClient(config: EngineConfig) =
                 else
                     firstFrameSent <- true
                 match Protocol.receiveFrame s with
+                | Some frame when isShutdownFrame frame ->
+                    // Terminal Shutdown envelope — rewrite sentinel frame
+                    // number, deliver to handler & subscribers, stop.
+                    let shutdownFrame =
+                        { frame with FrameNumber = gameState.FrameNumber }
+                    notifyNext shutdownFrame
+                    try handler shutdownFrame with _ -> ()
+                    state <- Stopped
+                    notifyCompleted ()
+                    stopped <- true
                 | Some frame ->
                     gameState <- GameState.processFrame gameState frame s
                     notifyNext frame
@@ -228,6 +262,11 @@ type BarClient(config: EngineConfig) =
                     else
                         firstFrameSent <- true
                     match Protocol.receiveFrame netStream with
+                    | Some frame when isShutdownFrame frame ->
+                        // Game ended before warmup completed — unusual but
+                        // possible on tiny scenarios. Don't processFrame the
+                        // synthetic frame; just exit the warmup loop.
+                        warmStopped <- true
                     | Some frame ->
                         gameState <- GameState.processFrame gameState frame netStream
                         warmFrames <- warmFrames + 1
@@ -259,6 +298,9 @@ type BarClient(config: EngineConfig) =
         requireConnected ()
         let s = requireStream ()
         match Protocol.receiveFrame s with
+        | Some frame when isShutdownFrame frame ->
+            state <- Stopped
+            failwith "Game ended (shutdown received)"
         | Some _ ->
             Protocol.sendFrameResponse s [
                 Commands.SendTextMessageCommand ".cheat" 0
@@ -272,6 +314,9 @@ type BarClient(config: EngineConfig) =
             failwith "Game ended (shutdown received)"
         for _ in 1..10 do
             match Protocol.receiveFrame s with
+            | Some frame when isShutdownFrame frame ->
+                state <- Stopped
+                failwith "Game ended during reset"
             | Some _ -> Protocol.sendFrameResponse s []
             | None ->
                 state <- Stopped

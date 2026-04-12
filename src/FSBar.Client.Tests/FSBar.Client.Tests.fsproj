@@ -19,6 +19,8 @@
     <Compile Include="UnitDefCacheTests.fs" />
     <Compile Include="GameStateTests.fs" />
     <Compile Include="BarClientTests.fs" />
+    <Compile Include="TrainerStallHelper.fs" />
+    <Compile Include="TrainerStallTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>
 

@@ -98,7 +98,12 @@ let ``receiveFrame_deserializes_frame_correctly`` () =
         aiStream.Dispose()
 
 [<Fact>]
-let ``receiveFrame_returns_none_on_shutdown`` () =
+let ``receiveFrame_surfaces_shutdown_as_synthetic_frame`` () =
+    // 021: Protocol.receiveFrame now synthesizes a terminal GameFrame
+    // carrying GameEvent.Shutdown so the standalone top-level Shutdown
+    // envelope is reachable from callers that pattern-match on
+    // frame.Events. The sentinel FrameNumber=0u is rewritten by BarClient
+    // before dispatch to subscribers.
     let (proxyStream, aiStream) = createStreamPair ()
     try
         let shutdownMsg : ProxyMessage = {
@@ -109,7 +114,16 @@ let ``receiveFrame_returns_none_on_shutdown`` () =
         Connection.sendMessage proxyStream (encode shutdownMsg)
 
         let result = Protocol.receiveFrame aiStream
-        Assert.True(result.IsNone)
+        match result with
+        | Some frame ->
+            Assert.Equal(0u, frame.FrameNumber)
+            match frame.Events with
+            | [ GameEvent.Shutdown reason ] ->
+                Assert.Equal("GameOver", reason)
+            | other ->
+                Assert.Fail(sprintf "Expected single Shutdown event, got %A" other)
+        | None ->
+            Assert.Fail("Expected Some synthetic shutdown frame, got None")
     finally
         proxyStream.Dispose()
         aiStream.Dispose()

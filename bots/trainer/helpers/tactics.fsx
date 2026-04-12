@@ -75,12 +75,24 @@ let trainerLoopRun
     (maxFrames: int)
     (tactics: TrainerTacticsFn)
     : TrainerMatchResult =
+    // Per 021 FR-003: peakMetal/peakEnergy use float option so a match where
+    // every frame reads Single.NaN (proxy returned NaN for an invalid resource
+    // id) serializes to null rather than 0.0 — preserves the distinction
+    // between "real zero accumulation" and "callback unavailable" for the
+    // stall check.
+    let nanSafeUpdate (acc: float option) (v: float32) =
+        if Single.IsNaN v then acc
+        else
+            match acc with
+            | None -> Some (float v)
+            | Some prev -> Some (max prev (float v))
+
     let mutable commandsTotal = 0
     let mutable unitsBuilt = 0
     let mutable unitsLost = 0
     let mutable enemyKilled = 0
-    let mutable peakMetal = 0.0
-    let mutable peakEnergy = 0.0
+    let mutable peakMetal : float option = None
+    let mutable peakEnergy : float option = None
     let mutable framesSurvived = 0
     let mutable myCommanderId : int option = None
     let mutable commanderAlive = true
@@ -92,8 +104,6 @@ let trainerLoopRun
     let mutable lastExceptionType = ""
     let mutable terminalError : (string * string) option = None
     let mutable stepping = true
-    let mutable botDeclaredVictory = false
-    let mutable botVictoryFrame = 0
 
     // BarClient.Start already does a 60-frame internal warmup that captures the commander
     // into client.GameState.Units before UnitCreated events reach us. Check the unit map
@@ -164,8 +174,8 @@ let trainerLoopRun
 
                 let m = client.GameState.Metal
                 let e = client.GameState.Energy
-                if float m.Current > peakMetal then peakMetal <- float m.Current
-                if float e.Current > peakEnergy then peakEnergy <- float e.Current
+                peakMetal <- nanSafeUpdate peakMetal m.Current
+                peakEnergy <- nanSafeUpdate peakEnergy e.Current
 
                 // Let bot tactics decide commands for next frame
                 let tacticsResult =
@@ -180,10 +190,13 @@ let trainerLoopRun
                         commandsTotal <- commandsTotal + List.length cmds
                     with ex ->
                         printfn "[trainer] SendCommands exception at frame %d: %s" f ex.Message
-                if tacticsResult.VictoryDeclared && not botDeclaredVictory then
-                    botDeclaredVictory <- true
-                    botVictoryFrame <- int f
-                    printfn "[trainer] bot declared VICTORY at frame %d" f
+                // tacticsResult.VictoryDeclared is no longer consumed: per 021
+                // US2 the canonical victory path is Shutdown(GAME_OVER) from
+                // the proxy (surfaced as GameEvent.Shutdown via the
+                // Protocol.fs synthesis patch). The field survives in the
+                // TrainerTacticsResult record only because bot.fsx still
+                // produces it — kept as a no-op to avoid churning bot.fsx
+                // within the same feature.
 
                 let hasEvents = not (List.isEmpty detailedEvents)
                 let sampledFrame = int f % 30 = 0
@@ -202,39 +215,31 @@ let trainerLoopRun
                         (List.length cmds))
             consecutiveExceptions <- 0
         with ex ->
-            // A "No active session" exception means BarClient went to Stopped state
-            // (Protocol.receiveFrame returned None because the engine closed the socket
-            // on its own game-over). Treat as engine shutdown, not a bot bug.
-            if ex.Message.Contains "No active session" || client.State = Stopped then
-                if not shutdownSeen then
-                    shutdownSeen <- true
-                    shutdownReason <- "engine-socket-closed"
-                    printfn "[trainer] engine socket closed at frame %d — treating as shutdown"
-                        lastFrameNumber
-                stepping <- false
+            // Canonical end-of-game now flows through GameEvent.Shutdown in
+            // the frame event stream (see Protocol.fs receiveFrame synthesis
+            // patch). Any exception from WaitFrames at this point is a real
+            // error — increment the repeat-counter and classify as
+            // terminal-error after 3 consecutive same-type repeats. The
+            // The pre-021 exception sniffer that treated a socket close as
+            // the canonical shutdown has been removed per FR-007.
+            let fnum = uint32 lastFrameNumber
+            let etype = ex.GetType().Name
+            if fnum = lastExceptionFrame && etype = lastExceptionType then
+                consecutiveExceptions <- consecutiveExceptions + 1
             else
-                let fnum = uint32 lastFrameNumber
-                let etype = ex.GetType().Name
-                if fnum = lastExceptionFrame && etype = lastExceptionType then
-                    consecutiveExceptions <- consecutiveExceptions + 1
-                else
-                    consecutiveExceptions <- 1
-                    lastExceptionFrame <- fnum
-                    lastExceptionType <- etype
-                printfn "[trainer] frame loop exception (count=%d) at frame %d: %s: %s"
-                    consecutiveExceptions lastFrameNumber etype ex.Message
-                if consecutiveExceptions >= 3 then
-                    terminalError <-
-                        Some ("error", sprintf "repeated-frame-exception: %s" etype)
-                    stepping <- false
+                consecutiveExceptions <- 1
+                lastExceptionFrame <- fnum
+                lastExceptionType <- etype
+            printfn "[trainer] frame loop exception (count=%d) at frame %d: %s: %s"
+                consecutiveExceptions lastFrameNumber etype ex.Message
+            if consecutiveExceptions >= 3 then
+                terminalError <-
+                    Some ("error", sprintf "repeated-frame-exception: %s" etype)
+                stepping <- false
 
         if shutdownSeen then stepping <- false
         elif not commanderAlive then stepping <- false
         elif lastFrameNumber >= maxFrames then stepping <- false
-        elif botDeclaredVictory && lastFrameNumber - botVictoryFrame >= 60 then
-            // Bot detected an unambiguous win; give the engine a few frames to emit
-            // any straggler events then stop. Classification below will produce a win.
-            stepping <- false
 
     let telemetry = {
         CommandsTotal = commandsTotal
@@ -257,24 +262,7 @@ let trainerLoopRun
             Telemetry = telemetry
         }
     | None ->
-        if botDeclaredVictory && commanderAlive then
-            // Workaround: BAR's game_end.lua fires Spring.GameOver (engine log shows
-            // `EndGame Graph disabled`) but the HighBar V2 proxy doesn't forward that to
-            // our AI client as a Shutdown protocol event in scripted 1v1 sessions. The
-            // bot tactics callback detected the win condition (enemy commander gone from
-            // GameState.Enemies, ours alive) and declared victory. Report as a win with
-            // the engine-shutdown-gameover signal per contracts/result.schema.json.
-            {
-                Outcome = "win"
-                Frames = lastFrameNumber
-                Cause =
-                    sprintf "bot declared victory at frame %d (enemy commander killed, ours alive)"
-                        botVictoryFrame
-                VictorySignal = Some "engine-shutdown-gameover"
-                ErrorMessage = None
-                Telemetry = telemetry
-            }
-        elif shutdownSeen && commanderAlive then
+        if shutdownSeen && commanderAlive then
             {
                 Outcome = "win"
                 Frames = lastFrameNumber
