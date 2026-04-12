@@ -4,11 +4,10 @@
 
 ## Installation
 
-- **AppImage**: `/home/developer/.local/bin/beyond-all-reason` (bind-mounted from host)
-- **Launch command**: `beyond-all-reason --appimage-extract-and-run --no-sandbox`
-  - `--appimage-extract-and-run` is required because FUSE is unavailable in rootless containers
-  - `--no-sandbox` is required for Electron in container environments
-  - **Must be started in windowed mode** (not fullscreen)
+- **Install dir**: `/home/developer/.local/state/Beyond All Reason/` (engine binaries + game data; bind-mounted from host in containers)
+- **Headless binary**: `~/.local/state/Beyond All Reason/engine/recoil_<version>/spring-headless`
+- **Graphical binary**: `~/.local/state/Beyond All Reason/engine/recoil_<version>/spring`
+  - **Must be started in windowed mode** (not fullscreen) — see `EngineLauncher` which writes `Fullscreen=0` to `springsettings.cfg`
 
 ## Directory Layout
 
@@ -126,6 +125,6 @@ touch "$HOME/.local/state/Beyond All Reason/devmode.txt"
 sed -i 's/simpleAiList = true/simpleAiList = false/' \
   "$HOME/.local/state/Beyond All Reason/LuaMenu/Config/IGL_data.lua"
 
-# 5. Launch
-beyond-all-reason --appimage-extract-and-run --no-sandbox
+# 5. Launch (graphical engine, windowed)
+"$HOME/.local/state/Beyond All Reason/engine/recoil_2025.06.19/spring" --window
 ```
