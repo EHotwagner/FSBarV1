@@ -1,0 +1,18 @@
+{
+  "map": "Avalanche 3.4",
+  "seed": 1,
+  "rungs": [
+    {
+      "name": "NullAI",
+      "opponent": "NullAI",
+      "options": {},
+      "max_frames": 18000
+    },
+    {
+      "name": "BARb/dev",
+      "opponent": "BARb",
+      "options": { "profile": "dev" },
+      "max_frames": 36000
+    }
+  ]
+}

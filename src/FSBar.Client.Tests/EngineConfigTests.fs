@@ -48,7 +48,7 @@ let ``defaultConfig_returns_resolved_spring_data_dir`` () =
 [<Fact>]
 let ``defaultConfig_returns_expected_game_speed`` () =
     let config = EngineConfig.defaultConfig ()
-    Assert.Equal(100, config.GameSpeed)
+    Assert.Equal(3, config.GameSpeed)
 
 [<Fact>]
 let ``defaultConfig_generates_unique_socket_paths`` () =

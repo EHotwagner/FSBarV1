@@ -50,8 +50,8 @@ let ``generate_contains_opponent_ai`` () =
 let ``generate_contains_game_speed`` () =
     let config = EngineConfig.defaultConfig ()
     let script = ScriptGenerator.generate config
-    Assert.Contains("MinSpeed=100;", script)
-    Assert.Contains("MaxSpeed=100;", script)
+    Assert.Contains($"MinSpeed={config.GameSpeed};", script)
+    Assert.Contains($"MaxSpeed={config.GameSpeed};", script)
 
 [<Fact>]
 let ``generate_contains_faction_modoptions`` () =
@@ -102,3 +102,40 @@ let ``generate_contains_highbar_ai_config`` () =
     let script = ScriptGenerator.generate config
     Assert.Contains("Name=HighBarV2;", script)
     Assert.Contains("ShortName=HighBarV2;", script)
+
+[<Fact>]
+let ``generate_default_death_mode_is_com`` () =
+    let config = EngineConfig.defaultConfig ()
+    let script = ScriptGenerator.generate config
+    Assert.Contains("deathmode=com;", script)
+    Assert.DoesNotContain("deathmode=neverend;", script)
+
+[<Fact>]
+let ``generate_custom_death_mode_is_rendered`` () =
+    let config = { EngineConfig.defaultConfig () with DeathMode = "neverend" }
+    let script = ScriptGenerator.generate config
+    Assert.Contains("deathmode=neverend;", script)
+
+[<Fact>]
+let ``generate_with_opponent_ai_options_emits_options_block`` () =
+    let config =
+        { EngineConfig.defaultConfig () with
+            OpponentAIOptions = Map.ofList [ "profile", "easy"; "difficulty", "hard" ] }
+    let script = ScriptGenerator.generate config
+    let ai1Index = script.IndexOf("[AI1]")
+    Assert.True(ai1Index >= 0, "Expected [AI1] section")
+    let ai1Section = script.Substring(ai1Index)
+    Assert.Contains("[OPTIONS]", ai1Section)
+    Assert.Contains("profile=easy;", ai1Section)
+    Assert.Contains("difficulty=hard;", ai1Section)
+
+[<Fact>]
+let ``generate_with_empty_opponent_ai_options_omits_options_block`` () =
+    let config = EngineConfig.defaultConfig ()
+    Assert.True(Map.isEmpty config.OpponentAIOptions)
+    let script = ScriptGenerator.generate config
+    let ai1Index = script.IndexOf("[AI1]")
+    let team0Index = script.IndexOf("[TEAM0]")
+    Assert.True(ai1Index >= 0 && team0Index > ai1Index, "Expected [AI1] before [TEAM0]")
+    let ai1Section = script.Substring(ai1Index, team0Index - ai1Index)
+    Assert.DoesNotContain("[OPTIONS]", ai1Section)

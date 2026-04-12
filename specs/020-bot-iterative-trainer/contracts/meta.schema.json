@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fsbarv1.local/schemas/020-bot-iterative-trainer/meta.schema.json",
+  "title": "Run Meta",
+  "description": "Immutable facts about a single trainer run, written once by run.sh before the bot starts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "iter_id",
+    "start_timestamp",
+    "rung_name",
+    "opponent",
+    "opponent_options",
+    "map",
+    "seed",
+    "max_frames",
+    "engine_version",
+    "git_sha",
+    "host"
+  ],
+  "properties": {
+    "iter_id": {
+      "type": "string",
+      "pattern": "^[0-9]{3,}$",
+      "description": "Zero-padded iteration counter, e.g. '001'."
+    },
+    "start_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 UTC timestamp at which run.sh created this directory."
+    },
+    "rung_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Matches a Rung.name from ladder.json."
+    },
+    "opponent": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Short name of the opponent AI as recognised by the engine (e.g. 'NullAI', 'BARb')."
+    },
+    "opponent_options": {
+      "type": "object",
+      "description": "Key/value options passed to the opponent AI. Forwarded to EngineConfig.OpponentAIOptions.",
+      "additionalProperties": { "type": "string" }
+    },
+    "map": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Map name. Fixed for the whole feature (Clarifications Q4)."
+    },
+    "seed": {
+      "type": "integer",
+      "description": "RNG seed. Fixed for the whole feature (Clarifications Q5)."
+    },
+    "max_frames": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Frame limit after which the match is terminated with outcome 'timeout'."
+    },
+    "engine_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Resolved engine version string (e.g. 'recoil_2025.06.19')."
+    },
+    "git_sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "Short git SHA of the commit in effect when the run started."
+    },
+    "host": {
+      "type": "string",
+      "description": "Hostname of the machine running the trainer. Useful for multi-machine run directories."
+    }
+  }
+}

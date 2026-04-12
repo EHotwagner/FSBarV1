@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fsbarv1.local/schemas/020-bot-iterative-trainer/result.schema.json",
+  "title": "Terminal Result Record",
+  "description": "Written once by the bot (or by run.sh as a stub on crash) at match end. Single source of truth for iteration outcome and telemetry-based stall detection.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["outcome", "frames", "cause", "telemetry"],
+  "properties": {
+    "outcome": {
+      "type": "string",
+      "enum": ["win", "loss", "timeout", "error", "interrupted"],
+      "description": "Terminal outcome classification."
+    },
+    "frames": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Frame count at termination."
+    },
+    "cause": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Human-readable description of how the match ended."
+    },
+    "victory_signal": {
+      "type": ["string", "null"],
+      "enum": ["engine-shutdown-gameover", null],
+      "description": "Required when outcome='win'. Only 'engine-shutdown-gameover' is valid for this feature (Clarifications Q1)."
+    },
+    "error_message": {
+      "type": ["string", "null"],
+      "description": "Error details when outcome='error'. Null otherwise."
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "commands_total",
+        "units_built",
+        "units_lost",
+        "enemy_units_killed",
+        "peak_metal",
+        "peak_energy",
+        "frames_survived"
+      ],
+      "properties": {
+        "commands_total": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total AICommands the bot sent to the engine during the match."
+        },
+        "units_built": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of friendly UnitFinished events during the match."
+        },
+        "units_lost": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of friendly UnitDestroyed events during the match."
+        },
+        "enemy_units_killed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Count of EnemyDestroyed events attributable to friendly units."
+        },
+        "peak_metal": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Highest observed Metal.Current during the match."
+        },
+        "peak_energy": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Highest observed Energy.Current during the match."
+        },
+        "frames_survived": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Frame count at which our commander was still alive. Equals 'frames' unless we died before the frame limit."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "outcome": { "const": "win" } }, "required": ["outcome"] },
+      "then": { "required": ["victory_signal"], "properties": { "victory_signal": { "type": "string" } } }
+    },
+    {
+      "if": { "properties": { "outcome": { "const": "error" } }, "required": ["outcome"] },
+      "then": { "required": ["error_message"], "properties": { "error_message": { "type": "string" } } }
+    }
+  ]
+}

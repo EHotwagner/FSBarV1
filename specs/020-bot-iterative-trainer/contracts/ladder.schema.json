@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fsbarv1.local/schemas/020-bot-iterative-trainer/ladder.schema.json",
+  "title": "Opponent Ladder",
+  "description": "Static configuration for the opponent progression. Read by run.sh on every invocation; the current rung is determined by the operator via the playbook, not by this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["map", "seed", "rungs"],
+  "properties": {
+    "map": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Fixed map for every run in this feature (Clarifications Q4)."
+    },
+    "seed": {
+      "type": "integer",
+      "description": "Fixed RNG seed for every run in this feature (Clarifications Q5)."
+    },
+    "rungs": {
+      "type": "array",
+      "minItems": 2,
+      "description": "Ordered list of opponent rungs. MUST contain at least one no-op rung (first) and at least one competitive rung (second) — see FR-012 and SC-011.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "opponent", "options", "max_frames"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique short name for this rung, e.g. 'NullAI' or 'BARb/easy'. Used in run directory naming and HISTORY.md."
+          },
+          "opponent": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Opponent AI short name as recognised by the engine, e.g. 'NullAI', 'BARb'."
+          },
+          "options": {
+            "type": "object",
+            "description": "Options map passed to EngineConfig.OpponentAIOptions for this rung. May be empty.",
+            "additionalProperties": { "type": "string" }
+          },
+          "max_frames": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Frame limit for this rung. Runs that reach this count terminate with outcome='timeout'."
+          }
+        }
+      }
+    }
+  }
+}

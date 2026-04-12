@@ -17,3 +17,6 @@ src/FSBar.Client.Tests/TestResults/
 output/
 .fsdocs/
 tmp/
+
+# Trainer run artifacts (feature 020-bot-iterative-trainer)
+bots/runs/

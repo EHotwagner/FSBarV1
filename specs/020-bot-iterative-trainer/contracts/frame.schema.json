@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fsbarv1.local/schemas/020-bot-iterative-trainer/frame.schema.json",
+  "title": "Frame Log Line",
+  "description": "One object per line in frames.jsonl. Sampled by default every 30 frames plus every frame on which a notable event occurred.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["frame", "units", "enemies", "metal", "energy"],
+  "properties": {
+    "frame": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Engine frame number."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["sampled", "event"],
+      "description": "Why this frame was logged. 'sampled' = periodic sample; 'event' = forced log due to notable events. Optional; default 'sampled'."
+    },
+    "events": {
+      "type": "object",
+      "description": "Counts of engine events that occurred on this frame, grouped by GameEvent case name. Absent or empty for quiet sampled frames.",
+      "additionalProperties": { "type": "integer", "minimum": 1 },
+      "examples": [
+        {
+          "UnitCreated": 2,
+          "UnitFinished": 1,
+          "EnemyEnterLOS": 3
+        }
+      ]
+    },
+    "event_details": {
+      "type": "array",
+      "description": "Optional per-event details for frames on which notable events occurred. Empty or absent for sampled quiet frames. Consumed by post-hoc analysis when frame-granular reconstruction is needed; also supports SC-002 (operator can identify specific events from the run directory without reading source code).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "GameEvent case name, e.g. 'UnitCreated', 'UnitDestroyed', 'EnemyDestroyed'."
+          },
+          "unit_id": { "type": ["integer", "null"] },
+          "actor_id": {
+            "type": ["integer", "null"],
+            "description": "Attacker, builder, or other acting unit id. Optional."
+          },
+          "def_id": { "type": ["integer", "null"] },
+          "detail": {
+            "type": ["string", "null"],
+            "description": "Short free-text description such as 'commander destroyed by unit 12' — one line, no newlines."
+          }
+        }
+      }
+    },
+    "units": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of friendly units known to GameState at this frame."
+    },
+    "enemies": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of enemy units known to GameState at this frame."
+    },
+    "metal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "income"],
+      "properties": {
+        "current": { "type": "number", "minimum": 0 },
+        "income": { "type": "number", "minimum": 0 }
+      }
+    },
+    "energy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["current", "income"],
+      "properties": {
+        "current": { "type": "number", "minimum": 0 },
+        "income": { "type": "number", "minimum": 0 }
+      }
+    },
+    "commands_out": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of AICommands the bot sent in response to this frame. Absent if zero."
+    }
+  }
+}

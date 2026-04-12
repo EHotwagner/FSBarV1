@@ -33,15 +33,23 @@ module ScriptGenerator =
         ln "\tGameStartDelay=0;"
         ln "\tFixedRNGSeed=1;"
         ln ""
+        // BAR's game_end.lua gadget reads the `gamemode` modoption (not `deathmode`)
+        // to decide when to end the match. Map EngineConfig.DeathMode to the BAR
+        // gamemode value: "com" → 0 (game ends when a side's last commander dies,
+        // which is what the trainer needs), anything else → 3 (never end).
+        let barGameMode =
+            match config.DeathMode with
+            | "com" -> 0
+            | _ -> 3
         ln "\t[MODOPTIONS]"
         ln "\t{"
-        ln "\t\tGameMode=3;"
+        ln $"\t\tGameMode={barGameMode};"
         ln "\t\tdraft_mode=disabled;"
         ln $"\t\tteamfaction_0={ourFaction};"
         ln $"\t\tteamfaction_1={opponentFaction};"
         ln $"\t\tMinSpeed={speed};"
         ln $"\t\tMaxSpeed={speed};"
-        ln "\t\tdeathmode=neverend;"
+        ln $"\t\tdeathmode={config.DeathMode};"
         ln "\t\tdebugcommands=1:cheat|3:globallos;"
         ln "\t}"
         ln ""
@@ -76,6 +84,12 @@ module ScriptGenerator =
         ln "\t\tTeam=1;"
         ln $"\t\tShortName={config.OpponentAI};"
         ln "\t\tHost=0;"
+        if not (Map.isEmpty config.OpponentAIOptions) then
+            ln "\t\t[OPTIONS]"
+            ln "\t\t{"
+            for KeyValue(key, value) in config.OpponentAIOptions do
+                ln $"\t\t\t{key}={value};"
+            ln "\t\t}"
         ln "\t}"
         ln ""
         ln "\t[TEAM0]"

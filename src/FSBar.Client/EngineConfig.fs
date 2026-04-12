@@ -51,6 +51,18 @@ type EngineConfig = {
     /// When <c>None</c>, falls back to the <c>FSBAR_CLIENT_TIMEOUT_MS</c> environment variable or a 10 000 ms default.
     /// </summary>
     ReadTimeoutMs: int option
+    /// <summary>
+    /// Key/value options forwarded to the opponent AI via the <c>[AI1].[OPTIONS]</c> block in the start script.
+    /// When empty (the default), no <c>[OPTIONS]</c> block is emitted so existing scripts remain unchanged.
+    /// Used to pass BARb difficulty profiles (e.g. <c>[ "profile", "easy" ]</c>) or other opponent-specific settings.
+    /// </summary>
+    OpponentAIOptions: Map<string, string>
+    /// <summary>
+    /// Value rendered for the <c>deathmode</c> modoption in the start script. Defaults to <c>"com"</c>
+    /// so matches end when the enemy commander dies — required by the trainer to produce a
+    /// <c>win</c> outcome. Use <c>"neverend"</c> for long-running sessions without termination.
+    /// </summary>
+    DeathMode: string
 }
 
 /// <summary>Functions for creating and querying <see cref="T:FSBar.Client.EngineConfig"/> values.</summary>
@@ -89,6 +101,8 @@ module EngineConfig =
             SpringDataDir = springDataDir
             GameSpeed = 3
             ReadTimeoutMs = None
+            OpponentAIOptions = Map.empty
+            DeathMode = "com"
         }
 
     /// <summary>
