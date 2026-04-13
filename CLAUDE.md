@@ -110,7 +110,7 @@ Load DLLs from the test output directory (has all transitive dependencies):
 
 - The SkiaSharp GPU backend (GRContext) segfaults in this environment. The Viewer uses a raster SKSurface + GL texture upload instead.
 - `Silk.NET.Windowing.Glfw.GlfwWindowing.RegisterPlatform()` must be called before `Window.Create` (done in Viewer.fs).
-- The engine proxy does not support `getCornersHeightMap` — heightmap data is empty. GameViz retries loading on each `onFrame` until data is available.
+- `getCornersHeightMap` is live (HighBar commit `c70559a` / feature 026-corners-heightmap-callback, consumed by FSBarV1 via feature 006). Verified 2026-04-13 live probe on Avalanche 3.4: returns 263169 = (513 × 513) float32 corner vertices with min 130.0 / max 700.0. If GameViz sees an empty heightmap, the cause is elsewhere (e.g., query happened pre-Start, or MapGrid reshape bug) — not a missing proxy callback.
 - Throttle viz updates to ~60fps when running the game loop. Calling `onFrame` on every `Step()` at high game speed will consume 100% CPU.
 
 ### Graphical mode
