@@ -198,6 +198,24 @@ function handles this transparently:
 3. Continues reading the next message (which should be the actual `Frame`)
 
 This means the caller never sees `SaveRequest` messages -- they are handled internally.
+
+## Shutdown Handling
+
+When the engine shuts down, the proxy sends a standalone `Shutdown` envelope (not wrapped
+in a `Frame`). `Protocol.receiveFrame` converts this into a **synthetic terminal frame**:
+
+- `FrameNumber = 0u` (sentinel — callers that care about the last real frame number must
+  rewrite this)
+- `Events = [ GameEvent.Shutdown reason ]`
+
+This keeps the frame loop uniform: a single call site pattern-matches `receiveFrame` and
+treats the synthetic frame like any other, then breaks out of the loop on seeing a
+`Shutdown` event.
+
+A clean socket close **without** a `Shutdown` envelope (e.g. engine crash) instead raises
+`EngineDisconnectedException`, which includes the last successfully processed frame number
+for diagnostics. See
+[`HighBarV2/specs/030-proxy-contract-docs/contracts/shutdown-wire-shape.md`](https://github.com/EHotwagner/FSBarV1/blob/master/Mailbox/) for the upstream wire-shape contract.
 *)
 
 (*** do-not-eval ***)

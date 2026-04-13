@@ -1,6 +1,6 @@
 # FSBarV1
 
-> **Note:** This project uses [Spec Kit](https://github.com/specify/speckit) for specification-driven development.
+> **Note:** This project uses [Spec Kit](https://github.com/github/spec-kit) for specification-driven development.
 > Development is guided by a project constitution — see [constitution](.specify/memory/constitution.md) for the
 > governing principles and architectural constraints.
 
@@ -69,24 +69,33 @@ economy ()         // show metal/energy
 
 ```fsharp
 open FSBar.Client
+open FSBar.Client.Commands
 
 // Start a headless game session
 use client = BarClient.startHeadless ()
 
-// Step through 5 frames
-for _ in 1..5 do
-    let frame = client.Step()
-    printfn "Frame %d: %d events" frame.FrameNumber frame.Events.Length
+// Block and process the next 5 frames
+client.WaitFrames 5 (fun frame ->
+    printfn "Frame %d: %d events" frame.FrameNumber frame.Events.Length)
 
-// Or run with a handler that returns commands
-client.Run(100, fun frame ->
-    frame.Events
-    |> List.choose (function
-        | GameEvent.UnitIdle uid ->
-            Some (Commands.MoveCommand uid 4096.0f 100.0f 4096.0f)
-        | _ -> None))
-|> ignore
+// Or run 100 frames with a handler that queues commands back to the engine
+client.WaitFrames 100 (fun frame ->
+    let cmds =
+        frame.Events
+        |> List.choose (function
+            | GameEvent.UnitIdle uid ->
+                Some (MoveCommand uid 4096.0f 100.0f 4096.0f)
+            | _ -> None)
+    if not cmds.IsEmpty then client.SendCommands cmds)
+
+// Alternatively, subscribe to the push-based Frames observable
+use _ = client.Frames.Subscribe(fun frame ->
+    printfn "[obs] Frame %d" frame.FrameNumber)
 ```
+
+`client.GameState` exposes an always-current snapshot (tracked units, enemies,
+metal/energy) updated each frame — see
+[Game State](https://EHotwagner.github.io/FSBarV1/gamestate.html).
 
 ## Documentation
 
@@ -106,11 +115,14 @@ Then open http://localhost:8901.
 - [Getting Started](https://EHotwagner.github.io/FSBarV1/getting-started.html) — installation, prerequisites, first game
 - [Architecture](https://EHotwagner.github.io/FSBarV1/architecture.html) — system design and component overview
 - [Commands & Events](https://EHotwagner.github.io/FSBarV1/commands-and-events.html) — unit commands and game events
+- [Game State](https://EHotwagner.github.io/FSBarV1/gamestate.html) — observable frames and the `GameState` snapshot
 - [Callbacks](https://EHotwagner.github.io/FSBarV1/callbacks.html) — querying game state mid-frame
 - [Map Analysis](https://EHotwagner.github.io/FSBarV1/map-analysis.html) — terrain, heightmaps, resource analysis
 - [Protocol Details](https://EHotwagner.github.io/FSBarV1/protocol.html) — protobuf communication protocol
 - [Examples](https://EHotwagner.github.io/FSBarV1/examples.html) — usage tutorials and AI patterns
-- [Test Suite](https://EHotwagner.github.io/FSBarV1/tests.html) — all 115 tests documented
+- [Visualization](https://EHotwagner.github.io/FSBarV1/viz.html) — `FSBar.Viz` live and preview sessions
+- [Synthetic Data](https://EHotwagner.github.io/FSBarV1/synthetic-data.html) — `FSBar.SyntheticData` simulated scenes
+- [Test Suite](https://EHotwagner.github.io/FSBarV1/tests.html) — full test inventory
 - [Known Issues](https://EHotwagner.github.io/FSBarV1/known-issues.html) — current limitations
 - [API Reference](https://EHotwagner.github.io/FSBarV1/reference/index.html) — auto-generated API docs
 
@@ -146,12 +158,17 @@ Check prerequisites:
 
 ## Features
 
-- **Type-safe commands** — 16 command builders for unit control (Move, Build, Attack, Guard, Patrol, etc.)
+- **Type-safe commands** — 17 command builders for unit control (Move, Build, Attack, Guard, Patrol, etc.)
 - **28 event types** — discriminated union covering all engine events (UnitCreated, UnitDamaged, EnemyEnterLOS, etc.)
-- **15+ callback queries** — mid-frame queries for unit position, health, map info, economy
-- **Engine lifecycle** — automatic engine launch, connection, handshake, and cleanup
-- **Headless and graphical modes** — run without display for CI or with full game window for debugging
-- **F# Interactive support** — prelude script for REPL-driven development
+- **26 callback queries** — mid-frame queries for unit position, health, map info, economy, raw map data
+- **Observable frame stream** — `client.Frames : IObservable<GameFrame>` plus a synchronous `WaitFrames` helper for REPL use
+- **`GameState` snapshot** — always-current tracked units, enemies, and economy, updated each frame
+- **Map layers** — `MapGrid`, `MapQuery`, `MapCache` for heightmap, slope, resource, LOS, radar, terrain classification, and passability
+- **Engine lifecycle** — automatic engine discovery (`EngineDiscovery`), launch, connection, handshake, and cleanup
+- **Headless and graphical modes** — run without display for CI or with a full game window for debugging
+- **Live visualization** — `FSBar.Viz` (SkiaViewer + Silk.NET) renders maps, units, events, and HUD overlays live from a running `BarClient`
+- **Synthetic data** — `FSBar.SyntheticData` produces deterministic scenes (units, enemies, economy) for offline visualization and validation
+- **F# Interactive support** — `scripts/prelude.fsx`, `scripts/examples/Repl.fsx`, and `scripts/examples/ReplGraphical.fsx` for REPL-driven development
 
 ## License
 

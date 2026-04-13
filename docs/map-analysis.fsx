@@ -225,8 +225,8 @@ Loading map data and analyzing the terrain around a start position:
 (*** do-not-eval ***)
 open FSBar.Client
 
-let client = BarClient.startHeadless ()
-for _ in 1..30 do client.Step() |> ignore
+use client = BarClient.startHeadless ()
+client.WaitFrames 30 (fun _ -> ())
 
 let stream = client.Stream
 let grid = MapCache.fromEngine stream

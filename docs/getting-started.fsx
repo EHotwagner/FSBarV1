@@ -88,60 +88,80 @@ printfn "Connected: engine=%s map=%s team=%d" hs.EngineVersion hs.MapName hs.Tea
 (**
 ## Basic Frame Loop
 
-The game progresses one frame at a time. Each call to `Step` or `StepWith` receives one frame
-from the engine, processes events, and sends commands back.
+The engine produces one `GameFrame` per simulation step. `BarClient` exposes two equivalent
+ways to consume those frames:
+
+- **`client.Frames : IObservable<GameFrame>`** — push-based, fully async, good for long-running
+  background subscribers and UI pipelines.
+- **`client.WaitFrames count handler`** — synchronous, blocks until exactly `count` frames have
+  been delivered to the handler. Good for REPL sessions, scripts, and linear tests.
+
+Commands are queued with `client.SendCommands` and sent to the engine with the next frame
+response — you can call it from inside either the observable or the `WaitFrames` handler.
+
+### Synchronous handler (REPL-friendly)
 *)
 
 (*** do-not-eval ***)
+open FSBar.Client
+open FSBar.Client.Commands
+
 // Simple observation loop (no commands)
-for _ in 1..100 do
-    let frame = client.Step()
+client.WaitFrames 100 (fun frame ->
     for evt in frame.Events do
         match evt with
         | GameEvent.UnitCreated(uid, _) -> printfn "Unit %d created" uid
         | GameEvent.UnitFinished uid -> printfn "Unit %d finished" uid
-        | _ -> ()
+        | _ -> ())
 
 (**
-### Using StepWith for Command Responses
+### Handler that issues commands
 
-`StepWith` lets you process a frame and return commands in one call:
+Return nothing — queue commands with `SendCommands` instead. They are flushed with the
+frame response automatically:
 *)
 
 (*** do-not-eval ***)
-let frame =
-    client.StepWith(fun frame ->
+client.WaitFrames 500 (fun frame ->
+    let cmds =
         frame.Events
         |> List.choose (function
             | GameEvent.UnitIdle uid ->
-                Some (Commands.PatrolCommand uid 2048.0f 100.0f 2048.0f)
-            | _ -> None))
+                Some (PatrolCommand uid 2048.0f 100.0f 2048.0f)
+            | _ -> None)
+    if not cmds.IsEmpty then client.SendCommands cmds)
 
 (**
-### Using Run for Multi-Frame Execution
+### Observable subscription
 
-`Run` executes a handler for a fixed number of frames:
+For long-running or UI-driven code, subscribe once and let frames push:
 *)
 
 (*** do-not-eval ***)
-let allFrames =
-    client.Run(500, fun frame ->
-        // Return commands for each frame
-        [])
+use _ =
+    client.Frames.Subscribe(fun frame ->
+        printfn "Frame %d: %d events" frame.FrameNumber frame.Events.Length)
 
-printfn "Processed %d frames" allFrames.Length
+// Now drive the session however you want — e.g. advance 1000 frames while
+// the subscriber above continues to receive events:
+client.WaitFrames 1000 (fun _ -> ())
 
 (**
-### Using RunUntil for Condition-Based Execution
+### Querying the GameState snapshot
 
-`RunUntil` runs until a predicate returns true:
+`client.GameState` is updated after every frame and always reflects the latest tracked
+units, enemies, and economy. You can read it from anywhere between frames:
 *)
 
 (*** do-not-eval ***)
-let frames =
-    client.RunUntil(
-        (fun frame -> frame.FrameNumber > 1000u),
-        fun frame -> [])
+client.WaitFrames 500 (fun _ -> ())
+
+let state = client.GameState
+printfn "Tracked units: %d" state.Units.Count
+printfn "Metal: %.0f (+%.1f/s)" state.Metal.Current state.Metal.Income
+for KeyValue(uid, unit) in state.Units do
+    let (x, _, z) = unit.Position
+    printfn "  Unit %d @ (%.0f, %.0f) hp=%.0f" uid x z unit.Health
 
 (**
 ## Cleanup

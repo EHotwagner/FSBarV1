@@ -40,29 +40,42 @@ socket protocol and the engine's native C++ AI callback interface.
 
 ```
 FSBar.Client Assembly
-+------------------------------------------------------------------+
-|                                                                  |
-|  EngineConfig          ScriptGenerator        EngineLauncher     |
-|  (session params)      (game script text)     (process mgmt)     |
-|       |                      |                      |            |
-|       v                      v                      v            |
-|  +----------------------------------------------------------+   |
-|  |                      BarClient                            |   |
-|  |  (orchestrates lifecycle: start, step, run, stop)         |   |
-|  +----------------------------------------------------------+   |
-|       |              |               |              |            |
-|       v              v               v              v            |
-|  Connection      Protocol        Commands        Events          |
-|  (socket I/O)    (wire format)   (cmd builders)  (event parse)   |
-|       |              |                                           |
-|       v              v                                           |
-|  Callbacks       MapGrid          MapQuery       MapCache        |
-|  (engine queries)(terrain layers) (point queries)(caching)       |
-|                                                                  |
-+------------------------------------------------------------------+
++--------------------------------------------------------------------------+
+|                                                                          |
+|  EngineDiscovery   EngineConfig   ScriptGenerator   EngineLauncher       |
+|  (auto-detect      (session       (game script      (process mgmt)      |
+|   engine versions) params)         text)                                |
+|       |                 |                |                 |             |
+|       v                 v                v                 v             |
+|  +----------------------------------------------------------------+     |
+|  |                           BarClient                             |     |
+|  |  lifecycle: Start / Stop / Reset, Idle -> Connected -> Running  |     |
+|  |  push stream: Frames : IObservable<GameFrame>                   |     |
+|  |  sync helper: WaitFrames count handler                          |     |
+|  |  commands:    SendCommands commands                             |     |
+|  |  snapshot:    GameState : GameState (tracked units, economy)    |     |
+|  +----------------------------------------------------------------+     |
+|       |           |           |            |            |                |
+|       v           v           v            v            v                |
+|  Connection   Protocol    Commands     Events       GameState            |
+|  (socket I/O) (wire fmt)  (17 cmds)    (28 events)  (processFrame)       |
+|       |           |                                    |                  |
+|       v           v                                    v                  |
+|  Callbacks    MapGrid      MapQuery       MapCache  UnitDefCache         |
+|  (26 queries) (Array2D     (point         (session  (BarData-backed     |
+|                layers)      queries)       caching)  def lookup)         |
+|                                                                          |
++--------------------------------------------------------------------------+
 ```
 
 ## Module Responsibilities
+
+### EngineDiscovery
+
+Scans the standard BAR data directory (`~/.local/state/Beyond All Reason/`) for installed engine
+versions (directories matching `engine/recoil_<YYYY.MM.DD>/`) and resolves the engine to use.
+Resolution order: `HIGHBAR_TEST_ENGINE` env var → `tests/engine-version.json` → latest discovered.
+This removes any hardcoded engine paths from client and test code.
 
 ### EngineConfig
 
@@ -128,14 +141,41 @@ resource hotspot detection.
 Session-level caching using `ConcurrentDictionary`. Caches the `MapGrid` (loaded once per session)
 and passability grids (computed once per movement type). `clear()` resets for new sessions.
 
+### GameState
+
+An always-current snapshot of the game, updated from the event stream each frame. `GameState`
+holds:
+
+- `Units : Map<int, TrackedUnit>` — friendly units with position, health, idle/finished flags
+- `Enemies : Map<int, TrackedEnemy>` — known enemies with position, LOS/radar state
+- `Metal : EconomySnapshot` / `Energy : EconomySnapshot` — current, income, usage, storage
+- `UnitDefs : UnitDefCache` — lazily populated unit definition metadata
+- `FrameNumber`, `TeamId`, `Events` — the last processed frame's identifiers and events
+
+`GameState.processFrame state frame stream` is a pure-ish fold: given the previous state, a new
+frame, and the socket stream (for `UnitDefCache` lookups), it returns the next `GameState`.
+`BarClient` runs this fold on every incoming frame and exposes the result via `client.GameState`.
+
+### UnitDefCache
+
+Lazy cache of unit-definition metadata sourced from `BarData` and engine callbacks. Keyed by
+`defId`; missing entries are fetched on demand. Reused by `GameState`, the visualization layer,
+and user code.
+
 ### BarClient
 
 The main orchestrator. Manages the full session lifecycle:
-- Creates socket listener and launches engine
-- Accepts connection and performs handshake
-- Provides `Step`, `StepWith`, `Run`, `RunUntil` for frame processing
-- Handles cleanup on `Stop` or `Dispose`
-- Tracks session state: `Idle -> Starting -> Connected -> Running -> Stopped`
+
+- Creates the socket listener and launches the engine (via `EngineLauncher`)
+- Accepts the proxy connection and performs the handshake (via `Protocol`)
+- Spins a background reader that pushes frames onto an internal observable
+- Exposes `Frames : IObservable<GameFrame>` for push-based subscribers
+- Provides `WaitFrames count handler` to block and consume exactly `count` frames (REPL-friendly)
+- Queues commands with `SendCommands`, sent with the next `FrameResponse`
+- Feeds every frame through `GameState.processFrame` so `client.GameState` is always up to date
+- Supports `Reset()` to re-issue cheat commands without tearing down the session
+- Handles cleanup on `Stop()` or `Dispose()` (implements `IDisposable`)
+- Tracks session state: `Idle -> Starting -> Connected -> Running -> Stopped` (or `Error msg`)
 
 ## Design Decisions
 
@@ -276,10 +316,11 @@ GameViz.enableOverlay OverlayKind.Events
 GameViz.enableOverlay OverlayKind.MetalSpots
 GameViz.enableOverlay OverlayKind.EconomyHud
 
-// Feed frames from the game loop
-for _ in 1..1000 do
-    let frame = myClient.Step()
-    GameViz.onFrame frame  // updates snapshot, triggers re-render
+// Feed frames from the BarClient observable (throttled to ~60fps internally)
+use _ = myClient.Frames.Subscribe(GameViz.onFrame)
+
+// Or drive it synchronously from a REPL
+myClient.WaitFrames 1000 GameViz.onFrame
 
 // Stop when done
 GameViz.stop ()

@@ -13,7 +13,9 @@ index: 10
 ## No Known Bugs
 
 A search for `TODO`, `FIXME`, `HACK`, `BUG`, `XXX`, `WORKAROUND`, `NotImplementedException`,
-and `"not implemented"` across all `.fs` source files returned zero results.
+and `"not implemented"` across all `.fs` / `.fsi` source files in `src/` and `tests/` returned
+zero results at the time of the last audit. There is no backlog of "not yet wired" stubs in
+the codebase.
 
 ## Limitations
 
@@ -24,9 +26,10 @@ cause protocol desync at low speeds (1-5x). At low speeds, the engine sends the 
 before the callback round-trip completes, causing the client to receive a `Frame` message
 when it expects a `CallbackResponse`.
 
-**Workaround**: Use the raw `Protocol.receiveFrame` / `Protocol.sendFrameResponse` API
-instead of `BarClient.StepWith` when issuing callbacks. Avoid callbacks entirely in graphical
-mode scripts, or only issue them at high game speeds.
+**Workaround**: Only issue callbacks at high game speeds, or drive the protocol directly
+with `Protocol.receiveFrame` / `Protocol.sendFrameResponse` so your code strictly alternates
+frame reads with callback batches. Avoid callbacks entirely in graphical mode scripts that
+run at 1x speed.
 
 ### No Save/Load State Persistence
 
@@ -63,4 +66,28 @@ stale socket files before binding, so subsequent sessions are not affected.
 The `ScriptGenerator` produces a fixed 2-player game script (our AI vs one opponent AI) on
 a single map. Multi-player scenarios, team games, or custom Lua scenarios require manual
 script construction.
+
+### FSBar.Viz: CPU-Only Rendering
+
+The SkiaSharp GPU backend (`GRContext`) segfaults in this environment, so `FSBar.Viz` /
+`SkiaViewer` use a raster `SKSurface` + OpenGL texture-upload pipeline. All drawing is
+CPU-bound. Large maps (512x512) can push a single core at 60fps.
+
+### FSBar.Viz: No Corners Heightmap
+
+The HighBar V2 proxy does not support `getCornersHeightMap` yet, so `GameViz` retries
+loading on each `onFrame` until heightmap data is available. The map layer will appear
+blank for the first few frames of a fresh session.
+
+### FSBar.Viz: Single Window Per Process
+
+Only one `SkiaViewer` / `GameViz` instance can exist in a process. Starting a new one
+implicitly stops the previous. The viewer always renders at 60fps regardless of engine
+game speed; at 100x engine speed it simply samples whatever snapshot is latest.
+
+### FSI DLL Locking
+
+F# Interactive locks any DLL loaded via `#r`. After rebuilding a project, you must restart
+FSI to pick up the new DLL — the `fsi-mcp-server` provides a `restart_fsi` tool for this.
+See `CLAUDE.md` for the full FSI workflow.
 *)

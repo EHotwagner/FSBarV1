@@ -15,8 +15,9 @@ game state changes. This page documents all commands and events with usage examp
 
 ## Commands
 
-All command functions live in the `Commands` module. Each returns a `Highbar.AICommand` protobuf
-message ready to send via `Protocol.sendFrameResponse` or return from a `StepWith`/`Run` handler.
+All command functions live in the `Commands` module. Each returns a `Highbar.AICommand`
+protobuf message ready to queue with `client.SendCommands` or send via the raw
+`Protocol.sendFrameResponse` API.
 
 Movement and action commands automatically set the internal order flag (`options = 8`).
 
@@ -285,15 +286,16 @@ A typical frame handler processes events with pattern matching:
 
 (*** do-not-eval ***)
 open FSBar.Client
+open FSBar.Client.Commands
 
-let handleFrame (frame: GameFrame) : Highbar.AICommand list =
-    let mutable commands = []
+let handleFrame (client: BarClient) (frame: GameFrame) =
+    let commands = ResizeArray<Highbar.AICommand>()
 
     for evt in frame.Events do
         match evt with
         | GameEvent.UnitIdle uid ->
             // Send idle units to patrol
-            commands <- Commands.PatrolCommand uid 2048.0f 100.0f 2048.0f :: commands
+            commands.Add(PatrolCommand uid 2048.0f 100.0f 2048.0f)
 
         | GameEvent.UnitCreated(uid, builderId) ->
             printfn "Unit %d created by builder %d" uid builderId
@@ -304,8 +306,7 @@ let handleFrame (frame: GameFrame) : Highbar.AICommand list =
         | GameEvent.UnitDamaged(uid, attacker, damage, _, _) ->
             printfn "Unit %d took %.0f damage" uid damage
             match attacker with
-            | Some attackerId ->
-                commands <- Commands.AttackCommand uid attackerId :: commands
+            | Some attackerId -> commands.Add(AttackCommand uid attackerId)
             | None -> ()
 
         | GameEvent.EnemyEnterLOS enemyId ->
@@ -316,13 +317,13 @@ let handleFrame (frame: GameFrame) : Highbar.AICommand list =
 
         | _ -> ()
 
-    commands
+    if commands.Count > 0 then
+        client.SendCommands(List.ofSeq commands)
 
 (**
-### Using with BarClient.Run
+### Driving the handler with `WaitFrames`
 *)
 
 (*** do-not-eval ***)
-let client = BarClient.startHeadless ()
-let frames = client.Run(1000, handleFrame)
-client.Stop()
+use client = BarClient.startHeadless ()
+client.WaitFrames 1000 (handleFrame client)

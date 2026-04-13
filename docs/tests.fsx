@@ -10,14 +10,24 @@ index: 5
 (**
 # Test Suite Documentation
 
-FSBarV1 has 115 tests organized into three categories:
+FSBarV1 has roughly **330 test methods** spread across four xUnit 2.9.x projects. Counts
+update as the codebase evolves — run `dotnet test` for authoritative numbers.
 
-- **84 unit tests** (`FSBar.Client.Tests`) -- test individual modules with real sockets but no engine
-- **17 integration tests** (`FSBar.LiveTests`) -- test against a live headless BAR engine
-- **14 surface area tests** (`SurfaceAreaTests`) -- guard against accidental API changes
+| Project | Location | Approx. count | What it covers |
+|---------|----------|---------------|----------------|
+| `FSBar.Client.Tests` | `src/FSBar.Client.Tests/` | ~158 | Unit tests for every `FSBar.Client` module. Some use real Unix sockets (`Connection`, `Protocol`); none use mocks. |
+| `FSBar.LiveTests` | `tests/FSBar.LiveTests/` | ~29 | Integration tests against a live headless BAR engine (commander reaches enemy base, build flow, event delivery). |
+| `FSBar.Viz.Tests` | `tests/FSBar.Viz.Tests/` | ~104 | Visualization library — color maps, layer renderer, scene builder, live + preview sessions, surface baselines. |
+| `FSBar.SyntheticData.Tests` | `src/FSBar.SyntheticData.Tests/` | ~40 | Synthetic scene generation, structural validation, continuity checks, surface baselines. |
 
-All tests use xUnit 2.9.x. No mocks or fakes are used anywhere -- every test exercises real code
-against real sockets or a real engine.
+All tests use xUnit 2.9.x. **No mocks or fakes are used anywhere** — every test exercises
+real code against real sockets, real file I/O, or a real engine. Tests that cannot pass in
+the current environment (e.g. missing engine) are either marked skipped or have their
+assertions relaxed rather than mocked out.
+
+The per-test walkthroughs below cover the original `FSBar.Client.Tests` and
+`FSBar.LiveTests` suites in depth. `FSBar.Viz.Tests` and `FSBar.SyntheticData.Tests` are
+summarized at the end of this page rather than enumerated individually.
 
 ---
 
@@ -118,10 +128,9 @@ type EngineFixture() =
             let c = new BarClient(config)
             c.Start()
 
+            // Warm-up: capture first 30 frames with one-time events
             let warmupFrames = ResizeArray<GameFrame>()
-            for _ in 1..30 do
-                let frame = c.Step()
-                warmupFrames.Add(frame)
+            c.WaitFrames 30 (fun frame -> warmupFrames.Add(frame))
 
             initialFrames <- warmupFrames |> Seq.toList
             initialEvents <- initialFrames |> List.collect (fun f -> f.Events)
@@ -193,9 +202,7 @@ type BarbFixture() =
             c.Start()
 
             let warmup = ResizeArray<GameFrame>()
-            for _ in 1..30 do
-                let frame = c.Step()
-                warmup.Add(frame)
+            c.WaitFrames 30 (fun frame -> warmup.Add(frame))
 
             initialFrames <- warmup |> Seq.toList
             initialEvents <- initialFrames |> List.collect (fun f -> f.Events)
@@ -1867,10 +1874,11 @@ Verifies 5 consecutive frames can be processed with empty responses, and frame n
 [<Fact>]
 member _.``Empty command responses work for consecutive frames``() =
     let client = engine.Client
-    let frames = client.Run(5, fun _ -> [])
-    Assert.True(frames.Length >= 5)
+    let frames = ResizeArray<GameFrame>()
+    client.WaitFrames 5 (fun frame -> frames.Add(frame))
+    Assert.True(frames.Count >= 5)
 
-    for i in 1 .. frames.Length - 1 do
+    for i in 1 .. frames.Count - 1 do
         Assert.True(frames.[i].FrameNumber > frames.[i - 1].FrameNumber)
 
 (**
@@ -1883,8 +1891,9 @@ Verifies the engine stays alive after processing frames.
 [<Fact>]
 member _.``Graceful disconnect after receiving frames``() =
     let client = engine.Client
-    let frames = client.Run(3, fun _ -> [])
-    Assert.True(frames.Length >= 3)
+    let frames = ResizeArray<GameFrame>()
+    client.WaitFrames 3 (fun frame -> frames.Add(frame))
+    Assert.True(frames.Count >= 3)
     Assert.True(engine.IsEngineAlive)
 
 (**
@@ -1904,16 +1913,17 @@ Sends a MoveCommand and runs 35 frames to verify the command was accepted.
 member _.``MoveCommand causes unit to change position``() =
     let uid = getFirstUnitId().Value
     let mutable moveSent = false
+    let frames = ResizeArray<GameFrame>()
 
-    let frames =
-        engine.Client.Run(35, fun frame ->
-            if not moveSent then
-                moveSent <- true
-                [ Commands.MoveCommand uid 2048.0f 100.0f 2048.0f ]
-            else [])
+    engine.Client.WaitFrames 35 (fun frame ->
+        frames.Add(frame)
+        if not moveSent then
+            moveSent <- true
+            engine.Client.SendCommands
+                [ Commands.MoveCommand uid 2048.0f 100.0f 2048.0f ])
 
     Assert.True(moveSent)
-    Assert.True(frames.Length >= 35)
+    Assert.True(frames.Count >= 35)
 
 (**
 ### BuildCommand triggers unit creation
@@ -1928,17 +1938,16 @@ member _.``BuildCommand triggers unit creation``() =
     let mutable buildSent = false
     let createdAfterBuild = ResizeArray<int>()
 
-    let _frames =
-        engine.Client.Run(70, fun frame ->
-            if buildSent then
-                frame.Events |> List.iter (function
-                    | GameEvent.UnitCreated(newUid, _) -> createdAfterBuild.Add(newUid)
-                    | _ -> ())
+    engine.Client.WaitFrames 70 (fun frame ->
+        if buildSent then
+            frame.Events |> List.iter (function
+                | GameEvent.UnitCreated(newUid, _) -> createdAfterBuild.Add(newUid)
+                | _ -> ())
 
-            if not buildSent then
-                buildSent <- true
-                [ Commands.BuildCommand uid 1 600.0f 100.0f 600.0f 0 ]
-            else [])
+        if not buildSent then
+            buildSent <- true
+            engine.Client.SendCommands
+                [ Commands.BuildCommand uid 1 600.0f 100.0f 600.0f 0 ])
 
     Assert.True(buildSent)
 
@@ -1955,20 +1964,21 @@ member _.``StopCommand halts a moving unit``() =
     let mutable moveSent = false
     let mutable stopSent = false
     let mutable frameIdx = 0
+    let frames = ResizeArray<GameFrame>()
 
-    let frames =
-        engine.Client.Run(25, fun _ ->
-            frameIdx <- frameIdx + 1
-            if not moveSent && frameIdx >= 3 then
-                moveSent <- true
+    engine.Client.WaitFrames 25 (fun frame ->
+        frames.Add(frame)
+        frameIdx <- frameIdx + 1
+        if not moveSent && frameIdx >= 3 then
+            moveSent <- true
+            engine.Client.SendCommands
                 [ Commands.MoveCommand uid 2048.0f 100.0f 2048.0f ]
-            elif moveSent && not stopSent && frameIdx >= 10 then
-                stopSent <- true
-                [ Commands.StopCommand uid ]
-            else [])
+        elif moveSent && not stopSent && frameIdx >= 10 then
+            stopSent <- true
+            engine.Client.SendCommands [ Commands.StopCommand uid ])
 
     Assert.True(stopSent)
-    Assert.True(frames.Length >= 25)
+    Assert.True(frames.Count >= 25)
 
 (**
 ### Patrol Guard Attack Fight commands accepted without crashing
@@ -1982,27 +1992,30 @@ member _.``Patrol Guard Attack Fight commands accepted without crashing``() =
     let uid = getFirstUnitId().Value
     let mutable commandsSent = 0
     let mutable frameIdx = 0
+    let frames = ResizeArray<GameFrame>()
 
-    let frames =
-        engine.Client.Run(30, fun _ ->
-            frameIdx <- frameIdx + 1
-            match frameIdx with
-            | 5 ->
-                commandsSent <- commandsSent + 1
+    engine.Client.WaitFrames 30 (fun frame ->
+        frames.Add(frame)
+        frameIdx <- frameIdx + 1
+        match frameIdx with
+        | 5 ->
+            commandsSent <- commandsSent + 1
+            engine.Client.SendCommands
                 [ Commands.PatrolCommand uid 1024.0f 100.0f 1024.0f ]
-            | 10 ->
-                commandsSent <- commandsSent + 1
-                [ Commands.GuardCommand uid uid ]
-            | 15 ->
-                commandsSent <- commandsSent + 1
-                [ Commands.AttackCommand uid 99999 ]
-            | 20 ->
-                commandsSent <- commandsSent + 1
+        | 10 ->
+            commandsSent <- commandsSent + 1
+            engine.Client.SendCommands [ Commands.GuardCommand uid uid ]
+        | 15 ->
+            commandsSent <- commandsSent + 1
+            engine.Client.SendCommands [ Commands.AttackCommand uid 99999 ]
+        | 20 ->
+            commandsSent <- commandsSent + 1
+            engine.Client.SendCommands
                 [ Commands.FightCommand uid 1500.0f 100.0f 1500.0f ]
-            | _ -> [])
+        | _ -> ())
 
     Assert.True(commandsSent >= 4)
-    Assert.True(frames.Length >= 30)
+    Assert.True(frames.Count >= 30)
 
 (**
 ---
@@ -2034,8 +2047,9 @@ Verifies Update events appear in frames with matching frame numbers.
 (*** do-not-eval ***)
 [<Fact>]
 member _.``Update events received with matching frame numbers``() =
-    let frames = engine.Client.Run(5, fun _ -> [])
-    Assert.True(frames.Length >= 5)
+    let frames = ResizeArray<GameFrame>()
+    engine.Client.WaitFrames 5 (fun frame -> frames.Add(frame))
+    Assert.True(frames.Count >= 5)
     for frame in frames do
         let updateFrameNums =
             frame.Events
@@ -2095,8 +2109,9 @@ Verifies 10 frames can be processed without crashing despite potential unknown e
 (*** do-not-eval ***)
 [<Fact>]
 member _.``Unknown events do not crash the frame loop``() =
-    let frames = engine.Client.Run(10, fun _ -> [])
-    Assert.True(frames.Length >= 10)
+    let frames = ResizeArray<GameFrame>()
+    engine.Client.WaitFrames 10 (fun frame -> frames.Add(frame))
+    Assert.True(frames.Count >= 10)
 
 (**
 ---
@@ -2455,3 +2470,48 @@ member _.``Commander assassinates enemy commander``() =
             Protocol.sendFrameResponse stream finalCommands
 
     Assert.True(enemyComDead, "Enemy commander should be destroyed")
+
+(**
+---
+
+## `FSBar.Viz.Tests` — Visualization Library
+
+Approximately 104 tests in `tests/FSBar.Viz.Tests/`. These exercise the declarative
+Scene API, the layer renderer cache, color maps, mock snapshots, live and preview
+session lifecycles, and the `.fsi` surface baselines. They are grouped by module rather
+than enumerated individually; see the source files for the exact test list.
+
+| Test file | Approx. count | What it covers |
+|-----------|---------------|----------------|
+| `ColorMapsTests.fs` | 17 | Built-in color schemes (`grayscale`, `terrain`, `heatMap`, `binary`) and `colorSchemeFor` per-layer defaults. |
+| `LayerRendererTests.fs` | 8 | `renderLayer` output shape, cache hit/miss counting, and `invalidateCache` / `invalidateAll` behavior. |
+| `MapDataTests.fs` | 4 | Binary save/load round-trip for `MapGrid` + metal spots. |
+| `SceneBuilderTests.fs` | 19 | `buildScene` composition — base layer selection, overlay toggling, grid lines, HUD panels, view transforms. |
+| `MockSnapshotTests.fs` | 10 | The `MockSnapshot` fluent builder (`withFriendlyAt`, `withEnemyAt`, `withEconomy`, `withMetalSpots`, ...). |
+| `ViewerTests.fs` | 3 | `GameViz.start` / `stop` / configuration round-trip in a headless window. |
+| `LiveSessionTests.fs` | 3 | `LiveSession` handle lifecycle and error reporting without an engine. |
+| `LiveSessionIntegrationTests.fs` | 5 | `LiveSession.startWithClient` against a real `BarClient` session. |
+| `GameVizIntegrationTests.fs` | 8 | `GameViz.attachToClient` + `onFrame` feeding live frames into the viewer. |
+| `PreviewSessionTests.fs` | 3 | `PreviewSession.startWithMap` / `startWithSnapshot` / `startPlayback` disposal semantics. |
+| `SyntheticVizTests.fs` | 5 | Rendering `FSBar.SyntheticData` scenes through the viz pipeline. |
+| `SurfaceBaselineTests.fs` | 19 | Guards every `FSBar.Viz` `.fsi` against its committed `.baseline` file — any accidental public API change fails loudly. |
+
+Several of these tests require an OpenGL context (GameViz, LiveSession, PreviewSession).
+They skip cleanly when run headless without `XDG_RUNTIME_DIR` / `DISPLAY`.
+
+## `FSBar.SyntheticData.Tests` — Scene Generator
+
+Approximately 40 tests in `src/FSBar.SyntheticData.Tests/`. These validate the three
+pre-built scenes and the individual simulation modules.
+
+| Test file | Approx. count | What it covers |
+|-----------|---------------|----------------|
+| `SceneATests.fs` | 10 | Sparse scene — frame count, unit tracking, basic continuity. |
+| `SceneBTests.fs` | 6 | Medium scene — builder + factory + moving enemies. |
+| `SceneCTests.fs` | 6 | Dense scene — multi-team movement and combat events. |
+| `ContinuityTests.fs` | 4 | Frame-to-frame invariants from `Validation.validateContinuity`. |
+| `ValidationTests.fs` | 3 | Structural invariants from `Validation.validate` (in-bounds positions, stable unit IDs, non-negative economy). |
+| `SurfaceAreaTests.fs` | 1 | `.fsi` surface baseline for `FSBar.SyntheticData`. |
+
+These tests are pure — they do not touch the filesystem, network, or any engine.
+*)

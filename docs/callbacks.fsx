@@ -16,21 +16,26 @@ on the same socket connection.
 
 ## How Callbacks Work
 
-During a frame handler (inside `StepWith` or when using the raw `Protocol` API), you can call
-any function in the `Callbacks` module. Each function:
+Any time you have access to the socket stream (`client.Stream`), you can call any function in
+the `Callbacks` module. Each function:
 
 1. Constructs a `CallbackRequest` protobuf message
 2. Sends it via `Protocol.sendCallback`
 3. Blocks until the proxy responds with a `CallbackResponse`
 4. Extracts and returns the typed result
 
-All callback functions take a `NetworkStream` as the first parameter. Get this from `client.Stream`.
+Safe places to issue callbacks include:
+
+- Inside a `client.WaitFrames` handler
+- Inside a `client.Frames.Subscribe` callback
+- Between frames when driving the protocol directly with `Protocol.receiveFrame` /
+  `Protocol.sendFrameResponse`
 
 ## Timing Constraints
 
-Callbacks work reliably at high game speeds (100x) but can cause protocol desync at low speeds.
-At low game speeds, the engine may send the next frame before the callback round-trip completes.
-See [Known Issues](known-issues.html) for details and workarounds.
+Callbacks work reliably at high game speeds (100x) but can cause protocol desync at low
+speeds. At low game speeds, the engine may send the next frame before the callback
+round-trip completes. See [Known Issues](known-issues.html) for details and workarounds.
 
 ## Callback Reference
 
@@ -279,32 +284,23 @@ A complete example querying unit info and economy during a frame:
 (*** do-not-eval ***)
 open FSBar.Client
 
-let client = BarClient.startHeadless ()
+use client = BarClient.startHeadless ()
 
 // Run 30 warm-up frames
-for _ in 1..30 do client.Step() |> ignore
+client.WaitFrames 30 (fun _ -> ())
 
-// Use the raw protocol API for callback-heavy work
 let stream = client.Stream
 
-match Protocol.receiveFrame stream with
-| Some frame ->
-    // Query economy
+// Simple case: issue callbacks inside a WaitFrames handler
+client.WaitFrames 1 (fun frame ->
     let metal = Callbacks.getEconomyCurrent stream 0
     let energy = Callbacks.getEconomyCurrent stream 1
     printfn "Frame %d: Metal=%.0f Energy=%.0f" frame.FrameNumber metal energy
 
-    // Query each unit
     for evt in frame.Events do
         match evt with
         | GameEvent.UnitIdle uid ->
             let (x, _, z) = Callbacks.getUnitPos stream uid
             let hp = Callbacks.getUnitHealth stream uid
             printfn "  Idle unit %d at (%.0f, %.0f) hp=%.0f" uid x z hp
-        | _ -> ()
-
-    Protocol.sendFrameResponse stream []
-| None ->
-    printfn "Game ended"
-
-client.Stop()
+        | _ -> ())
