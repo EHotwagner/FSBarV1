@@ -29,7 +29,13 @@ cd "$REPO_ROOT"
 source "$SCRIPT_DIR/lib/parse_unwired.sh"
 
 LADDER="$SCRIPT_DIR/ladder.json"
-BOT_FSX="$SCRIPT_DIR/bot.fsx"
+# 023: BOT_SCRIPT selector — the runner can launch any .fsx in $SCRIPT_DIR.
+# Default keeps the rush bot (bot.fsx) as the implicit choice for backward
+# compatibility with 020/021/022 invocations. The macro bot is selected via
+#   BOT_SCRIPT=bot_macro.fsx bash bots/trainer/run.sh <rung> <iter>
+BOT_SCRIPT="${BOT_SCRIPT:-bot.fsx}"
+export BOT_SCRIPT
+BOT_FSX="$SCRIPT_DIR/$BOT_SCRIPT"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "ERROR: jq is required but not installed" >&2
@@ -40,17 +46,17 @@ if [[ ! -f "$LADDER" ]]; then
   exit 2
 fi
 if [[ ! -f "$BOT_FSX" ]]; then
-  echo "ERROR: missing $BOT_FSX" >&2
+  echo "ERROR: missing $BOT_FSX (BOT_SCRIPT=$BOT_SCRIPT)" >&2
   exit 2
 fi
 
 # Verify we are on the feature branch (warn but do not block — caller may be on a detached state)
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")"
-if [[ "$current_branch" != "021-rerun-trainer-highbar" ]]; then
+if [[ "$current_branch" != "023-trainer-builder-economy" ]]; then
   echo "[run.sh] WARNING: not on feature branch (current: $current_branch)" >&2
 fi
 
-echo "[run.sh] iter=$iter_id rung=$rung_name"
+echo "[run.sh] iter=$iter_id rung=$rung_name bot_script=$BOT_SCRIPT"
 
 # Parse ladder
 map_name="$(jq -r '.map' "$LADDER")"

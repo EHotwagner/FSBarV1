@@ -1,12 +1,26 @@
 # Bot Iterative Trainer
 
-**Feature**: [020-bot-iterative-trainer](../../specs/020-bot-iterative-trainer/spec.md)
-**Branch**: `020-bot-iterative-trainer`
+**Features**: [020](../../specs/020-bot-iterative-trainer/spec.md) →
+[021](../../specs/021-rerun-trainer-highbar/spec.md) →
+[022](../../specs/022-incorporate-highbar-030/spec.md) →
+[023](../../specs/023-trainer-builder-economy/spec.md)
+**Current branch**: `023-trainer-builder-economy`
 
 A scripted trainer for Beyond All Reason AI bots. Runs an F# `.fsx` bot in a
 headless engine against one of several opponent rungs, captures structured
 logs into a run directory, and supports an operator-driven diagnose-improve-
 commit-push loop.
+
+**Two in-tree bots** (feature 023):
+- `bot.fsx` — the **rush bot**: MoveCommand-based commander-rush targeting
+  the unique-def enemy. Clean win on NullAI + BARb/dev via a single moving
+  commander. Simplest possible bot that still wins.
+- `bot_macro.fsx` — the **macro bot** (023 archetype): 4-phase state
+  machine (Opening → Production → Upgrade → Attack) plus FR-016b defend
+  interrupt. Selected via the `BOT_SCRIPT` environment variable.
+
+Both bots share the same helper library under `helpers/` and must remain
+runnable on every commit per FR-022/FR-023.
 
 ## Mantra
 
@@ -26,8 +40,18 @@ Short version:
 ```bash
 bash bots/trainer/engine-patches/install-barb-profiles.sh
 dotnet build src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug
+# rush bot (default, omits BOT_SCRIPT):
 bash bots/trainer/run.sh NullAI smoke
+# macro bot (023 archetype):
+BOT_SCRIPT=bot_macro.fsx bash bots/trainer/run.sh NullAI smoke
 ```
+
+### BOT_SCRIPT environment variable
+
+`run.sh` reads `BOT_SCRIPT` to decide which `.fsx` file to launch.
+Default is `bot.fsx`. The variable is exported so the bot can see
+which script it is (useful for divergent code paths that live in the
+same file).
 
 ## Iteration loop
 
@@ -40,20 +64,26 @@ after every change (FR-025 through FR-030).
 
 ```
 bots/trainer/
-├── bot.fsx              the bot under iteration (edit every loop)
+├── bot.fsx                         rush bot (020/021/022 lineage)
+├── bot_macro.fsx                   macro bot (023 archetype)
 ├── helpers/
-│   ├── prelude.fsx      #r directives + opens (FSBar.Client DLL loading)
-│   ├── log.fsx          structured frame log + result.json writer
-│   ├── perception.fsx   stub — grows by extraction
-│   └── tactics.fsx      the main match loop (trainerLoopRun)
+│   ├── prelude.fsx                 #r directives + opens
+│   ├── log.fsx                     frame log + result.json + phase_transitions.jsonl
+│   ├── perception.fsx              base centre, enemies-in-base, pickEnemyCommanderPos
+│   ├── tactics.fsx                 the main match loop (trainerLoopRun)
+│   ├── opening_build.fsx           023 US1: opening-build order + idle-defect detector
+│   ├── production_queue.fsx        023 US2: factory queue keeper + FR-008 gate
+│   ├── constructor_dispatch.fsx    023 US2: idle-constructor dispatcher + FR-007 telemetry
+│   ├── upgrade_gate.fsx            023 US3: entry/exit predicates + FR-012 stall path
+│   └── attack_launch.fsx           023 US4: combat classifier + launch commands
 ├── engine-patches/
-│   ├── BARb_AIOptions.lua       in-repo patched copy with easy/medium/hard items uncommented
-│   └── install-barb-profiles.sh idempotent installer, copies the patch into every engine
-├── ladder.json          opponent rungs + fixed map + fixed seed
-├── run.sh               one-iteration runner (writes run dir under bots/runs/)
-├── PLAYBOOK.md          operator decision tree (READ THIS)
-├── HISTORY.md           per-iteration ledger
-└── README.md            this file
+│   ├── BARb_AIOptions.lua          patched copy, easy/medium/hard profiles uncommented
+│   └── install-barb-profiles.sh    idempotent installer
+├── ladder.json                     opponent rungs + fixed map + fixed seed (NullAI=36000 frames, BARb/dev=36000)
+├── run.sh                          one-iteration runner (writes run dir, reads BOT_SCRIPT)
+├── PLAYBOOK.md                     operator decision tree (READ THIS — §12 for macro)
+├── HISTORY.md                      per-iteration ledger
+└── README.md                       this file
 ```
 
 The per-iteration artifacts live under `bots/runs/<timestamp>_<rung>_<iter>/`
@@ -62,13 +92,49 @@ feature's output.
 
 ## Helper catalogue
 
-The first and always-present helper is **logging** — `helpers/log.fsx`
-exposes `createLogger`, `logStart`, `logFrame`, `writeResult`, `writeError`,
-plus the `TrainerEventDetail`, `TrainerLogger`, `TrainerTelemetry` records.
+Five extracted helpers land across features 021 (`perception.fsx`
+`pickEnemyCommanderPos`) and 023 (the five builder-economy helpers).
+Each was extracted under FR-020's two-organic-sites rule. One-line
+summary per helper; see `contracts/helpers.md` in the owning feature
+spec for the full API and `PLAYBOOK.md §12.3` for the edit map.
 
-Additional helpers will be added by extraction as iterations produce
-duplication (US4 — Phase 5 of tasks.md). This section should be refreshed
-on every extraction commit.
+- **`helpers/log.fsx`** — `createLogger`, `logStart`, `logFrame`,
+  `writeResult`, `writeError`, plus 023's `TrainerPhaseTransitionRecord`
+  and `logPhaseTransition` (appends to `phase_transitions.jsonl`;
+  absent-by-design for rush-bot runs).
+- **`helpers/perception.fsx`** — `pickEnemyCommanderPos` (021 first
+  extraction), plus 023's `computeBaseCentre` and `enemiesInBase`
+  (2D distance from a base centre, powers the FR-016b defend
+  interrupt).
+- **`helpers/tactics.fsx`** — `trainerLoopRun` (the main match loop
+  consumed by both bots; unchanged from 020).
+- **`helpers/opening_build.fsx`** (023 US1) — opening-build order
+  helper. `defaultOpening` (Armada 2×mex + 2×solar + 1×lab),
+  `resolveOpeningBuildOrder`, `nextOpeningCommand`, `openingComplete`,
+  plus `OpeningProgress` and `PositionChooser` types. Consumers advance
+  on `UnitFinished` (not `UnitCreated`) so partial structures don't
+  get abandoned.
+- **`helpers/production_queue.fsx`** (023 US2) — factory queue keeper.
+  `defaultArmadaKbotPolicy` (armck + armpw, minDepth=3, target
+  constructor ratio 0.4, FR-008 gate at income ≥ 10),
+  `resolveQueuePolicy`, `observeFrame`, `computeQueueTopUp`.
+- **`helpers/constructor_dispatch.fsx`** (023 US2) — idle-constructor
+  dispatcher. `DispatchState`, `findConstructors`, `dispatchIdle`,
+  `idleDefectCandidates`, `markDefectReported`. IsIdle is unreliable
+  (engine's `UnitIdle` event often doesn't fire for fresh factory
+  products), so the helper tracks `Dispatched : Set<int>` explicitly.
+- **`helpers/upgrade_gate.fsx`** (023 US3) — upgrade entry/exit
+  predicates + FR-012 stall path. `UpgradeThresholds`, `UpgradeGateState`,
+  `entryPredicateMet`, `markReached`, `decideUpgradeExit` (returns
+  `AttackNow|StallAndLose|WaitLonger` with the "no degenerate rush"
+  invariant enforced).
+- **`helpers/attack_launch.fsx`** (023 US4) — army composition + attack
+  launch. `isCombatDef` (MaxWeaponRange > 0 AND empty BuildOptions —
+  excludes commander, constructors, structures), `countCombatUnits`,
+  `launchFreshCombat` (issues `MoveCommand` per unit toward target —
+  `FightCommand` was rejected in iter 024 because it halts units to
+  engage en route), `pickAttackTarget` (prefers the unique-def enemy,
+  falls back to a fixed position).
 
 ## Success criteria
 

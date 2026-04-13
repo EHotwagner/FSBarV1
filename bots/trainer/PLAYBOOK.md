@@ -282,3 +282,148 @@ root cause is a defect in a sibling repo such as HighBarV2 proxy — do
 
 Iterations made while a cross-repo defect is outstanding are not
 counted against the §10 budget — a halted loop is halted.
+
+---
+
+## 12. Macro archetype (023-trainer-builder-economy)
+
+The macro bot (`bot_macro.fsx`) is a builder-economy archetype layered
+on top of the same runner, helpers, and discipline as the rush bot. It
+drives a four-phase state machine plus a defend interrupt. This section
+is the operator's quick reference for running it, classifying macro
+regressions, and knowing which helper to edit.
+
+**Invocation**:
+
+```
+BOT_SCRIPT=bot_macro.fsx bash bots/trainer/run.sh <rung> <iter>
+```
+
+(Omitting `BOT_SCRIPT` runs the existing rush bot `bot.fsx` — both bots
+must remain runnable at every commit on this branch per FR-022/FR-023.)
+
+**Post-run phase-transition diagnostic**:
+
+```
+cat bots/runs/<run_dir>/phase_transitions.jsonl | jq -c .
+```
+
+The absence of this file in a macro-bot run is a bot-logic regression,
+not infrastructure. For a rush-bot run the file is expected to be
+absent — the rush bot does not call `logPhaseTransition`.
+
+### 12.1 Macro phases and their triggers
+
+| Phase      | Entry trigger                                                                            | Helper owning the predicate                     |
+|------------|------------------------------------------------------------------------------------------|-------------------------------------------------|
+| Opening    | Match start                                                                              | `opening_build.fsx` (`defaultOpening` + `nextOpeningCommand`) |
+| Production | First factory finishes construction (FR-004)                                             | `opening_build.fsx.openingComplete` emits the event |
+| Upgrade    | `entryPredicateMet`: metal income ≥ 20 AND factory-built count ≥ 6                      | `upgrade_gate.fsx.entryPredicateMet`            |
+| Attack     | `decideUpgradeExit → AttackNow Normal`: upgrade reached AND combat units ≥ 12           | `upgrade_gate.fsx.decideUpgradeExit` + `attack_launch.fsx.launchFreshCombat` |
+| Attack     | `decideUpgradeExit → AttackNow DeadlineFallback` (FR-012): deadline exceeded AND combat ≥ 12 | `upgrade_gate.fsx.decideUpgradeExit` |
+| (stall)    | `decideUpgradeExit → StallAndLose` (FR-012): deadline exceeded AND combat < 12          | `upgrade_gate.fsx.decideUpgradeExit`; records `upgrade-stall-no-army` in `phase_transitions.jsonl`; bot overrides `result.json.cause = loss-by-stall-upgrade-deadline` |
+| Defending  | Any non-critter enemy inside `baseRadius` (FR-016b interrupt, not a proper phase)        | `perception.fsx.enemiesInBase` + bot-side critter filter |
+
+**Phase invariants**:
+- `Defending` is an interrupt: on exit the bot resumes the phase it was in before the intruder arrived (stored in `preDefendPhase`).
+- `Attack` is terminal — the bot does not return to Production/Upgrade once launched.
+- The defend interrupt filters out critter defs (name prefix `critter`) at warmup so static NullAI wildlife doesn't trap the bot.
+- Upgrade→Attack is wired via `decideUpgradeExit`, which respects the "no degenerate rush" invariant: never AttackNow with `Reached.IsNone AND combat < threshold`.
+
+**Canonical end-of-match outcomes**:
+- Clean win: `outcome=win, cause=commander-death-win-after-upgrade, victory_signal=engine-shutdown-gameover`
+- Deadline-fallback win: same outcome with `cause=commander-death-win-deadline-fallback`
+- Stall loss: `outcome=loss, cause=loss-by-stall-upgrade-deadline` (bot-side override when `upgradeGateState.StallRecorded=true`)
+- Timeout (non-terminal): `outcome=timeout, cause=frame limit reached (max_frames=...)` — the bot didn't complete the macro cycle in the rung's budget; classify via the labels in §12.2.
+
+**Second-operator quickstart (SC-009)** — to reproduce a macro clean win on NullAI from scratch:
+1. `BOT_SCRIPT=bot_macro.fsx bash bots/trainer/run.sh NullAI smoke`
+2. Expect telemetry like: `{units_built≈60, units_lost≤15, enemy_units_killed≥1, peak_metal≈2000, peak_energy≈2000, frames_survived≈21000}`
+3. Expect `phase_transitions.jsonl` with exactly these transitions (frame numbers ±200): Opening→Production (~2750), Production→Upgrade (~10350), Upgrade→Attack (~16500), optional defend interrupts
+4. Expect `result.json`: `outcome=win, cause=commander-death-win-after-upgrade, victory_signal=engine-shutdown-gameover`
+5. To reuse ≥3 helpers in a new bot: `#load` `opening_build.fsx` + `production_queue.fsx` + `attack_launch.fsx` and wire the `resolveXxx`/`observeFrame`/`launchFreshCombat` calls at warmup + per-frame. See `bot_macro.fsx` as the reference consumer.
+
+### 12.2 Macro-specific classification labels
+
+When diagnosing a failed macro iteration, use these labels in the
+HISTORY note column in addition to the §3 generic labels.
+
+- **`opening-regression`** — bot failed to complete the opening phase.
+  - *Symptoms*: missing `Opening→Production` line in `phase_transitions.jsonl`, fewer than 5 `UnitFinished` events for opening defs, `[commander-idle-defect]` line in stdout, `units_built < 5`.
+  - *Common causes (observed in iters 001-006)*: (a) faction mismatch — using Cortex def names when commander is Armada, engine silently drops BuildCommand; (b) position collision — two 2×2 structures placed within ~40 elmos of each other; (c) Y-coord from `getMetalSpots` passed literally to BuildCommand (terrain altitude ≠ nominal build-site y); (d) advance-on-UnitCreated vs advance-on-UnitFinished — commander abandons partial structures if we advance on Created.
+  - *Fix location*: `helpers/opening_build.fsx` (`defaultOpening`, `nextOpeningCommand`) or `bot_macro.fsx` warmup.
+
+- **`production-regression`** — factory queue stalls or role mix is off.
+  - *Symptoms*: `Opening→Production` fires but `units_built` growth flatlines post-transition, `[idle-dispatch-defect]` lines in stdout, or only one queue role (only constructors or only combat) in `queueState.ObservedBuilt`.
+  - *Common causes (observed in iters 007-012)*: (a) `IsIdle` filter unreliable (engine's `UnitIdle` event doesn't fire for fresh factory products — use `dispatchedConstructors : Set<int>` instead); (b) FR-008 metal-income gate closed permanently (mex dispatch stuck — constructors can't raise income).
+  - *Fix location*: `helpers/production_queue.fsx` or `helpers/constructor_dispatch.fsx`.
+
+- **`upgrade-stall`** — hit the FR-012 deadline without reaching the upgrade predicate.
+  - *Symptoms*: `phase_transitions.jsonl` shows `upgrade-stall-no-army`, `result.json.cause=loss-by-stall-upgrade-deadline`.
+  - *Common causes (observed in iters 013-021)*: (a) `upgradeDeadlineFrame` too tight for the current opening+production runway; (b) wrong builder for the t2 structure — `armcom` cannot build `armalab`, only `armck` can (faction-specific build options — check `UnitDefCache.ById[commanderDefId].BuildOptions` at warmup); (c) single-builder t2 build rate too slow — commander should GuardCommand the armck to add its build speed.
+  - *Fix location*: `helpers/upgrade_gate.fsx` (`UpgradeThresholds`) or `bot_macro.fsx` Upgrade-phase command branch.
+
+- **`attack-regression`** — attack launched but commander not reached.
+  - *Symptoms*: `Upgrade→Attack` line present, `attackLaunched=true` in stdout, but `enemy_units_killed=0` or mismatched `cause`.
+  - *Common causes (observed in iters 024-028)*: (a) `FightCommand` vs `MoveCommand` — FightCommand stops units to engage en route, MoveCommand lets them run straight and auto-fire; (b) travel-time underestimate vs `max_frames` budget — NullAI default 18000 is too tight for macro, raise to 36000; (c) pathing blocked at distant target (HighBar's open watch-item — if AttackCommand goes stationary, fall back to MoveCommand/FightCommand).
+  - *Fix location*: `helpers/attack_launch.fsx` (`issueLaunch`, `launchFreshCombat`) or `ladder.json` (`max_frames`).
+
+- **`defend-oscillation`** — defend-interrupt state flips many times per second (observed on BARb/dev probe iter 001).
+  - *Symptoms*: `phase_transitions.jsonl` contains dozens of 1-frame-duration `Opening→Defending`/`Defending→Opening` pairs, opening never completes.
+  - *Common causes*: an enemy unit's position oscillates across `baseRadius` boundary due to GameState snapshot timing, OR the critter filter isn't catching all harmless enemies.
+  - *Fix location*: hysteresis in `bot_macro.fsx` defend interrupt (require N consecutive frames of clear before exiting Defending), or widen the critter filter in `resolveCritterDefIds`.
+
+### 12.3 Helper edit map
+
+Each row says "when this symptom appears in the run log, edit this
+helper". Helper files are filled in as US1..US4 iterations organically
+produce two extraction sites under FR-020.
+
+- **US1 landed**: `helpers/opening_build.fsx` — opening-build order
+  helper. Extracted at iter 3 (T015) after iter 001 inlined the
+  sequence and iter 002 kept it unchanged while fixing the
+  defend-interrupt critter filter. Exposes `defaultOpening`,
+  `resolveOpeningBuildOrder`, `nextOpeningCommand`, `advanceOnCreated`,
+  `markIssued`, `openingComplete`, `sortMetalSpotsByDistance`. Edit
+  when tuning the opening sequence or adding new `PositionChooser`
+  cases; keep `bot_macro.fsx` consumer in sync.
+- **US2 landed**: `helpers/production_queue.fsx` — factory queue
+  keeper. Extracted at iter 9 (T019) after iter 007 inlined the queue
+  and iter 008 kept it unchanged while adding the commander-guard fix.
+  Exposes `QueuePolicy`, `ResolvedQueuePolicy`, `QueueState`,
+  `defaultArmadaKbotPolicy`, `resolveQueuePolicy`, `queueDepth`,
+  `pickNextQueueDef`, `computeQueueTopUp`, `observeFrame`,
+  `factoryIdleSince`. Edit when tuning queue tunables, adding new
+  queue items, or changing the FR-008 gate policy.
+- **US2 landed**: `helpers/constructor_dispatch.fsx` — idle-constructor
+  dispatcher. Extracted at iter 12 (T021) after iter 010 inlined the
+  dispatch with a broken `IsIdle` filter (0 dispatches) and iter 011
+  fixed the filter to use explicit `dispatchedConstructors` tracking
+  (17 dispatches, metal income 34.8/s). Exposes `DispatchState`,
+  `DispatchDecision`, `emptyDispatchState`, `findConstructors`,
+  `dispatchIdle`, `idleDefectCandidates`, `markDefectReported`. Edit
+  when adding Repair/AssistCommander job types, refining the
+  constructor def-allowlist, or tuning the idle-defect threshold.
+- **US3 landed**: `helpers/upgrade_gate.fsx` — upgrade entry/exit
+  predicates + FR-012 stall path. Extracted at iter 22 (T025) after
+  iter 013 inlined the gate and iter 021 verified the full
+  Production→Upgrade→Attack path with a fix sequence that converged
+  on `[BuildCommand armck armalab; StopCommand commander; GuardCommand
+  commander armck]`. Exposes `UpgradePredicateName`, `UpgradeAttackPath`,
+  `UpgradeExitDecision`, `UpgradeThresholds`, `UpgradeGateState`,
+  `emptyUpgradeGateState`, `entryPredicateMet`, `upgradeReached`,
+  `markReached`, `decideUpgradeExit`. FR-012 stall-path verified via
+  iter 023-stall (deadline=1800 → `loss-by-stall-upgrade-deadline`).
+  Edit when tuning thresholds, adding new upgrade predicates, or
+  changing the no-degenerate-rush invariant.
+- **US4 landed**: `helpers/attack_launch.fsx` — army composition +
+  attack launch. Extracted at iter 28 (T030) after iter 024 inlined
+  with FightCommand (units stopped to engage en route, never arrived)
+  and iter 025-026 switched to MoveCommand + raised NullAI
+  max_frames → first macro clean win on NullAI at iter 026. Exposes
+  `AttackLaunchState`, `isCombatDef`, `countCombatUnits`,
+  `buildLaunchSnapshot`, `issueLaunch`, `launchFreshCombat`,
+  `maybeRetarget`, `pickAttackTarget`. Edit when tuning the combat
+  classifier, adding per-faction unit allowlists, or refining the
+  attack target selection.
+

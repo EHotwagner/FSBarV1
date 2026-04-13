@@ -6,7 +6,7 @@
       "name": "NullAI",
       "opponent": "NullAI",
       "options": {},
-      "max_frames": 18000
+      "max_frames": 36000
     },
     {
       "name": "BARb/dev",

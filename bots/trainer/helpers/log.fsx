@@ -29,10 +29,34 @@ type TrainerLogger = {
     RunDir: string
     FramesPath: string
     ResultPath: string
+    PhaseTransitionsPath: string
     StartTime: DateTime
 }
 
+/// 023 phase-transition record — one JSONL line per entry in
+/// phase_transitions.jsonl. Written by bot_macro.fsx via
+/// logPhaseTransition; NOT written by bot.fsx. Absence of the file in
+/// a run dir is the indicator that the run came from the rush bot.
+/// Contract: specs/023-trainer-builder-economy/contracts/phase-transition-record.md
+type TrainerPhaseTransitionRecord = {
+    Frame: uint32
+    From: string
+    To: string
+    Reason: string
+    /// Numeric telemetry snapshot. Values must be JSON-writable primitives
+    /// (float/int). Nested numeric maps go in separate keys.
+    Telemetry: Map<string, float> option
+    /// Free-form operator-facing diagnostic string; avoid stuffing telemetry
+    /// here.
+    Notes: string option
+}
+
 /// Create a logger for the given run directory. The directory must already exist.
+///
+/// NOTE (023): phase_transitions.jsonl is intentionally NOT stubbed here.
+/// Absence or emptiness of the file is a meaningful signal — for the rush
+/// bot it is expected; for the macro bot it is a bot-logic bug. The bot
+/// creates the file on its first logPhaseTransition call.
 let createLogger (runDir: string) : TrainerLogger =
     if not (Directory.Exists runDir) then
         Directory.CreateDirectory(runDir) |> ignore
@@ -42,6 +66,7 @@ let createLogger (runDir: string) : TrainerLogger =
         RunDir = runDir
         FramesPath = framesPath
         ResultPath = Path.Combine(runDir, "result.json")
+        PhaseTransitionsPath = Path.Combine(runDir, "phase_transitions.jsonl")
         StartTime = DateTime.UtcNow
     }
 
@@ -131,6 +156,36 @@ let logFrame
             | Some d -> " " + d
             | None -> ""
         printfn "[frame %d] %s%s%s%s" frame ed.Type idPart actorPart detailPart
+
+/// 023 FR-004 / FR-011 / FR-014: append one phase-transition record to
+/// phase_transitions.jsonl. The file is created on first call; no stub is
+/// produced at logger init — see createLogger note.
+let logPhaseTransition (logger: TrainerLogger) (record: TrainerPhaseTransitionRecord) : unit =
+    use ms = new MemoryStream()
+    use writer =
+        new Utf8JsonWriter(ms, JsonWriterOptions(Indented = false, SkipValidation = false))
+    writer.WriteStartObject()
+    writer.WriteNumber("frame", int64 record.Frame)
+    writer.WriteString("from", record.From)
+    writer.WriteString("to", record.To)
+    writer.WriteString("reason", record.Reason)
+    (match record.Telemetry with
+     | Some t when not (Map.isEmpty t) ->
+         writer.WriteStartObject("telemetry")
+         for (KeyValue(k, v)) in t do
+             writer.WriteNumber(k, v)
+         writer.WriteEndObject()
+     | _ -> ())
+    (match record.Notes with
+     | Some n -> writer.WriteString("notes", n)
+     | None -> ())
+    writer.WriteEndObject()
+    writer.Flush()
+    let line = System.Text.Encoding.UTF8.GetString(ms.ToArray())
+    File.AppendAllText(logger.PhaseTransitionsPath, line + "\n")
+    printfn "[phase] frame=%d %s→%s reason=%s%s"
+        record.Frame record.From record.To record.Reason
+        (match record.Notes with Some n -> " " + n | None -> "")
 
 /// Telemetry record passed to writeResult. Keys match contracts/result.schema.json.
 ///

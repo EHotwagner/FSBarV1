@@ -1,6 +1,6 @@
 # FSBarV1 Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-12
+Auto-generated from all feature plans. Last updated: 2026-04-13
 
 ## Active Technologies
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (unit definitions), xUnit 2.9.x (002-test-suite-report)
@@ -38,6 +38,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-12
 - filesystem only — JSONL frame logs, JSON metadata/result files, plain-text stdout/infolog captures under `bots/runs/` (gitignored, unchanged from 020); in-repo `bots/trainer/` tree edited in place; `Mailbox/` for inbound and new outbound reports. (021-rerun-trainer-highbar)
 - F# / .NET 10.0 (no F# changes in this feature — references-only) plus Bash for the trainer runner edit + existing in-repo `FSBar.Client`, `FSBar.Proto`, `BarData` (NuGet from local store). No new dependencies. (022-incorporate-highbar-030)
 - filesystem only — JSONL frame logs and JSON metadata under `bots/runs/` (gitignored, unchanged from 020/021); `Mailbox/` for outbound report; `specs/022-incorporate-highbar-030/` for closure note. (022-incorporate-highbar-030)
+- F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot scripts are `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client`, `FSBar.Proto`, `FsGrpc 1.0.6`, `BarData` (NuGet from local store); `System.Text.Json` (BCL) for run artifacts; bash for the runner. **No new dependencies.** (023-trainer-builder-economy)
+- filesystem only — JSONL frame logs, JSON metadata/result/phase-transition files, plain-text stdout/infolog captures under `bots/runs/` (gitignored, unchanged from 020/021/022); in-repo `bots/trainer/` tree edited in place. No database. (023-trainer-builder-economy)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -63,9 +65,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 023-trainer-builder-economy: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot scripts are `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client`, `FSBar.Proto`, `FsGrpc 1.0.6`, `BarData` (NuGet from local store); `System.Text.Json` (BCL) for run artifacts; bash for the runner. **No new dependencies.**
 - 022-incorporate-highbar-030: Added F# / .NET 10.0 (no F# changes in this feature — references-only) plus Bash for the trainer runner edit + existing in-repo `FSBar.Client`, `FSBar.Proto`, `BarData` (NuGet from local store). No new dependencies.
 - 021-rerun-trainer-highbar: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot scripts are `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client`, `FSBar.Proto`, `FsGrpc 1.0.6`, `BarData` (NuGet from local store); rebuilt HighBarV2 `libSkirmishAI.so` from sibling `../HighBarV2` checkout (post `029-fix-trainer-issues` squash-merge). `System.Text.Json` (BCL). Bash for the runner.
-- 020-bot-iterative-trainer: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot scripts are `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client`, `FSBar.Proto`, `FsGrpc 1.0.6`, `BarData` (NuGet from local store); `System.Text.Json` (BCL) for run artifacts; bash for the runner.
 
 
 <!-- MANUAL ADDITIONS START -->
