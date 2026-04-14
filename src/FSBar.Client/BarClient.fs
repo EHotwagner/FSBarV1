@@ -287,6 +287,16 @@ type BarClient(config: EngineConfig) =
             // Preserve any units captured during mini warmup.
             gameState <- { gameState with UnitDefs = unitDefs }
 
+            // NOTE: Protocol.replayBufferEnabled is left at its default value
+            // (false) here. Any follow-up warmup work the caller performs —
+            // e.g. MapGrid.loadFromEngine, getMetalSpots, or the 024 US5 tactical
+            // primitives setup in bot_macro.fsx — is also a batch-callback
+            // sequence whose events the bot does not care about. The caller
+            // flips replayBufferEnabled to true immediately before entering
+            // the main frame loop (see bots/trainer/bot_macro.fsx right before
+            // trainerLoopRun). See HighBarV2 specs/031-fix-callback-event-drop/
+            // contracts/callback-frame-interleaving.md for the full contract.
+
             state <- Connected
         with ex ->
             state <- Error ex.Message

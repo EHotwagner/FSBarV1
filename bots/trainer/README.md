@@ -176,3 +176,36 @@ Key outcomes:
 
 The 021 spec, plan, tasks, research, data-model, contracts delta, and
 quickstart live under `specs/021-rerun-trainer-highbar/`.
+
+## Tactical primitives (024-tactical-map-primitives)
+
+`bot_macro.fsx` now consumes the five new `FSBar.Client` modules shipped
+in feature 024: `Pathing`, `Chokepoints`, `BasePlan`, `WallIn`, and
+`SmfParser`. Map-dependent analysis (chokepoint detection in particular)
+runs **offline** via `scripts/examples/14-cache-map-analysis.fsx` and is
+loaded from `bots/trainer/map-cache/<map>.json` at warmup in < 10 ms —
+running it live would block the frame-reading path long enough to
+trip `Socket not writable, dropping frame` in the engine's infolog and
+OOM the Lua VM at 100× headless game speed.
+
+The bot emits `[chokepoint] loaded N chokepoints from cache …`,
+`[plan] resolved 5 slots`, `[plan] slot <name> (<def>) resolved @ (x,z)`,
+and `[defend] chokepoint pos=(x,z) width=W id=...` traces in addition to
+the 023 phase-transition and `[probe-idle]` lines. See
+`PLAYBOOK.md §13 "Tactical primitives integration"` for the full trace
+reference, the offline cache workflow, and the `BasePlan` extension
+procedure.
+
+The 023 helpers (`opening_build`, `production_queue`, `constructor_dispatch`,
+`upgrade_gate`, `attack_launch`) remain in-tree and still drive the
+main command path. Feature 024 adds the tactical primitives as
+observability + defend-interrupt routing, not as a full replacement.
+The rush bot (`bot.fsx`) is untouched across 024 — FR-030 preserved,
+verified on every 024 commit via `024-rush-smoke*` HISTORY entries.
+
+A companion FSBarV1↔HighBarV2 cross-repo fix landed as part of 024:
+`Protocol.sendCallback` in FSBar.Client now implements the
+HighBarV2 feature-031 "callback/frame interleaving" contract — mid-game
+callbacks no longer drop engine events. See mailboxes
+`Mailbox/2026-04-14_to_HighBarV2_mid-game-callback-event-drop.md` and
+`Mailbox/2026-04-14_from_HighBarV2_…callback-event-drop-resolved.md`.

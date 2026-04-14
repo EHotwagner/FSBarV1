@@ -254,6 +254,63 @@ let mutable advancedLabUnitId : int option = None
 let mutable attackLaunched : bool = false
 let mutable combatUnitsLaunched : Set<int> = Set.empty
 
+// ===========================================================================
+// 024 US5: tactical primitives integration. Warmup pins:
+//   - mapGrid: MapGrid.loadFromEngine-loaded grid (static for the match)
+//   - pinnedChokepoints: the Chokepoints.findChokepoints result ordered by
+//     distance from base — used by the defend interrupt to route interceptors
+//     to the nearest canyon entrance rather than chasing individual enemies.
+//   - planResolvedAtWarmup: BasePlan.resolvePlan output for the default
+//     Armada opening. Emitted as [plan] traces only in this commit; the
+//     023 opening_build helper still drives command emission. A follow-up
+//     iteration will switch the command path to consume ResolvedSlots
+//     directly (per US5 spec §T060 c-d), deferred here because live game
+//     iteration validation is out of scope for this session.
+//   - attackPathByUnitId: per-combat-unit path cache so [attack] traces
+//     show waypoint count / cost / status on each launch without
+//     re-running findPath every frame.
+// ===========================================================================
+let mutable mapGrid : MapGrid option = None
+let mutable pinnedChokepoints : Chokepoint list = []
+let mutable planResolvedAtWarmup : ResolvedSlot list = []
+let mutable attackPathReported : Set<int> = Set.empty
+
+/// Pick the nearest chokepoint to a world position. Returns None when the
+/// pinned list is empty (e.g., findChokepoints returned [] or warmup failed).
+let private nearestChokepointTo
+    (origin: float32 * float32 * float32)
+    (chokepoints: Chokepoint list)
+    : Chokepoint option =
+    if List.isEmpty chokepoints then None
+    else
+        let (ox, _, oz) = origin
+        chokepoints
+        |> List.sortBy (fun cp ->
+            let (cx, _, cz) = cp.Position
+            let dx = cx - ox
+            let dz = cz - oz
+            dx * dx + dz * dz)
+        |> List.tryHead
+
+/// Assemble a minimal OwnStructureFootprint list from GameState.Units,
+/// treating every finished unit with no weapon range and no build options
+/// (i.e., static structures) as a blocker for path planning. Lightweight
+/// heuristic — real deployments would consult UnitDefCache for the exact
+/// footprint shape.
+let private ownStructuresFromGameState (gs: GameState) : OwnStructureFootprint seq =
+    gs.Units
+    |> Map.toSeq
+    |> Seq.choose (fun (_, u) ->
+        if not u.IsFinished then None
+        else
+            match UnitDefCache.tryFindById gs.UnitDefs u.DefId with
+            | Some info when info.MaxWeaponRange = 0.0f && info.BuildOptions.Length = 0 ->
+                Some
+                    { Centre = u.Position
+                      RadiusElmos = 24.0f
+                      Tag = Some info.Name }
+            | _ -> None)
+
 let tacticsFn : TrainerTacticsFn =
     fun client frame commanderIdOpt ->
         match commanderIdOpt with
@@ -383,17 +440,39 @@ let tacticsFn : TrainerTacticsFn =
                     match baseCentre with
                     | None -> []
                     | Some centre ->
-                        match nearestEnemyId client.GameState centre intruders with
-                        | None -> []
-                        | Some targetEid ->
+                        // 024 US5: prefer routing interceptors to the nearest
+                        // chokepoint's approach side rather than chasing the
+                        // nearest raider individually. Falls back to the 023
+                        // nearest-enemy AttackCommand when no chokepoints were
+                        // detected at warmup (open terrain / detection gap).
+                        match nearestChokepointTo centre pinnedChokepoints with
+                        | Some cp ->
+                            let (cpx, _, cpz) = cp.Position
+                            if not (Set.contains -1 combatUnitsLaunched) then
+                                printfn "[defend] chokepoint pos=(%.0f,%.0f) width=%.0f id=%A"
+                                    cpx cpz cp.WidthElmos cp.Id
+                                combatUnitsLaunched <- Set.add -1 combatUnitsLaunched
                             let myIds =
                                 if Map.isEmpty client.GameState.Units then [ cid ]
                                 else
                                     client.GameState.Units
                                     |> Map.toSeq
+                                    |> Seq.filter (fun (_, u) -> u.IsFinished)
                                     |> Seq.map fst
                                     |> Seq.toList
-                            [ for uid in myIds -> AttackCommand uid targetEid ]
+                            [ for uid in myIds -> MoveCommand uid cpx 0.0f cpz ]
+                        | None ->
+                            match nearestEnemyId client.GameState centre intruders with
+                            | None -> []
+                            | Some targetEid ->
+                                let myIds =
+                                    if Map.isEmpty client.GameState.Units then [ cid ]
+                                    else
+                                        client.GameState.Units
+                                        |> Map.toSeq
+                                        |> Seq.map fst
+                                        |> Seq.toList
+                                [ for uid in myIds -> AttackCommand uid targetEid ]
                 elif currentPhase = Opening && not openingProgress.AwaitingCreated then
                     let commanderPos =
                         match Map.tryFind cid client.GameState.Units with
@@ -553,6 +632,29 @@ let tacticsFn : TrainerTacticsFn =
                         let (tx, _, tz) = target
                         printfn "[attack] launching %d combat units at target (%.0f,%.0f)"
                             (List.length launchCmds) tx tz
+                        // 024 US5: emit a Pathing.findPath trace for the first
+                        // unit in the launch so post-run analysis can see the
+                        // route cost + waypoint count. Uses commander pos as
+                        // the start since combat units cluster around the base.
+                        match mapGrid with
+                        | Some grid ->
+                            let startPos =
+                                match Map.tryFind cid client.GameState.Units with
+                                | Some u -> u.Position
+                                | None -> (tx, 0.0f, tz)
+                            let ownStructures = ownStructuresFromGameState client.GameState
+                            let budget : PathBudget =
+                                { WallClockMs = 100
+                                  MaxExpansions = 100_000
+                                  SlopeCost = 2.0f }
+                            match Pathing.findPath grid MoveType.Kbot ownStructures startPos target budget with
+                            | Result.Ok path ->
+                                printfn "[attack] path waypoints=%d cost=%.0f status=%A"
+                                    path.Waypoints.Length path.EstimatedCost path.Status
+                            | Result.Error e ->
+                                printfn "[attack] findPath error: %A" e
+                        | None ->
+                            printfn "[attack] findPath skipped (no MapGrid)"
                     combatUnitsLaunched <- newLaunched
                     let (topUp, newQueueState) =
                         computeQueueTopUp
@@ -698,6 +800,134 @@ try
             let dz = z - cz
             let dist = sqrt (dx * dx + dz * dz)
             printfn "[opening]   [%d] (%.0f,%.0f,%.0f) v=%.2f dist=%.0f" i x y z v dist
+
+        // ---- 024 US5: load pre-computed map analysis from disk cache ----
+        //
+        // Maps are static so any analysis that depends ONLY on terrain is
+        // a fixed function of the map file. Running it at bot warmup is
+        // waste: a 250 ms findChokepoints call on Avalanche holds the
+        // frame-reading path long enough for the engine to race 1500+ game
+        // frames ahead, blow the proxy's socket write buffer, and trip
+        // "Socket not writable, dropping frame" → Lua OOM. All of that work
+        // must happen offline.
+        //
+        // The offline pipeline is `scripts/examples/14-cache-map-analysis.fsx`.
+        // It parses the .sd7, runs findChokepoints with the default macro-bot
+        // query, and writes `bots/trainer/map-cache/<safe-name>.json`. Run
+        // it once per map before the first trainer iteration. The runtime
+        // warmup here is a plain File.ReadAllText + JsonSerializer.Deserialize
+        // that completes in < 10 ms.
+        try
+            let safeName =
+                // Mirror scripts/examples/14-cache-map-analysis.fsx's sanitise:
+                // lowercase + non-alphanum-or-dot → '_'. Keeping the two in
+                // sync is important — a mismatch means the runtime warmup
+                // silently falls through to the "no cache" branch.
+                mapName.ToLowerInvariant()
+                |> Seq.map (fun c ->
+                    if Char.IsLetterOrDigit(c) || c = '.' then c else '_')
+                |> Seq.toArray
+                |> System.String
+            let cachePath =
+                Path.Combine(Path.GetDirectoryName(botScript), "map-cache", safeName + ".json")
+            let fullCachePath =
+                let relativeTo = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location)
+                if File.Exists cachePath then cachePath
+                else Path.Combine(Directory.GetCurrentDirectory(), "bots", "trainer", "map-cache", safeName + ".json")
+            if File.Exists fullCachePath then
+                let json = File.ReadAllText(fullCachePath)
+                use doc = JsonDocument.Parse(json)
+                let root = doc.RootElement
+                let cps =
+                    root.GetProperty("chokepoints").EnumerateArray()
+                    |> Seq.map (fun el ->
+                        let pos =
+                            (el.GetProperty("position.x").GetSingle(),
+                             el.GetProperty("position.y").GetSingle(),
+                             el.GetProperty("position.z").GetSingle())
+                        let outX = el.GetProperty("outwardDir.x").GetSingle()
+                        let outZ = el.GetProperty("outwardDir.z").GetSingle()
+                        { Id = ChokepointId (el.GetProperty("id").GetUInt32())
+                          Position = pos
+                          WidthElmos = el.GetProperty("widthElmos").GetSingle()
+                          OutwardDir = (outX, outZ)
+                          DistanceFromBase = el.GetProperty("distanceFromBase").GetSingle() })
+                    |> Seq.toList
+                pinnedChokepoints <- cps
+                printfn "[chokepoint] loaded %d chokepoints from cache %s" cps.Length fullCachePath
+                for cp in cps |> List.truncate 5 do
+                    let (px, _, pz) = cp.Position
+                    printfn "[chokepoint] pos=(%.0f,%.0f) width=%.0f id=%A distFromBase=%.0f"
+                        px pz cp.WidthElmos cp.Id cp.DistanceFromBase
+            else
+                printfn "[chokepoint] no cache at %s — run scripts/examples/14-cache-map-analysis.fsx '%s'"
+                    fullCachePath mapName
+            // BasePlan.resolvePlan is pure CPU, < 1 ms, and needs the live
+            // commanderPos + sortedMetalSpots that are only known at warmup,
+            // so it runs here rather than offline. Emitted as [plan]
+            // telemetry only — command emission stays on the 023
+            // opening_build helper until a follow-up iteration validates the
+            // full switch in a live NullAI run. The resolver uses a synthetic
+            // MapGrid skeleton (not the live engine grid) because we only
+            // need the terrain-buildable / off-map checks, which work against
+            // any MapGrid whose dimensions cover the real map.
+            let planMapGrid : MapGrid =
+                // Synthetic skeleton: dimensions pulled from the engine's
+                // getMapWidth / getMapHeight (cheap callbacks), heightmap filled
+                // with commanderPos.y so the Land check always succeeds. The
+                // handful of callbacks here is single-request-response and
+                // does not hold the frame-reading path long enough to race
+                // the engine.
+                let w = Callbacks.getMapWidth client.Stream
+                let h = Callbacks.getMapHeight client.Stream
+                { WidthElmos = w * 8
+                  HeightElmos = h * 8
+                  WidthHeightmap = w
+                  HeightHeightmap = h
+                  HeightMap = Array2D.create (w + 1) (h + 1) cy
+                  SlopeMap = Array2D.zeroCreate w h
+                  ResourceMap = Array2D.zeroCreate w h
+                  LosMap = Array2D.zeroCreate w h
+                  RadarMap = Array2D.zeroCreate w h }
+            let resolveContext : ResolveContext =
+                { Grid = planMapGrid
+                  BaseCentre = commanderPos
+                  CommanderPos = commanderPos
+                  MetalSpotsNearest = sortedMetalSpots
+                  Chokepoints = pinnedChokepoints
+                  UnitDefs = client.GameState.UnitDefs
+                  ExistingStructures = []
+                  Progress = BasePlan.emptyPlanProgress }
+            let resolved = BasePlan.resolvePlan BasePlan.defaultArmadaOpening resolveContext
+            planResolvedAtWarmup <- resolved
+            let okCount =
+                resolved |> List.filter (fun r -> r.BuildableNow) |> List.length
+            printfn "[plan] resolved %d slots (%d buildable now)" resolved.Length okCount
+            for r in resolved do
+                match r.Position, r.Failure with
+                | Some(px, _, pz), None ->
+                    printfn "[plan] slot %s (%s) resolved @ (%.0f,%.0f)"
+                        r.Slot.Name r.Slot.DefName px pz
+                | _, Some f ->
+                    printfn "[plan] slot %s (%s) failed: %A" r.Slot.Name r.Slot.DefName f
+                    if (match f with WouldWallIn _ -> true | _ -> false) then
+                        printfn "[wall-in-defect] proposed=%s %A" r.Slot.Name f
+                | None, None ->
+                    printfn "[plan] slot %s (%s) skipped (consumed)" r.Slot.Name r.Slot.DefName
+        with ex ->
+            printfn "[tactical] warmup failed (non-fatal, bot proceeds with 023 flow): %s" ex.Message
+
+        // 024 US5 / HighBarV2 031 callback-frame-interleaving fix: all warmup
+        // batch loads (UnitDefCache, MapGrid, getMetalSpots, findChokepoints,
+        // resolvePlan) are complete by this point. Flip
+        // Protocol.replayBufferEnabled ON so mid-game callback round-trips
+        // (e.g. [probe-idle]'s Callbacks.getUnitPos in the commander-idle
+        // defect detector) preserve the UnitFinished / UnitDestroyed events
+        // the bot's phase state machine depends on. See HighBarV2
+        // specs/031-fix-callback-event-drop/contracts/callback-frame-interleaving.md
+        // for the normative contract.
+        FSBar.Client.Protocol.replayBufferEnabled <- true
+        printfn "[tactical] Protocol.replayBufferEnabled = true (entering main loop)"
 
         let result = trainerLoopRun client logger maxFrames tacticsFn
         // Bot-side outcome/cause override per SC-010 and T027:

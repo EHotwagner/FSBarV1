@@ -40,6 +40,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-13
 - filesystem only — JSONL frame logs and JSON metadata under `bots/runs/` (gitignored, unchanged from 020/021); `Mailbox/` for outbound report; `specs/022-incorporate-highbar-030/` for closure note. (022-incorporate-highbar-030)
 - F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot scripts are `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client`, `FSBar.Proto`, `FsGrpc 1.0.6`, `BarData` (NuGet from local store); `System.Text.Json` (BCL) for run artifacts; bash for the runner. **No new dependencies.** (023-trainer-builder-economy)
 - filesystem only — JSONL frame logs, JSON metadata/result/phase-transition files, plain-text stdout/infolog captures under `bots/runs/` (gitignored, unchanged from 020/021/022); in-repo `bots/trainer/` tree edited in place. No database. (023-trainer-builder-economy)
+- F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + existing in-repo `FSBar.Client` (`MapGrid`, `MapQuery`, `Callbacks`, `GameState`), `BarData` (NuGet local feed, unit definitions), `xUnit 2.9.x` for tests. **No new NuGet dependencies.** `bsdtar` (system tool, present on dev image via libarchive) is shelled out to extract `.sd7` → `.smf` at SMF-parser runtime. (024-tactical-map-primitives)
+- Filesystem only. Test fixtures split: synthetic `MapGrid` values constructed in-memory in `tests/FSBar.Client.Tests/SyntheticMapGrid.fs`; SMF fixtures are read on-demand from `~/.local/state/Beyond All Reason/maps/*.sd7` (no binaries committed to the repo). Bot run artifacts continue to land under `bots/runs/` (gitignored, unchanged from 020/023). (024-tactical-map-primitives)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -65,9 +67,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 024-tactical-map-primitives: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + existing in-repo `FSBar.Client` (`MapGrid`, `MapQuery`, `Callbacks`, `GameState`), `BarData` (NuGet local feed, unit definitions), `xUnit 2.9.x` for tests. **No new NuGet dependencies.** `bsdtar` (system tool, present on dev image via libarchive) is shelled out to extract `.sd7` → `.smf` at SMF-parser runtime.
 - 023-trainer-builder-economy: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot scripts are `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client`, `FSBar.Proto`, `FsGrpc 1.0.6`, `BarData` (NuGet from local store); `System.Text.Json` (BCL) for run artifacts; bash for the runner. **No new dependencies.**
 - 022-incorporate-highbar-030: Added F# / .NET 10.0 (no F# changes in this feature — references-only) plus Bash for the trainer runner edit + existing in-repo `FSBar.Client`, `FSBar.Proto`, `BarData` (NuGet from local store). No new dependencies.
-- 021-rerun-trainer-highbar: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot scripts are `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client`, `FSBar.Proto`, `FsGrpc 1.0.6`, `BarData` (NuGet from local store); rebuilt HighBarV2 `libSkirmishAI.so` from sibling `../HighBarV2` checkout (post `029-fix-trainer-issues` squash-merge). `System.Text.Json` (BCL). Bash for the runner.
 
 
 <!-- MANUAL ADDITIONS START -->

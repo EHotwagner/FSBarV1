@@ -8,6 +8,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="SyntheticMapGrid.fs" />
+    <Compile Include="SmfParserTests.fs" />
+    <Compile Include="PathingTests.fs" />
+    <Compile Include="ChokepointsTests.fs" />
+    <Compile Include="WallInTests.fs" />
+    <Compile Include="BasePlanTests.fs" />
+    <Compile Include="ProtocolReplayTests.fs" />
     <Compile Include="EngineConfigTests.fs" />
     <Compile Include="EngineDiscoveryTests.fs" />
     <Compile Include="ScriptGeneratorTests.fs" />

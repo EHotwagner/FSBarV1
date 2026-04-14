@@ -39,7 +39,9 @@ let private lineDiff (expected: string) (actual: string) =
 
 [<Theory>]
 [<InlineData("BarClient")>]
+[<InlineData("BasePlan")>]
 [<InlineData("Callbacks")>]
+[<InlineData("Chokepoints")>]
 [<InlineData("Commands")>]
 [<InlineData("Connection")>]
 [<InlineData("EngineConfig")>]
@@ -49,10 +51,13 @@ let private lineDiff (expected: string) (actual: string) =
 [<InlineData("MapCache")>]
 [<InlineData("MapGrid")>]
 [<InlineData("MapQuery")>]
+[<InlineData("Pathing")>]
 [<InlineData("Protocol")>]
 [<InlineData("ScriptGenerator")>]
+[<InlineData("SmfParser")>]
 [<InlineData("UnitDefCache")>]
 [<InlineData("GameState")>]
+[<InlineData("WallIn")>]
 let ``baseline_matches_fsi_surface`` (moduleName: string) =
     let fsiPath = Path.Combine(clientSrcDir, sprintf "%s.fsi" moduleName)
     let baselinePath = Path.Combine(baselinesDir, sprintf "%s.baseline" moduleName)

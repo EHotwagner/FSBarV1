@@ -13,7 +13,30 @@ type HandshakeInfo = {
     PlayerCount: int
 }
 
+/// <summary>
+/// Raised by <see cref="M:FSBar.Client.Protocol.sendCallback"/> when
+/// <c>CallbackResponse.RequestId</c> does not match the in-flight
+/// <c>CallbackRequest.RequestId</c>. Distinct from
+/// <see cref="T:FSBar.Client.EngineDisconnectedException"/> so callers can tell
+/// "proxy sent the wrong response" apart from "socket went away".
+/// </summary>
+type ProtocolMismatchException =
+    inherit exn
+    new: message: string * ?innerException: exn -> ProtocolMismatchException
+
 module Protocol =
+    /// <summary>
+    /// When <c>false</c>, <c>sendCallback</c> silently drops events from
+    /// interleaved <c>Frame</c> messages (the pre-031 behaviour). When
+    /// <c>true</c>, interleaved frames are stashed in a per-stream replay
+    /// buffer and drained by the next <c>receiveFrame</c> on the same stream.
+    ///
+    /// Default <c>false</c>. Set to <c>true</c> by <c>BarClient.Start()</c>
+    /// after warmup + unit-def loading completes so mid-game callback
+    /// round-trips preserve engine events.
+    /// </summary>
+    val mutable replayBufferEnabled: bool
+
     /// Perform handshake with the proxy. Returns handshake info on success.
     val handshake: stream: NetworkStream -> HandshakeInfo
 

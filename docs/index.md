@@ -35,6 +35,7 @@ use _ = client.Frames.Subscribe(fun frame ->
 - [Game State](gamestate.html) — Observable frames and the `GameState` snapshot
 - [Callbacks](callbacks.html) — Mid-frame engine state queries
 - [Map Analysis](map-analysis.html) — Terrain, heightmaps, resource analysis
+- [Tactical Map Primitives](tactical-primitives.html) — Pathing, Chokepoints, BasePlan, WallIn, SmfParser (feature 024)
 - [Protocol Details](protocol.html) — Wire format and message flow
 - [Examples](examples.html) — End-to-end scenarios and AI patterns
 

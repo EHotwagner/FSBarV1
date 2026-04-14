@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>FSBar.Client</RootNamespace>
     <PackageId>FSBar.Client</PackageId>
-    <VersionPrefix>0.1.7</VersionPrefix>
+    <VersionPrefix>0.1.8</VersionPrefix>
     <Description>F# REPL client for BAR AI orchestration via HighBar V2 proxy</Description>
   </PropertyGroup>
 
@@ -39,6 +39,16 @@
     <Compile Include="GameState.fs" />
     <Compile Include="BarClient.fsi" />
     <Compile Include="BarClient.fs" />
+    <Compile Include="Pathing.fsi" />
+    <Compile Include="Pathing.fs" />
+    <Compile Include="SmfParser.fsi" />
+    <Compile Include="SmfParser.fs" />
+    <Compile Include="Chokepoints.fsi" />
+    <Compile Include="Chokepoints.fs" />
+    <Compile Include="WallIn.fsi" />
+    <Compile Include="WallIn.fs" />
+    <Compile Include="BasePlan.fsi" />
+    <Compile Include="BasePlan.fs" />
   </ItemGroup>
 
   <ItemGroup>

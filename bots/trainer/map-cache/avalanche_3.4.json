@@ -1,0 +1,46 @@
+{
+  "mapName": "Avalanche 3.4",
+  "sd7Path": "/home/developer/.local/state/Beyond All Reason/maps/avalanche_3.4.sd7",
+  "widthHeightmap": 512,
+  "heightHeightmap": 512,
+  "widthElmos": 4096,
+  "heightElmos": 4096,
+  "baseCentre.x": 500,
+  "baseCentre.y": 0,
+  "baseCentre.z": 397,
+  "query.maxWidthElmos": 240,
+  "query.searchRadiusElmos": 5500,
+  "chokepoints": [
+    {
+      "id": 3376981511,
+      "position.x": 84,
+      "position.y": 270.61264,
+      "position.z": 2844,
+      "widthElmos": 61.254833,
+      "outwardDir.x": -0.16759941,
+      "outwardDir.z": 0.9858552,
+      "distanceFromBase": 2482.109
+    },
+    {
+      "id": 4255790005,
+      "position.x": 4028,
+      "position.y": 630.0807,
+      "position.z": 236,
+      "widthElmos": 160,
+      "outwardDir.x": 0.9989604,
+      "outwardDir.z": -0.045587476,
+      "distanceFromBase": 3531.6716
+    },
+    {
+      "id": 2129007315,
+      "position.x": 1196,
+      "position.y": 307.21176,
+      "position.z": 4052,
+      "widthElmos": 112,
+      "outwardDir.x": 0.18706271,
+      "outwardDir.z": 0.98234797,
+      "distanceFromBase": 3720.6775
+    }
+  ],
+  "generatedAtUtc": "2026-04-14T13:09:18.8664065Z"
+}

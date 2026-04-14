@@ -427,3 +427,121 @@ produce two extraction sites under FR-020.
   classifier, adding per-faction unit allowlists, or refining the
   attack target selection.
 
+## 13. Tactical primitives integration (024-tactical-map-primitives)
+
+Feature 024 ships five new `FSBar.Client` modules that the macro bot
+consumes for observability and for the defend-interrupt routing:
+
+- **`SmfParser`** — `.sd7` → `SmfMap` → `MapGrid`. Used exclusively
+  offline by `scripts/examples/14-cache-map-analysis.fsx`; the runtime
+  bot does not call it.
+- **`Pathing`** — A\* over `MapGrid.passability` with slope-weighted
+  edges and an `ownStructures` mask. Currently log-only at attack launch
+  (`[attack] path waypoints=N cost=C status=...`) and skipped in the
+  default macro iteration because no live `MapGrid` is pinned at warmup.
+- **`Chokepoints`** — union-find bridge detection over a distance
+  transform. Runs once per map offline via the cache script; the runtime
+  bot reads the JSON at warmup.
+- **`WallIn`** — pure connectivity predicate sharing passability rules
+  with `Pathing`. Used transitively by `BasePlan.resolvePlan`.
+- **`BasePlan`** — declarative slot layout + `resolvePlan` validator.
+  Runs live at warmup (pure CPU, < 1 ms) against a synthetic `MapGrid`
+  skeleton whose dimensions come from `Callbacks.{getMapWidth, getMapHeight}`.
+
+### Offline pipeline
+
+Maps are fixed, so any analysis that only depends on the `.sd7` is a
+function of the file and belongs in a precomputed cache. Never run
+`findChokepoints` or `MapGrid.loadFromEngine` during bot warmup — the
+250 ms block holds the frame-reading path long enough for the proxy's
+socket write buffer to fill at 100× headless speed, tripping
+`Socket not writable, dropping frame` in the engine's infolog and
+eventually OOM-ing the Lua VM (see HISTORY `024-macro-smoke-replay-4`).
+
+```bash
+# Run once per map before the first trainer iteration
+dotnet fsi scripts/examples/14-cache-map-analysis.fsx "Avalanche 3.4"
+# Writes bots/trainer/map-cache/avalanche_3.4.json
+```
+
+The cache file holds the `Chokepoint` list, grid dimensions, and the
+`ChokepointQuery` used, keyed on the map name.
+
+### Runtime consumption in `bot_macro.fsx`
+
+`bot_macro.fsx` warmup now:
+
+1. Loads the cached chokepoint list via `File.ReadAllText` +
+   `JsonDocument.Parse`. < 10 ms. Stashes the list in `pinnedChokepoints`.
+2. Builds a synthetic `MapGrid` skeleton via `Callbacks.{getMapWidth,
+   getMapHeight}` (two trivial RPCs, single-call each).
+3. Runs `BasePlan.resolvePlan BasePlan.defaultArmadaOpening` against the
+   skeleton. Emits `[plan] resolved 5 slots (5 buildable now)` plus one
+   `[plan] slot <name> (<def>) resolved @ (x,z)` or `[plan] slot <name>
+   failed: <reason>` per `ResolvedSlot`. On `WouldWallIn`, an extra
+   `[wall-in-defect] proposed=<slot> …` line fires.
+4. Flips `FSBar.Client.Protocol.replayBufferEnabled <- true` and enters
+   `trainerLoopRun`. From that point, mid-game callbacks (the 023
+   `[probe-idle]` / `[probe-periodic]` `getUnitPos` RPCs) preserve the
+   `UnitFinished` events the opening helper depends on.
+
+### Defend interrupt uses chokepoints
+
+When the bot enters `Defending`, the 023 "chase nearest enemy id via
+`AttackCommand`" logic is replaced with "`MoveCommand` every finished
+unit to the nearest pinned chokepoint's position". Falls back to the
+023 nearest-enemy path when `pinnedChokepoints` is empty (open terrain
+or the cache wasn't loaded). On first entry a one-shot
+`[defend] chokepoint pos=(x,z) width=W id=...` line fires.
+
+### Reading the stdout traces
+
+| Trace | Where it fires | What to check |
+|---|---|---|
+| `[chokepoint] loaded N chokepoints from cache <path>` | Bot warmup after Protocol replay-buffer flip | Cache is on disk and readable. Run the offline cache script if missing. |
+| `[chokepoint] pos=... width=... id=... distFromBase=...` | One per pinned chokepoint, top-5 only | Widths realistic for the map (Avalanche canyons ≈ 60–160 elmos). |
+| `[plan] resolved N slots (M buildable now)` | Once at warmup | M should equal N for a clean opening. Anything less is a `Failure` and gets its own line. |
+| `[plan] slot <name> resolved @ (x,z)` / `[plan] slot <name> failed: <reason>` | One per `PlanSlot` | Positions match `BasePlan.defaultArmadaOpening` offsets. |
+| `[wall-in-defect] proposed=<name> <WallInReason>` | When `BasePlan.resolvePlan` returns a `WouldWallIn` failure | The proposed placement would isolate at least one structure or the base itself. Edit the plan or relocate the slot. |
+| `[defend] chokepoint pos=(x,z) width=W id=...` | One-shot, first time the bot enters Defending | Chokepoint is near the raid axis. If absent, falls back to the 023 nearest-enemy AttackCommand. |
+| `[attack] launching N combat units at target (x,z)` | First Attack-phase launch (from 023 `attack_launch` helper) | N ≥ `combatUnitThreshold` = 12 on the default plan. |
+| `[attack] path waypoints=N cost=C status=Complete` | When a `MapGrid` is pinned (currently only via operator-set TACTICAL_WARMUP=1) | Informational only — log trace for route analysis. |
+| `[attack] findPath skipped (no MapGrid)` | Default runtime path | Expected. The bot does not currently pin a live `MapGrid` to keep warmup fast. |
+
+### Adding new `BasePlan` entries
+
+`BasePlan.defaultArmadaOpening` is a `BasePlan` value in
+`src/FSBar.Client/BasePlan.fs`. To add a defensive-turret slot:
+
+1. Append a `PlanSlot` with a `PositionChooser`:
+   - `NearestMetalSpot i` for economy extensions
+   - `NearBaseCentre(dx, dz)` for static-offset slots
+   - `AtChokepointHead k` to place a structure at the k-th pinned chokepoint
+   - `AtLiteralPosition (x, y, z)` for one-off placements
+2. Pick `BuilderDefName` (`"armcom"` for the commander, `"armck"` for a
+   construction kbot). The reach check uses the builder's
+   `MaxWeaponRange` from `UnitDefCache`, falling back to the table in
+   `BasePlan.fs` for unit names the cache doesn't know.
+3. Set `ClearanceMargin` in elmos (16 is a comfortable default for
+   small footprints; 32 for factories).
+4. Regenerate the surface-area baseline via `UPDATE_BASELINES=true
+   dotnet test --filter "FullyQualifiedName~SurfaceAreaTests.BasePlan"`
+   if the `.fsi` changed.
+5. Add or update a unit test in `BasePlanTests.fs` that resolves the
+   new plan against a `SyntheticMapGrid.flat` with stubbed metal spots.
+6. Re-cache the map with the new plan: `dotnet fsi
+   scripts/examples/14-cache-map-analysis.fsx "<map>"`.
+
+### Classification labels added by this feature
+
+- `[infrastructure-regression]` / `[pre-existing]` — inherited from
+  024 US5 T063 diagnosis. A failure in an event path the bot assumed
+  worked. See mailbox
+  `Mailbox/2026-04-14_to_HighBarV2_mid-game-callback-event-drop.md`.
+- `[replay-buffer-verified]` — mid-game callback round-trip
+  preserved a `UnitFinished` event that the pre-031 path would have
+  dropped. Indicates the HighBarV2 031 fix landed correctly on the
+  FSBarV1 side.
+- `[map-cache-landed]` — warmup used a disk cache instead of running
+  analysis live.
+
