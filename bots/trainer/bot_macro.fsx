@@ -29,7 +29,9 @@
 #load "helpers/attack_launch.fsx"
 
 open System
+open System.Diagnostics
 open System.IO
+open System.IO.Compression
 open System.Text.Json
 open FSBar.Client
 open FSBar.Client.Commands
@@ -275,6 +277,49 @@ let mutable pinnedChokepoints : Chokepoint list = []
 let mutable planResolvedAtWarmup : ResolvedSlot list = []
 let mutable attackPathReported : Set<int> = Set.empty
 
+// ===========================================================================
+// 025 US1/US2: primitive-driven command path state.
+// ===========================================================================
+
+/// 025 US2 cache: one findPath result per attack launch, reused by all
+/// combat units in the launch (FR-007/FR-009). Invalidated per clarification
+/// Q3 (target death) via the start-of-attack-tick check.
+type AttackPathCache =
+    { TargetUnitId: int option
+      TargetPosition: float32 * float32 * float32
+      Path: Path
+      LaunchTick: uint32 }
+
+let mutable attackPathCache : AttackPathCache option = None
+
+/// 025 US1: PlanProgress persisted across Opening tactics ticks so
+/// `markInFlight`/`markConsumed` state carries forward instead of being
+/// reset on every resolvePlan call (FR-003/FR-004).
+let mutable planProgress : PlanProgress = BasePlan.emptyPlanProgress
+
+/// 025 US1 FR-015: warmup CPU budget stopwatch — elapsed milliseconds
+/// from first 024 warmup step (chokepoint cache load) through
+/// resolvePlan. Enforced as a non-fatal [warmup] WARN trace.
+let mutable warmupCpuElapsedMs : int64 = 0L
+
+/// 025 US4 target set: maps for which missing MapGrid cache is a hard
+/// warmup failure (clarification Q2). Single-element list for now;
+/// expanding is a one-line edit.
+let mapTargetSet : Set<string> = Set.ofList [ "Avalanche 3.4" ]
+
+/// 025 data-model §2: authoritative structure classifier. Any DefName
+/// in the active plan is a structure. Auto-updates when
+/// defaultArmadaOpening is edited.
+let structureDefNames : Set<string> =
+    BasePlan.defaultArmadaOpening.Slots
+    |> List.map (fun s -> s.DefName)
+    |> Set.ofList
+
+let private isStructureDef (cache: UnitDefCache) (defId: int) : bool =
+    match UnitDefCache.tryFindById cache defId with
+    | Some info -> Set.contains info.Name structureDefNames
+    | None -> false
+
 /// Pick the nearest chokepoint to a world position. Returns None when the
 /// pinned list is empty (e.g., findChokepoints returned [] or warmup failed).
 let private nearestChokepointTo
@@ -292,24 +337,162 @@ let private nearestChokepointTo
             dx * dx + dz * dz)
         |> List.tryHead
 
-/// Assemble a minimal OwnStructureFootprint list from GameState.Units,
-/// treating every finished unit with no weapon range and no build options
-/// (i.e., static structures) as a blocker for path planning. Lightweight
-/// heuristic — real deployments would consult UnitDefCache for the exact
-/// footprint shape.
-let private ownStructuresFromGameState (gs: GameState) : OwnStructureFootprint seq =
+/// Live derivation of own-structure footprints from GameState.Units per
+/// the 025 data-model §2 structure classifier (plan-DefName set). Used
+/// both as `ResolveContext.ExistingStructures` in the Opening phase and
+/// as `ownStructures` in the Attack phase's Pathing.findPath call.
+/// Single source of truth — do not reintroduce a parallel classifier.
+let private currentOwnStructureFootprints (gs: GameState) : OwnStructureFootprint list =
     gs.Units
     |> Map.toSeq
     |> Seq.choose (fun (_, u) ->
-        if not u.IsFinished then None
+        if u.IsFinished && isStructureDef gs.UnitDefs u.DefId then
+            let tag =
+                match UnitDefCache.tryFindById gs.UnitDefs u.DefId with
+                | Some info -> Some info.Name
+                | None -> None
+            Some
+                { Centre = u.Position
+                  RadiusElmos = 24.0f
+                  Tag = tag }
+        else None)
+    |> Seq.toList
+
+/// 025 US2 FR-009a: identify the enemy commander unit id + position via
+/// the unique-DefId heuristic (same as perception.pickEnemyCommanderPos
+/// but also returns the unit id so AttackPathCache can invalidate on
+/// target death). Returns None when the Enemies map is empty or no
+/// enemy has a unique DefId.
+let private pickEnemyCommanderUnitId (gs: GameState) : (int * (float32 * float32 * float32)) option =
+    if Map.isEmpty gs.Enemies then None
+    else
+        let defCounts =
+            gs.Enemies
+            |> Map.toSeq
+            |> Seq.choose (fun (_, e) -> e.DefId)
+            |> Seq.countBy id
+            |> Map.ofSeq
+        gs.Enemies
+        |> Map.toSeq
+        |> Seq.tryFind (fun (_, e) ->
+            match e.DefId with
+            | Some d -> Map.tryFind d defCounts = Some 1
+            | None -> false)
+        |> Option.map (fun (eid, e) -> eid, e.Position)
+
+/// 025 US2 FR-008: emit one `MoveCommand` (unqueued, replaces current
+/// order) for the first waypoint plus `MoveCommandQueued` (SHIFT_KEY
+/// appended) for every subsequent waypoint so each combat unit traces
+/// the path in order. On a Partial-budget-exhausted path, the pathfinder
+/// may stop well short of the real target — append the real target
+/// position as one final queued move so units continue past the last
+/// waypoint and engage whatever is in range at the goal (clarification Q5
+/// says the bot does not retry findPath for Partial, so this post-path
+/// target ensures forward progress without a second findPath call).
+let private emitWaypointCommands
+    (units: int list)
+    (waypoints: (float32 * float32 * float32) array)
+    (targetPos: float32 * float32 * float32)
+    : Highbar.AICommand list =
+    let (tx, ty, tz) = targetPos
+    if Array.isEmpty waypoints then
+        [ for uid in units -> MoveCommand uid tx ty tz ]
+    else
+        let (fx, fy, fz) = waypoints.[0]
+        [ for uid in units do
+            yield MoveCommand uid fx fy fz
+            for i in 1 .. waypoints.Length - 1 do
+                let (wx, wy, wz) = waypoints.[i]
+                yield MoveCommandQueued uid wx wy wz
+            yield MoveCommandQueued uid tx ty tz ]
+
+/// 025 FR-014 reader: decompress a base64-gzipped 4-bytes-per-cell
+/// payload into an array of the declared row/col shape. Hard-fails on
+/// truncation or size mismatch — the warmup handler translates that
+/// into either a target-set hard-fail or a non-target-set degrade.
+let private base64GzipToBytes (b64: string) (expectedBytes: int) : byte[] =
+    let compressed = Convert.FromBase64String b64
+    use ms = new MemoryStream(compressed)
+    use gz = new GZipStream(ms, CompressionMode.Decompress)
+    let bytes = Array.zeroCreate<byte> expectedBytes
+    let mutable off = 0
+    while off < expectedBytes do
+        let n = gz.Read(bytes, off, expectedBytes - off)
+        if n = 0 then
+            failwithf "gzip stream truncated: got %d, expected %d" off expectedBytes
+        off <- off + n
+    bytes
+
+// Row-major 4-byte-per-cell deserialisation is the dominant warmup cost
+// by cell count (~700k cells across heightMap + slopeMap + resourceMap).
+// Per-cell BitConverter calls are slow enough to blow the FR-015 100 ms
+// warmup budget 5x over (measured 481 ms → stalls the engine-proxy
+// socket and trips FR-017). Array2D<'T> is backed by a contiguous flat
+// buffer, so Buffer.BlockCopy can move raw bytes into it in one shot.
+
+let private readFloat32Array2D (b64: string) (rows: int) (cols: int) : float32[,] =
+    let expected = rows * cols * 4
+    let bytes = base64GzipToBytes b64 expected
+    let result = Array2D.zeroCreate<float32> rows cols
+    Buffer.BlockCopy(bytes, 0, result, 0, expected)
+    result
+
+let private readInt32Array2D (b64: string) (rows: int) (cols: int) : int[,] =
+    let expected = rows * cols * 4
+    let bytes = base64GzipToBytes b64 expected
+    let result = Array2D.zeroCreate<int> rows cols
+    Buffer.BlockCopy(bytes, 0, result, 0, expected)
+    result
+
+/// 025 FR-014: reader for the mapGrid block in the extended
+/// map-cache schema (schemaVersion=1). Returns Some MapGrid when the
+/// cache file exists AND contains a v1 mapGrid block; returns None
+/// when the file is missing OR the mapGrid block is absent (the two
+/// cache-miss cases are indistinguishable at this layer and treated
+/// uniformly by the warmup handler). Hard-fails via failwithf on
+/// schema-version mismatch, dimension mismatch, or gzip truncation.
+let mapGridCacheLoad (fullPath: string) : MapGrid option =
+    if not (File.Exists fullPath) then None
+    else
+        let json = File.ReadAllText fullPath
+        use doc = JsonDocument.Parse(json)
+        let root = doc.RootElement
+        let mutable mg = Unchecked.defaultof<JsonElement>
+        if not (root.TryGetProperty("mapGrid", &mg)) then None
         else
-            match UnitDefCache.tryFindById gs.UnitDefs u.DefId with
-            | Some info when info.MaxWeaponRange = 0.0f && info.BuildOptions.Length = 0 ->
-                Some
-                    { Centre = u.Position
-                      RadiusElmos = 24.0f
-                      Tag = Some info.Name }
-            | _ -> None)
+            let schemaVersion = mg.GetProperty("schemaVersion").GetInt32()
+            if schemaVersion <> 1 then
+                failwithf "mapGrid.schemaVersion=%d not supported by this bot (expected 1)" schemaVersion
+            let we = mg.GetProperty("widthElmos").GetInt32()
+            let he = mg.GetProperty("heightElmos").GetInt32()
+            let wh = mg.GetProperty("widthHeightmap").GetInt32()
+            let hh = mg.GetProperty("heightHeightmap").GetInt32()
+            let hmRows = mg.GetProperty("heightMap.rows").GetInt32()
+            let hmCols = mg.GetProperty("heightMap.cols").GetInt32()
+            let smRows = mg.GetProperty("slopeMap.rows").GetInt32()
+            let smCols = mg.GetProperty("slopeMap.cols").GetInt32()
+            let rmRows = mg.GetProperty("resourceMap.rows").GetInt32()
+            let rmCols = mg.GetProperty("resourceMap.cols").GetInt32()
+            // Sanity checks against the 024/025 toMapGrid conventions.
+            if hmRows <> wh + 1 || hmCols <> hh + 1 then
+                failwithf "heightMap dimensions mismatch: got %dx%d, expected %dx%d" hmRows hmCols (wh + 1) (hh + 1)
+            if smRows <> wh / 2 || smCols <> hh / 2 then
+                failwithf "slopeMap dimensions mismatch: got %dx%d, expected %dx%d" smRows smCols (wh / 2) (hh / 2)
+            if rmRows <> wh || rmCols <> hh then
+                failwithf "resourceMap dimensions mismatch: got %dx%d, expected %dx%d" rmRows rmCols wh hh
+            let heightMap = readFloat32Array2D (mg.GetProperty("heightMap.gzip.b64").GetString()) hmRows hmCols
+            let slopeMap = readFloat32Array2D (mg.GetProperty("slopeMap.gzip.b64").GetString()) smRows smCols
+            let resourceMap = readInt32Array2D (mg.GetProperty("resourceMap.gzip.b64").GetString()) rmRows rmCols
+            Some
+                { WidthElmos = we
+                  HeightElmos = he
+                  WidthHeightmap = wh
+                  HeightHeightmap = hh
+                  HeightMap = heightMap
+                  SlopeMap = slopeMap
+                  ResourceMap = resourceMap
+                  LosMap = Array2D.zeroCreate wh hh
+                  RadarMap = Array2D.zeroCreate wh hh }
 
 let tacticsFn : TrainerTacticsFn =
     fun client frame commanderIdOpt ->
@@ -339,6 +522,23 @@ let tacticsFn : TrainerTacticsFn =
                                 printfn "[opening] idx=%d %s finished (unit %d) at frame %d"
                                     openingProgress.CurrentIndex item.DefName uid fnum
                                 openingProgress <- advanceOnFinished openingProgress fnum
+                        // 025 FR-004: mark the first in-flight plan slot with
+                        // a matching DefName consumed. Using `InFlight` as the
+                        // matcher avoids consuming two mex slots on a single
+                        // mex completion (both mex#1 and mex#2 share the
+                        // "armmex" DefName).
+                        match UnitDefCache.tryFindById client.GameState.UnitDefs u.DefId with
+                        | Some info ->
+                            let matching =
+                                BasePlan.defaultArmadaOpening.Slots
+                                |> List.tryFind (fun slot ->
+                                    slot.DefName = info.Name
+                                    && Set.contains slot.Name planProgress.InFlight)
+                            match matching with
+                            | Some slot ->
+                                planProgress <- BasePlan.markConsumed planProgress slot.Name
+                            | None -> ()
+                        | None -> ()
                     | None -> ()
                 | _ -> ()
 
@@ -371,7 +571,12 @@ let tacticsFn : TrainerTacticsFn =
                     | _ -> ()
                 | _ -> ()
 
-            if currentPhase = Opening && openingComplete resolvedOpening finishedDefIds then
+            // 025 US1: Opening→Production transitions when the factory slot
+            // completes. The 023 openingComplete check relied on openingProgress
+            // staying in sync with resolvedOpening.Items, which the 025 plan-
+            // based issuance path bypasses. Use planProgress.ConsumedSlots as
+            // the source of truth for the transition.
+            if currentPhase = Opening && Set.contains "factory" planProgress.ConsumedSlots then
                 transitionTo fnum Production "first-factory-finished"
 
             // Production → Upgrade via helper entryPredicateMet (FR-009)
@@ -452,15 +657,27 @@ let tacticsFn : TrainerTacticsFn =
                                 printfn "[defend] chokepoint pos=(%.0f,%.0f) width=%.0f id=%A"
                                     cpx cpz cp.WidthElmos cp.Id
                                 combatUnitsLaunched <- Set.add -1 combatUnitsLaunched
+                            // 025 FR-012: route only combat units (workers,
+                            // constructors, commander continue their tasks).
                             let myIds =
-                                if Map.isEmpty client.GameState.Units then [ cid ]
-                                else
-                                    client.GameState.Units
-                                    |> Map.toSeq
-                                    |> Seq.filter (fun (_, u) -> u.IsFinished)
-                                    |> Seq.map fst
-                                    |> Seq.toList
-                            [ for uid in myIds -> MoveCommand uid cpx 0.0f cpz ]
+                                client.GameState.Units
+                                |> Map.toSeq
+                                |> Seq.filter (fun (_, u) ->
+                                    u.IsFinished
+                                    && isCombatDef client.GameState.UnitDefs u.DefId)
+                                |> Seq.map fst
+                                |> Seq.toList
+                            printfn "[defend] routing combat units only n=%d" myIds.Length
+                            if List.isEmpty myIds then
+                                // 025 FR-013: no combat units available — fall
+                                // through to the 023 nearest-enemy commander
+                                // fallback.
+                                printfn "[defend] no combat units available — commander fallback"
+                                match nearestEnemyId client.GameState centre intruders with
+                                | Some eid -> [ AttackCommand cid eid ]
+                                | None -> []
+                            else
+                                [ for uid in myIds -> MoveCommand uid cpx 0.0f cpz ]
                         | None ->
                             match nearestEnemyId client.GameState centre intruders with
                             | None -> []
@@ -473,26 +690,102 @@ let tacticsFn : TrainerTacticsFn =
                                         |> Seq.map fst
                                         |> Seq.toList
                                 [ for uid in myIds -> AttackCommand uid targetEid ]
-                elif currentPhase = Opening && not openingProgress.AwaitingCreated then
+                elif currentPhase = Opening && Set.isEmpty planProgress.InFlight then
                     let commanderPos =
                         match Map.tryFind cid client.GameState.Units with
                         | Some u -> u.Position
                         | None -> (0.0f, 100.0f, 0.0f)
                     let centre = baseCentre |> Option.defaultValue commanderPos
-                    match nextOpeningCommand
-                              resolvedOpening
-                              openingProgress
-                              cid
-                              commanderPos
-                              centre
-                              sortedMetalSpots with
-                    | Some decision ->
-                        let (tx, ty, tz) = decision.ChosenPosition
-                        printfn "[opening] idx=%d issuing BuildCommand %s defId=%d @ (%.0f,%.0f,%.0f)"
-                            openingProgress.CurrentIndex decision.ChosenDefName decision.ChosenDefId tx ty tz
-                        openingProgress <- markIssued openingProgress fnum
-                        [ decision.Command ]
-                    | None -> []
+                    // 025 US1 FR-001/FR-002: drive command emission from
+                    // BasePlan.resolvePlan with live-derived structure
+                    // footprints and persistent planProgress. Q4 cadence is
+                    // naturally throttled by the opening-progress cycle
+                    // (one command per structure completion, tens of seconds
+                    // between emissions), so we can call resolvePlan on every
+                    // "ready to issue" transition without a separate tick gate.
+                    let resolveGrid =
+                        match mapGrid with
+                        | Some g -> g
+                        | None ->
+                            // Degraded fallback — only reached on a non-target-set
+                            // cache-miss (warmup still succeeded with a synthetic
+                            // skeleton in that case).
+                            failwith "[plan] mapGrid missing at tactics tick (warmup invariant violated)"
+                    let existingStructures = currentOwnStructureFootprints client.GameState
+                    let resolveContext : ResolveContext =
+                        { Grid = resolveGrid
+                          BaseCentre = centre
+                          CommanderPos = commanderPos
+                          MetalSpotsNearest = sortedMetalSpots
+                          Chokepoints = pinnedChokepoints
+                          UnitDefs = client.GameState.UnitDefs
+                          ExistingStructures = existingStructures
+                          Progress = planProgress }
+                    let resolvedOpt =
+                        try Some (BasePlan.resolvePlan BasePlan.defaultArmadaOpening resolveContext)
+                        with ex ->
+                            // 025 FR-005/FR-006: exception fallback to the 023
+                            // opening_build helper as belt-and-suspenders. Note
+                            // that Failure cases (WouldWallIn, TerrainNotBuildable,
+                            // etc.) return via ResolvedSlot.Failure and do NOT
+                            // throw — only genuine exceptions land here.
+                            printfn "[plan] resolvePlan exception — falling back to 023 helper: %s" ex.Message
+                            None
+                    match resolvedOpt with
+                    | None ->
+                        // FR-006: 023 helper recovery path.
+                        match nextOpeningCommand
+                                  resolvedOpening
+                                  openingProgress
+                                  cid
+                                  commanderPos
+                                  centre
+                                  sortedMetalSpots with
+                        | Some decision ->
+                            let (tx, ty, tz) = decision.ChosenPosition
+                            printfn "[opening] idx=%d issuing BuildCommand %s defId=%d @ (%.0f,%.0f,%.0f)"
+                                openingProgress.CurrentIndex decision.ChosenDefName decision.ChosenDefId tx ty tz
+                            openingProgress <- markIssued openingProgress fnum
+                            [ decision.Command ]
+                        | None -> []
+                    | Some resolved ->
+                        // FR-002: pick the first buildable-now slot whose
+                        // Name is not already consumed. Failures are traced
+                        // but not fatal — the bot waits for structures to
+                        // land and the next tick retries.
+                        let pickNext () =
+                            resolved
+                            |> List.tryFind (fun r ->
+                                r.BuildableNow
+                                && r.Position.IsSome
+                                && not (Set.contains r.Slot.Name planProgress.ConsumedSlots)
+                                && not (Set.contains r.Slot.Name planProgress.InFlight))
+                        match pickNext () with
+                        | Some r ->
+                            let (px, py, pz) = r.Position.Value
+                            // Resolve the slot's DefId via the UnitDefCache —
+                            // PlanSlot carries only the DefName, not a pinned id.
+                            match UnitDefCache.tryFindByName client.GameState.UnitDefs r.Slot.DefName with
+                            | Some info ->
+                                printfn "[plan] issuing BuildCommand %s @ (%.0f,%.0f) from resolvePlan"
+                                    r.Slot.DefName px pz
+                                planProgress <- BasePlan.markInFlight planProgress r.Slot.Name
+                                openingProgress <- markIssued openingProgress fnum
+                                [ BuildCommand cid info.DefId px py pz 0 ]
+                            | None ->
+                                printfn "[plan] slot %s DefName=%s unresolved in cache — skipping"
+                                    r.Slot.Name r.Slot.DefName
+                                []
+                        | None ->
+                            // No buildable-now slot this tick. Trace any Failure
+                            // reasons for diagnostic visibility (not fatal).
+                            for r in resolved do
+                                match r.Failure with
+                                | Some f ->
+                                    printfn "[plan] slot %s (%s) failure %A"
+                                        r.Slot.Name r.Slot.DefName f
+                                | None -> ()
+                            []
                 elif currentPhase = Production then
                     match queueState.FactoryUnitId with
                     | None -> []
@@ -617,44 +910,127 @@ let tacticsFn : TrainerTacticsFn =
 
                         topUp @ upgradeCmds @ dispatchCmds
                 elif currentPhase = Attack then
-                    // T030 extraction: attack_launch.launchFreshCombat
-                    // picks any combat unit not yet in the launched set
-                    // and issues a MoveCommand toward the target.
-                    let target = pickAttackTarget client.GameState
+                    // 025 US2: drive attack routing from Pathing.findPath.
+                    // One findPath per launch, cached in attackPathCache and
+                    // reused by every combat unit in the launch. Joiners on
+                    // subsequent ticks consume the same cached waypoints.
+                    // Invalidation: target death (FR-009a, Q3) — on mismatch
+                    // we clear the cache, re-run pickAttackTarget + findPath
+                    // in the same tick and emit waypoints to the active set.
+                    let targetIdOpt = pickEnemyCommanderUnitId client.GameState
+                    let fallbackPos = (3200.0f, 100.0f, 3200.0f)
+                    let targetPos =
+                        targetIdOpt
+                        |> Option.map snd
+                        |> Option.defaultValue fallbackPos
+
+                    // Q3 target-death invalidation
+                    match attackPathCache with
+                    | Some cache ->
+                        let stillAlive =
+                            match cache.TargetUnitId with
+                            | Some tid -> Map.containsKey tid client.GameState.Enemies
+                            | None -> true  // positional target has no death signal
+                        if not stillAlive then
+                            printfn "[attack] target %A absent from GameState — re-pathing"
+                                cache.TargetUnitId
+                            attackPathCache <- None
+                    | None -> ()
+
+                    // Combat unit roster
+                    let combatIds =
+                        client.GameState.Units
+                        |> Map.toSeq
+                        |> Seq.filter (fun (_, u) ->
+                            u.IsFinished
+                            && isCombatDef client.GameState.UnitDefs u.DefId)
+                        |> Seq.map fst
+                        |> Seq.toList
+
                     let (launchCmds, newLaunched) =
-                        launchFreshCombat
-                            client.GameState
-                            client.GameState.UnitDefs
-                            target
-                            combatUnitsLaunched
+                        match combatIds, mapGrid with
+                        | [], _ -> [], combatUnitsLaunched
+                        | _, None ->
+                            // No grid — fall back to 024-partial direct-move
+                            printfn "[attack] findPath skipped (no MapGrid) — direct move fallback"
+                            launchFreshCombat
+                                client.GameState
+                                client.GameState.UnitDefs
+                                targetPos
+                                combatUnitsLaunched
+                        | _, Some grid ->
+                            // Emit waypoints to any combat unit not yet launched
+                            let freshIds =
+                                combatIds
+                                |> List.filter (fun uid ->
+                                    not (Set.contains uid combatUnitsLaunched))
+                            if List.isEmpty freshIds then
+                                [], combatUnitsLaunched
+                            else
+                                // Compute path if cache miss
+                                let ensurePath () =
+                                    match attackPathCache with
+                                    | Some c -> Some c
+                                    | None ->
+                                        // FR-007 one findPath per launch — 50ms default budget
+                                        let ownStructures =
+                                            currentOwnStructureFootprints client.GameState
+                                        let startPos =
+                                            match Map.tryFind cid client.GameState.Units with
+                                            | Some u -> u.Position
+                                            | None -> targetPos
+                                        // 100 ms / 100k expansions tracks the 024-era budget that
+                                        // reached Complete on Avalanche 3.4 in the 024 [attack]
+                                        // trace (default 50 ms was Partial-exhausted in iter 4).
+                                        let budget : PathBudget =
+                                            { WallClockMs = 100
+                                              MaxExpansions = 100_000
+                                              SlopeCost = 2.0f }
+                                        match Pathing.findPath grid MoveType.Kbot ownStructures startPos targetPos budget with
+                                        | Result.Ok path ->
+                                            let statusStr =
+                                                match path.Status with
+                                                | Complete -> "Complete"
+                                                | Partial true -> "Partial budget-exhausted"
+                                                | Partial false -> "Partial"
+                                            printfn "[attack] path waypoints=%d cost=%.1f status=%s"
+                                                path.Waypoints.Length path.EstimatedCost statusStr
+                                            let c =
+                                                { TargetUnitId = Option.map fst targetIdOpt
+                                                  TargetPosition = targetPos
+                                                  Path = path
+                                                  LaunchTick = fnum }
+                                            attackPathCache <- Some c
+                                            Some c
+                                        | Result.Error NoRoute ->
+                                            printfn "[attack] findPath NoRoute — falling back to direct move"
+                                            attackPathCache <- None
+                                            None
+                                        | Result.Error err ->
+                                            printfn "[attack] findPath error %A — falling back to direct move" err
+                                            attackPathCache <- None
+                                            None
+                                match ensurePath () with
+                                | Some cache ->
+                                    let cmds = emitWaypointCommands freshIds cache.Path.Waypoints cache.TargetPosition
+                                    let newSet =
+                                        freshIds
+                                        |> List.fold (fun acc uid -> Set.add uid acc) combatUnitsLaunched
+                                    cmds, newSet
+                                | None ->
+                                    // FR-010 NoRoute / error fallback: direct-move via
+                                    // the 023 helper (marks launched set in step).
+                                    launchFreshCombat
+                                        client.GameState
+                                        client.GameState.UnitDefs
+                                        targetPos
+                                        combatUnitsLaunched
+
                     if not (List.isEmpty launchCmds) && not attackLaunched then
                         attackLaunched <- true
-                        let (tx, _, tz) = target
+                        let (tx, _, tz) = targetPos
                         printfn "[attack] launching %d combat units at target (%.0f,%.0f)"
                             (List.length launchCmds) tx tz
-                        // 024 US5: emit a Pathing.findPath trace for the first
-                        // unit in the launch so post-run analysis can see the
-                        // route cost + waypoint count. Uses commander pos as
-                        // the start since combat units cluster around the base.
-                        match mapGrid with
-                        | Some grid ->
-                            let startPos =
-                                match Map.tryFind cid client.GameState.Units with
-                                | Some u -> u.Position
-                                | None -> (tx, 0.0f, tz)
-                            let ownStructures = ownStructuresFromGameState client.GameState
-                            let budget : PathBudget =
-                                { WallClockMs = 100
-                                  MaxExpansions = 100_000
-                                  SlopeCost = 2.0f }
-                            match Pathing.findPath grid MoveType.Kbot ownStructures startPos target budget with
-                            | Result.Ok path ->
-                                printfn "[attack] path waypoints=%d cost=%.0f status=%A"
-                                    path.Waypoints.Length path.EstimatedCost path.Status
-                            | Result.Error e ->
-                                printfn "[attack] findPath error: %A" e
-                        | None ->
-                            printfn "[attack] findPath skipped (no MapGrid)"
                     combatUnitsLaunched <- newLaunched
                     let (topUp, newQueueState) =
                         computeQueueTopUp
@@ -817,6 +1193,10 @@ try
         // it once per map before the first trainer iteration. The runtime
         // warmup here is a plain File.ReadAllText + JsonSerializer.Deserialize
         // that completes in < 10 ms.
+        // 025 FR-015: wrap all warmup tactical work in a CPU budget
+        // stopwatch — chokepoint load, MapGrid load, resolvePlan. Non-fatal
+        // trace at > 100 ms; hard invariants live elsewhere.
+        let warmupSw = Stopwatch.StartNew()
         try
             let safeName =
                 // Mirror scripts/examples/14-cache-map-analysis.fsx's sanitise:
@@ -831,7 +1211,6 @@ try
             let cachePath =
                 Path.Combine(Path.GetDirectoryName(botScript), "map-cache", safeName + ".json")
             let fullCachePath =
-                let relativeTo = Path.GetDirectoryName(System.Reflection.Assembly.GetEntryAssembly().Location)
                 if File.Exists cachePath then cachePath
                 else Path.Combine(Directory.GetCurrentDirectory(), "bots", "trainer", "map-cache", safeName + ".json")
             if File.Exists fullCachePath then
@@ -862,33 +1241,36 @@ try
             else
                 printfn "[chokepoint] no cache at %s — run scripts/examples/14-cache-map-analysis.fsx '%s'"
                     fullCachePath mapName
-            // BasePlan.resolvePlan is pure CPU, < 1 ms, and needs the live
-            // commanderPos + sortedMetalSpots that are only known at warmup,
-            // so it runs here rather than offline. Emitted as [plan]
-            // telemetry only — command emission stays on the 023
-            // opening_build helper until a follow-up iteration validates the
-            // full switch in a live NullAI run. The resolver uses a synthetic
-            // MapGrid skeleton (not the live engine grid) because we only
-            // need the terrain-buildable / off-map checks, which work against
-            // any MapGrid whose dimensions cover the real map.
+
+            // 025 US4 / FR-014: load real MapGrid from the extended cache.
+            // Target-set maps (currently Avalanche 3.4) hard-fail warmup on
+            // cache miss; other maps degrade to the 024 synthetic skeleton
+            // with a loud [cache-miss] WARN trace.
             let planMapGrid : MapGrid =
-                // Synthetic skeleton: dimensions pulled from the engine's
-                // getMapWidth / getMapHeight (cheap callbacks), heightmap filled
-                // with commanderPos.y so the Land check always succeeds. The
-                // handful of callbacks here is single-request-response and
-                // does not hold the frame-reading path long enough to race
-                // the engine.
-                let w = Callbacks.getMapWidth client.Stream
-                let h = Callbacks.getMapHeight client.Stream
-                { WidthElmos = w * 8
-                  HeightElmos = h * 8
-                  WidthHeightmap = w
-                  HeightHeightmap = h
-                  HeightMap = Array2D.create (w + 1) (h + 1) cy
-                  SlopeMap = Array2D.zeroCreate w h
-                  ResourceMap = Array2D.zeroCreate w h
-                  LosMap = Array2D.zeroCreate w h
-                  RadarMap = Array2D.zeroCreate w h }
+                match mapGridCacheLoad fullCachePath with
+                | Some grid ->
+                    printfn "[mapgrid] loaded from cache %dx%d heightMap slopeMap resourceMap"
+                        grid.WidthHeightmap grid.HeightHeightmap
+                    grid
+                | None when Set.contains mapName mapTargetSet ->
+                    failwithf "[warmup] no MapGrid in cache at %s — run scripts/examples/14-cache-map-analysis.fsx '%s'"
+                        fullCachePath mapName
+                | None ->
+                    printfn "[cache-miss] WARN: US1/US2 will behave like 024 partial — run 14-cache-map-analysis.fsx"
+                    let w = Callbacks.getMapWidth client.Stream
+                    let h = Callbacks.getMapHeight client.Stream
+                    { WidthElmos = w * 8
+                      HeightElmos = h * 8
+                      WidthHeightmap = w
+                      HeightHeightmap = h
+                      HeightMap = Array2D.create (w + 1) (h + 1) cy
+                      SlopeMap = Array2D.zeroCreate (w / 2) (h / 2)
+                      ResourceMap = Array2D.zeroCreate w h
+                      LosMap = Array2D.zeroCreate w h
+                      RadarMap = Array2D.zeroCreate w h }
+            mapGrid <- Some planMapGrid
+            // Reset planProgress at warmup — fresh start each match.
+            planProgress <- BasePlan.emptyPlanProgress
             let resolveContext : ResolveContext =
                 { Grid = planMapGrid
                   BaseCentre = commanderPos
@@ -896,8 +1278,8 @@ try
                   MetalSpotsNearest = sortedMetalSpots
                   Chokepoints = pinnedChokepoints
                   UnitDefs = client.GameState.UnitDefs
-                  ExistingStructures = []
-                  Progress = BasePlan.emptyPlanProgress }
+                  ExistingStructures = currentOwnStructureFootprints client.GameState
+                  Progress = planProgress }
             let resolved = BasePlan.resolvePlan BasePlan.defaultArmadaOpening resolveContext
             planResolvedAtWarmup <- resolved
             let okCount =
@@ -915,7 +1297,15 @@ try
                 | None, None ->
                     printfn "[plan] slot %s (%s) skipped (consumed)" r.Slot.Name r.Slot.DefName
         with ex ->
-            printfn "[tactical] warmup failed (non-fatal, bot proceeds with 023 flow): %s" ex.Message
+            printfn "[tactical] warmup failed: %s" ex.Message
+            // Re-raise so target-set hard-fail bubbles up to the top-level
+            // error handler rather than silently proceeding with a null grid.
+            reraise ()
+        warmupSw.Stop()
+        warmupCpuElapsedMs <- warmupSw.ElapsedMilliseconds
+        printfn "[warmup] CPU budget %d ms (limit 100 ms)" warmupCpuElapsedMs
+        if warmupCpuElapsedMs > 100L then
+            printfn "[warmup] WARN: CPU budget exceeded: %d ms > 100 ms" warmupCpuElapsedMs
 
         // 024 US5 / HighBarV2 031 callback-frame-interleaving fix: all warmup
         // batch loads (UnitDefCache, MapGrid, getMetalSpots, findChokepoints,

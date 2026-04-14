@@ -20,3 +20,7 @@ tmp/
 
 # Trainer run artifacts (feature 020-bot-iterative-trainer)
 bots/runs/
+
+# Trainer map cache — generated artifacts, re-bake via
+# scripts/examples/14-cache-map-analysis.fsx (feature 025-macro-primitive-driven)
+bots/trainer/map-cache/*.json

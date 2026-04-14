@@ -2,8 +2,28 @@ namespace FSBar.Client
 
 module Commands =
 
+    /// INTERNAL_ORDER flag (bit 3) used for AI-issued commands
+    [<Literal>]
+    val INTERNAL_ORDER: uint32 = 8u
+
+    /// SHIFT_KEY flag (bit 5) — queues the command behind the unit's existing orders
+    [<Literal>]
+    val SHIFT_KEY: uint32 = 32u
+
     /// Create a move command for a unit to a position
     val MoveCommand: unitId: int -> x: float32 -> y: float32 -> z: float32 -> Highbar.AICommand
+
+    /// Create a queued move command for a unit to a position. The command is
+    /// appended to the unit's existing order queue rather than replacing the
+    /// current order. Use this for waypoint traversal when you need the unit to
+    /// execute a sequence of moves in order (e.g., routing through a Pathing
+    /// findPath result's waypoints).
+    ///
+    /// Wire-level effect: sets both INTERNAL_ORDER (8u) and SHIFT_KEY (32u) on
+    /// the command's Options bitfield, producing Options = 40u. The first
+    /// waypoint of a sequence should use the unqueued MoveCommand so it
+    /// replaces any existing order; subsequent waypoints use MoveCommandQueued.
+    val MoveCommandQueued: unitId: int -> x: float32 -> y: float32 -> z: float32 -> Highbar.AICommand
 
     /// Create a build command for a unit to construct a building
     val BuildCommand: unitId: int -> toBuildUnitDefId: int -> x: float32 -> y: float32 -> z: float32 -> facing: int -> Highbar.AICommand

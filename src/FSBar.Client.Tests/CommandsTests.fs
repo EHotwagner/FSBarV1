@@ -170,6 +170,24 @@ let ``CallLuaUICommand_returns_valid_command`` () =
     | _ -> Assert.Fail("Expected CallLuaUi command")
 
 [<Fact>]
+let ``MoveCommandQueued sets INTERNAL_ORDER and SHIFT_KEY bits`` () =
+    let cmd = Commands.MoveCommandQueued 42 100.0f 0.0f 200.0f
+    match cmd.Command with
+    | AICommand.CommandCase.MoveUnit m ->
+        Assert.Equal(Commands.INTERNAL_ORDER ||| Commands.SHIFT_KEY, m.Options)
+        Assert.Equal(40u, m.Options)
+    | _ -> Assert.Fail("Expected MoveUnit command case")
+
+[<Fact>]
+let ``MoveCommand does NOT set SHIFT_KEY bit`` () =
+    let cmd = Commands.MoveCommand 42 100.0f 0.0f 200.0f
+    match cmd.Command with
+    | AICommand.CommandCase.MoveUnit m ->
+        Assert.Equal(Commands.INTERNAL_ORDER, m.Options)
+        Assert.Equal(0u, m.Options &&& Commands.SHIFT_KEY)
+    | _ -> Assert.Fail("Expected MoveUnit command case")
+
+[<Fact>]
 let ``all_commands_have_internal_order_flag`` () =
     let cmds = [
         Commands.MoveCommand 1 0.0f 0.0f 0.0f

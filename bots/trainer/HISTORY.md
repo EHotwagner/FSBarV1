@@ -129,3 +129,45 @@ Success criteria status (from spec.md §Success Criteria):
 
 Next operator action: follow PLAYBOOK.md §1 against NullAI, iterating
 until the first `win` is recorded.
+
+## Feature 025 — macro primitive-driven command path (2026-04-14)
+
+Single-session automated implementation. Six commits on branch
+`025-macro-primitive-driven`, three live iterations, one performance
+recovery iteration. The macro bot now drives Opening BuildCommands from
+`BasePlan.resolvePlan`, Attack routing from `Pathing.findPath`, and the
+Defend interrupt filter from `Attack_launch.isCombatDef` — no hardcoded
+023-helper emission on the command path. The rush bot (`bot.fsx`) is
+unchanged and remains the FR-019 safety invariant (verified at
+10923 frames, 025-iter3-rush).
+
+| Iter | Commit    | Outcome        | Frames | Notes                                                         |
+|------|-----------|----------------|--------|---------------------------------------------------------------|
+| 3    | `8074618` | timeout        | 36000  | Bot stuck after 2 BuildCommands — markConsumed loop marked all same-def slots consumed in one pass; Opening gate still keyed on 023 openingProgress. |
+| 4    | `a92b78c` | timeout        | 36000  | Opening → Production → Upgrade → Attack all ran; 227 commands + 92 units built. But attack waypoints were Partial budget-exhausted and units parked mid-map without engaging. |
+| 5    | `5d0fabe` | stalled        | 0      | Engine raced to frame 275k with every frame "Socket not writable, dropping frame" (FR-017 failure). Warmup mapGridCacheLoad cost 481 ms (5x FR-015 budget) from per-cell BitConverter deserialisation of ~700k cells. |
+| 6    | `3dcbbcb` | **win**        | 20760  | SC-001 clean win with `cause = "commander-death-win-after-upgrade"`. Buffer.BlockCopy replaced the per-cell deserializer; the trailing MoveCommandQueued-to-real-target (iter 5 fix) let combat units engage after the partial path. |
+
+Success criteria status (feature 025):
+
+| SC      | Status | Notes                                                                                                       |
+|---------|--------|-------------------------------------------------------------------------------------------------------------|
+| SC-001  | met    | iter 6: `outcome=win`, `cause=commander-death-win-after-upgrade`, `victory_signal=engine-shutdown-gameover`. |
+| SC-002  | met    | 5 `[plan] issuing BuildCommand` traces vs. 0 `[opening] idx=.*issuing` 023-helper emissions in iter 6.     |
+| SC-003  | met    | `[attack] path waypoints=3 cost=463.8 status=Partial budget-exhausted` + `[attack] path waypoints=4 cost=534.2 status=Complete` in iter 6. |
+| SC-004  | met    | Rush bot smoke on NullAI: `outcome=win`, `frames=10923` (025-iter3-rush). Within 5% of the 024 rush baseline. |
+| SC-005  | met    | `grep -c 'Socket not writable' engine.infolog = 0` in iter 6. Warmup CPU budget ~466 ms is non-fatal here but trips the `[warmup] WARN` diagnostic. |
+| SC-007  | met    | 3 live macro iters + 1 performance recovery iter reached clean win.                                        |
+
+Open follow-ups (out of 025 scope):
+
+- Warmup CPU budget is ~466 ms versus the FR-015 100 ms target.
+  `Buffer.BlockCopy` removed the per-cell deserializer hotspot but the
+  `JsonDocument.Parse` + base64 decode + gzip decompress steps still
+  dominate. A future perf pass could switch the cache format to a flat
+  binary sidecar file and keep the JSON only for metadata; this would
+  likely bring warmup under 100 ms without changing any bot behaviour.
+  Non-blocking for 025 because SC-005 (the socket invariant that FR-015
+  protects) passes on the current build.
+- `proto/highbar/common.proto:18` bit-layout comment is known-stale per
+  research R2 — flagged for a future doc-only cleanup feature.

@@ -545,3 +545,83 @@ or the cache wasn't loaded). On first entry a one-shot
 - `[map-cache-landed]` — warmup used a disk cache instead of running
   analysis live.
 
+## 13. Primitive-driven command path (025-macro-primitive-driven)
+
+Feature 025 moved `bot_macro.fsx` from observability-only consumption
+of the 024 primitives to a primitive-driven command path. Three call
+sites changed; one Tier 1 API addition; one cache schema extension.
+
+### Command path wiring
+
+- **Opening phase**: `BasePlan.resolvePlan defaultArmadaOpening`
+  drives `BuildCommand` emission. `planProgress` (bot-local mutable)
+  persists `InFlight` / `ConsumedSlots` across tactics ticks via
+  `BasePlan.markInFlight` / `markConsumed`. The 023
+  `helpers/opening_build.fsx` helper is retained **only** on an
+  exception-fallback path (FR-006/FR-020).
+- **Attack phase**: `Pathing.findPath` runs **once per launch** with
+  a 100 ms / 100k-expansion budget. Result cached in a local
+  `AttackPathCache` record. Each combat unit receives one unqueued
+  `Commands.MoveCommand` (first waypoint, replaces any existing
+  order) + subsequent `Commands.MoveCommandQueued` (SHIFT_KEY bit
+  set, appends to queue) + one trailing `MoveCommandQueued` at the
+  real target so partial paths still engage. Joining combat units
+  on later ticks consume the same cached waypoints; no second
+  `findPath` call unless the cached target id disappears from
+  `GameState.Enemies` (FR-009a, Q3).
+- **Defend interrupt**: the combat-unit filter now gates on
+  `Attack_launch.isCombatDef` so workers, constructors, and the
+  commander continue their current tasks. When the filtered combat
+  set is empty the bot emits `[defend] no combat units available —
+  commander fallback` and routes the commander via `AttackCommand`.
+
+### Cache writer workflow
+
+The extended map cache (schemaVersion=1) adds a `mapGrid` block
+containing compressed `heightMap` / `slopeMap` / `resourceMap`
+alongside the existing chokepoint list. Re-bake a map any time:
+
+```bash
+dotnet fsi scripts/examples/14-cache-map-analysis.fsx "<map name>"
+```
+
+Cache files live at `bots/trainer/map-cache/<sanitised-name>.json`
+and are **gitignored** — treat them as generated artifacts.
+
+### Cache-miss behaviour (clarification Q2)
+
+| Map in target set?           | Cache file | `mapGrid` block | Bot action |
+|------------------------------|------------|-----------------|------------|
+| Target set (`Avalanche 3.4`) | present    | present         | Load real MapGrid, proceed. |
+| Target set                   | present    | absent          | Hard-fail warmup; operator re-bakes. |
+| Target set                   | absent     | —               | Same hard-fail path. |
+| Non-target set               | any miss   | —               | `[cache-miss] WARN` + synthetic skeleton fallback. |
+
+Adding a new target-set map is a one-line edit to `mapTargetSet`
+near the top of `bot_macro.fsx`.
+
+### Reading the stdout traces
+
+| Trace | Meaning |
+|-------|---------|
+| `[mapgrid] loaded from cache ...` | US4 real grid load (FR-014 good path). |
+| `[cache-miss] WARN ...` | US4 non-target-set fall-through. |
+| `[plan] issuing BuildCommand ... from resolvePlan` | US1 primitive-driven emission (SC-002 anchor). |
+| `[plan] resolvePlan exception ...` | FR-005 exception fallback fired. |
+| `[attack] path waypoints=N cost=C status=<Complete|Partial budget-exhausted>` | US2 findPath result per launch (SC-003 anchor). |
+| `[attack] target <id> absent from GameState — re-pathing` | FR-009a target-death invalidation. |
+| `[attack] findPath NoRoute — falling back to direct move` | FR-010 NoRoute fallback. |
+| `[defend] routing combat units only n=N` | FR-012 filter applied. |
+| `[defend] no combat units available — commander fallback` | FR-013 empty-set fallback. |
+| `[warmup] CPU budget <ms> ms (limit 100 ms)` | FR-015 budget stopwatch; `WARN` suffix on overrun. |
+
+### Classification labels added by this feature
+
+- `[primitive-driven-path]` — run where `[plan] issuing BuildCommand`
+  fires and `[opening] idx=.*issuing` does NOT.
+- `[partial-path-engaged]` — run where `[attack] path ... status=Partial`
+  still produced `enemy_units_killed > 0`, confirming the trailing
+  target-append works.
+- `[warmup-budget-exceeded]` — iter 6 shipped with ~466 ms warmup vs.
+  100 ms target. Non-fatal; flagged for a future perf pass.
+

@@ -6,6 +6,10 @@ module Commands =
     [<Literal>]
     let INTERNAL_ORDER = 8u
 
+    /// SHIFT_KEY flag (bit 5) — queues the command behind the unit's existing orders
+    [<Literal>]
+    let SHIFT_KEY = 32u
+
     /// Maximum timeout value
     [<Literal>]
     let MAX_TIMEOUT = 2147483647
@@ -16,6 +20,16 @@ module Commands =
             UnitId = unitId
             GroupId = 0
             Options = INTERNAL_ORDER
+            Timeout = MAX_TIMEOUT
+            ToPosition = Some { X = x; Y = y; Z = z }
+        }}
+
+    /// Create a queued move command for a unit to a position (appends to order queue)
+    let MoveCommandQueued (unitId: int) (x: float32) (y: float32) (z: float32) : Highbar.AICommand =
+        { Command = Highbar.AICommand.CommandCase.MoveUnit {
+            UnitId = unitId
+            GroupId = 0
+            Options = INTERNAL_ORDER ||| SHIFT_KEY
             Timeout = MAX_TIMEOUT
             ToPosition = Some { X = x; Y = y; Z = z }
         }}
