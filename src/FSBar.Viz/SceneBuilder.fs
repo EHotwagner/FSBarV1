@@ -125,9 +125,67 @@ module SceneBuilder =
                   Scene.ellipse mx mz dotR dotR dotPaint ])
 
     // --- Unit Overlay ---
+    // Adapter from legacy `UnitState` (no heading / buildProgress / status
+    // flags) to the new `UnitDisplay`. Used when the glyph renderer is
+    // enabled but the data source has not yet been upgraded to populate
+    // full `UnitDisplay` values. Shape/Faction/Tier default to Bot/Neutral/T1
+    // so the legacy path stays usable; a dedicated adapter that consults
+    // BarData is a follow-up feature.
+    let private defaultStatus : StatusFlags =
+        { IsUnderConstruction = false
+          IsStunned = false
+          JustDamagedWithinMs = None
+          JustCompletedWithinMs = None
+          IsCloaked = false }
+
+    let private legacyToUnitDisplay (u: UnitState) : UnitDisplay =
+        { UnitId = u.UnitId
+          DefId = u.DefId
+          InternalName = sprintf "def%d" u.DefId
+          Shape = MovementShape.Bot
+          Faction = FactionId.Neutral
+          Tier = Tier.T1
+          LabelCode = "??"
+          FootprintWidthElmo = 32.0f
+          FootprintHeightElmo = 32.0f
+          TeamId = u.TeamId
+          PositionX = u.PositionX
+          PositionY = u.PositionY
+          PositionZ = u.PositionZ
+          HeadingRadians = 0.0f
+          CurrentHealth = u.Health
+          MaxHealth = u.MaxHealth
+          BuildProgress = 1.0f
+          Status = defaultStatus
+          WeaponRangesElmo = []
+          SightRangeElmo = 0.0f
+          BuildRangeElmo = None
+          CommandQueue = [] }
+
     let private buildUnits (snap: GameSnapshot) (config: VizConfig) =
         if not (Set.contains OverlayKind.Units config.ActiveOverlays) then []
+        elif config.UseGlyphRenderer then
+            // New glyph path (feature 028-unit-viz-language). Legacy
+            // `OverlayKind.Units` still gates visibility so existing
+            // toggles continue to work; the difference is in how the
+            // units are drawn.
+            let displays =
+                snap.Units
+                |> Map.toSeq
+                |> Seq.map (fun (_, u) -> legacyToUnitDisplay u)
+            let glyphOverlays =
+                config.ActiveOverlays
+                |> Set.filter (fun o ->
+                    match o with
+                    | OverlayKind.WeaponRanges
+                    | OverlayKind.SightRanges
+                    | OverlayKind.CommandQueue
+                    | OverlayKind.FullNames -> true
+                    | _ -> false)
+            UnitGlyph.buildUnitsGlyph displays config.GlyphStyle glyphOverlays
         else
+            // Legacy path — kept behind `UseGlyphRenderer = false` until
+            // every consumer has migrated to the glyph renderer.
             snap.Units |> Map.toList |> List.collect (fun (_, u) ->
                 let mx = mapX u.PositionX
                 let mz = mapZ u.PositionZ

@@ -21,6 +21,10 @@ type OverlayKind =
     | Grid
     | MetalSpots
     | EconomyHud
+    | WeaponRanges
+    | SightRanges
+    | CommandQueue
+    | FullNames
 
 [<RequireQualifiedAccess>]
 type EventKind =
@@ -28,6 +32,118 @@ type EventKind =
     | UnitDestroyed
     | EnemySpotted
     | Combat
+
+[<RequireQualifiedAccess>]
+type MovementShape =
+    | Bot
+    | Vehicle
+    | Hover
+    | Ship
+    | Air
+    | Building
+    | Unknown
+
+[<RequireQualifiedAccess>]
+type Tier =
+    | T1
+    | T2
+    | T3
+
+[<RequireQualifiedAccess>]
+type FactionId =
+    | Armada
+    | Cortex
+    | Legion
+    | Raptors
+    | Scavengers
+    | Neutral
+
+[<RequireQualifiedAccess>]
+type OrderKind =
+    | Move
+    | Attack
+    | Patrol
+    | Guard
+    | Build
+    | Reclaim
+    | Other
+
+type StatusFlags =
+    { IsUnderConstruction: bool
+      IsStunned: bool
+      JustDamagedWithinMs: int option
+      JustCompletedWithinMs: int option
+      IsCloaked: bool }
+
+type CommandWaypoint =
+    { Order: OrderKind
+      X: float32
+      Y: float32
+      Z: float32
+      IsCurrent: bool }
+
+type UnitDisplay =
+    { UnitId: int
+      DefId: int
+      InternalName: string
+      Shape: MovementShape
+      Faction: FactionId
+      Tier: Tier
+      LabelCode: string
+      FootprintWidthElmo: float32
+      FootprintHeightElmo: float32
+      TeamId: int
+      PositionX: float32
+      PositionY: float32
+      PositionZ: float32
+      HeadingRadians: float32
+      CurrentHealth: float32
+      MaxHealth: float32
+      BuildProgress: float32
+      Status: StatusFlags
+      WeaponRangesElmo: float32 list
+      SightRangeElmo: float32
+      BuildRangeElmo: float32 option
+      CommandQueue: CommandWaypoint list }
+
+type FactionPalette =
+    { Armada: SKColor
+      Cortex: SKColor
+      Legion: SKColor
+      Raptors: SKColor
+      Scavengers: SKColor
+      Neutral: SKColor }
+
+type TeamPalette =
+    { ByTeamId: Map<int, SKColor>
+      Fallback: SKColor }
+
+type UnitGlyphStyle =
+    { FactionPalette: FactionPalette
+      TeamPalette: TeamPalette
+      MinPixelRadius: float32
+      T1StrokeWidth: float32
+      T2StrokeWidth: float32
+      T3StrokeWidth: float32
+      FacingPipRadius: float32
+      HpArcWidth: float32
+      LowHpFraction: float32
+      LabelFontSizePx: float32
+      LabelLegibilityZoomThreshold: float32
+      EventFlashDurationMs: int
+      JustBuiltRingDurationMs: int }
+
+[<RequireQualifiedAccess>]
+type EventEffectKind =
+    | UnderAttackFlash
+    | JustBuiltRing
+    | StunnedDesaturate
+
+type EventEffect =
+    { UnitId: int
+      Kind: EventEffectKind
+      StartedAtMs: int
+      DurationMs: int }
 
 type ColorScheme =
     { Name: string
@@ -50,7 +166,9 @@ type VizConfig =
       ShowGridLines: bool
       GridLineSpacing: int
       BackgroundColor: SKColor
-      LabelColor: SKColor }
+      LabelColor: SKColor
+      UseGlyphRenderer: bool
+      GlyphStyle: UnitGlyphStyle }
 
 type UnitState =
     { UnitId: int
@@ -100,28 +218,6 @@ type VizCommand =
     | ToggleGridLines
     | Stop
 
-module VizDefaults =
-    let defaultViewState =
-        { Scale = 1.0f
-          OriginX = 0.0f
-          OriginY = 0.0f
-          WindowWidth = 1024
-          WindowHeight = 640
-          AutoFit = true }
-
-    let defaultEconomy =
-        { Current = 0.0f
-          Income = 0.0f
-          Usage = 0.0f
-          Storage = 0.0f }
-
-    let defaultConfig =
-        { BaseLayer = LayerKind.BaseTerrain
-          ActiveOverlays = Set.ofList [ OverlayKind.MetalSpots ]
-          ColorSchemes = Map.empty
-          UnitMarkerSize = 6.0f
-          OverlayOpacity = 0.8f
-          ShowGridLines = false
-          GridLineSpacing = 16
-          BackgroundColor = SKColors.Black
-          LabelColor = SKColors.White }
+// `VizDefaults` lives in its own file (VizDefaults.fs) so that
+// `defaultConfig.GlyphStyle` can reference `UnitGlyphPalettes.defaults`
+// without a forward reference.

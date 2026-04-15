@@ -11,6 +11,10 @@
 
   <ItemGroup>
     <Compile Include="VizEngineFixture.fs" />
+    <Compile Include="UnitGlyphTests.fs" />
+    <Compile Include="UnitGlyphSceneTests.fs" />
+    <Compile Include="UnitLabelsGeneratorTests.fs" />
+    <Compile Include="UnitGlyphPerfTests.fs" />
     <Compile Include="ColorMapsTests.fs" />
     <Compile Include="LayerRendererTests.fs" />
     <Compile Include="BaseTerrainRenderingTests.fs" />

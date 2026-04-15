@@ -48,6 +48,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-15
 - Filesystem. Committed JSON files under `bots/trainer/map-cache/<safe-name>.json`, one per supported map. Each file is a self-describing record containing schema version, `codeVersion`, analysis parameters, source map identity, and gzip+base64 blobs for heightmap / slope map / resource map. Typical size 500 KB – 1 MB per map per the feature 025 notes; capped at ~1.5 MB/map and ~15 MB total by SC-005. (026-permanent-map-cache)
 - F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Client` (`MapCacheFile`, `MapGrid`, `MapQuery`), `FSBar.Viz` (`LayerRenderer`, `SceneBuilder`, `PreviewSession`, `GameViz`, `ColorMaps`, `VizTypes`), `SkiaViewer` 1.1.3-dev (`InputEvent.FrameTick`, `Scene`, `Shader.Image`), `SkiaSharp` 2.88.6, `xUnit 2.9.x`. **No new NuGet dependencies.** (027-map-terrain-viz)
 - Filesystem read-only — reads cached `bots/trainer/map-cache/<map>.json` files via `MapCacheFile.read`. No new on-disk formats. (027-map-terrain-viz)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo — `FSBar.Viz` (`SceneBuilder`, `VizTypes`, `ColorMaps`), `FSBar.Client` (`GameState`, `UnitDefCache`), `FSBar.SyntheticData` (`Scenes`, `SceneTypes`), `SkiaViewer` 1.1.3-dev (declarative `Scene`), `SkiaSharp` 2.88.6, `BarData` (local nupkg feed), `xUnit 2.9.x`. **No new NuGet dependencies.** (028-unit-viz-language)
+- Filesystem. One build-time artifact committed to the repo: `src/FSBar.Viz/UnitLabels.generated.fs` — byte-stable mapping from `BarData` unit internal name to 2- or 3-char code. No runtime storage. (028-unit-viz-language)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -68,6 +70,37 @@ Static per-map analysis (chokepoints + MapGrid) is committed under
 The trainer warmup reads these via `MapCacheFile.read` and hard-aborts
 on any mismatch per FR-006.
 
+## Unit glyph renderer (feature 028-unit-viz-language)
+
+The information-dense unit renderer lives in `FSBar.Viz.UnitGlyph`
+behind the `VizConfig.UseGlyphRenderer` flag (default `true`). Key
+modules:
+
+- `src/FSBar.Viz/UnitGlyph.fsi` — public renderer API (`classifyShape`,
+  `classifyTier`, `classifyFaction`, `buildUnit`, `buildOverlayLayer`,
+  `buildUnitsGlyph`, `advanceEffects`, `statusLine`, `resetSession`).
+- `src/FSBar.Viz/UnitGlyphPalettes.fsi` — faction + team palettes and
+  the default `UnitGlyphStyle`.
+- `src/FSBar.Viz/UnitLabels.generated.fs(i)` — committed 2- or 3-char
+  label table for every unit in `BarData.AllUnitDefs`. Regenerate via
+  `dotnet fsi src/FSBar.Viz/scripts/gen-unit-labels.fsx [--clean]`. The
+  script exits non-zero if an existing label would change without a
+  genuine collision (SC-006 tripwire).
+- `src/FSBar.Viz/UnitLabelsGenerator.fsi` — the pure two-pass label
+  generator (research.md R3: name-derived letter pairs, then an
+  alphabetical pool sweep for overflow).
+- `src/FSBar.Viz/SyntheticDataAdapter.fsi` — adapter from
+  `FSBar.SyntheticData.Scene + GameState` to `UnitDisplay seq`. Live-
+  game wiring via `FSBar.Client.TrackedUnit` is a follow-up feature.
+
+Hotkeys in `GameViz`: `W` weapon ranges, `L` sight, `C` command queue,
+`N` full names (sticky toggles). `UnitGlyph.statusLine` projects the
+active overlays to a `WLCN`-ordered string for the status-line widget.
+
+Regenerate the label table whenever `nupkg/BarData.*.nupkg` changes.
+Keep the `.fsi` for `UnitLabels.generated` stable — the generator only
+rewrites the `.fs`.
+
 ## Commands
 
 # Add commands for F# / .NET 10.0
@@ -83,9 +116,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 028-unit-viz-language: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo — `FSBar.Viz` (`SceneBuilder`, `VizTypes`, `ColorMaps`), `FSBar.Client` (`GameState`, `UnitDefCache`), `FSBar.SyntheticData` (`Scenes`, `SceneTypes`), `SkiaViewer` 1.1.3-dev (declarative `Scene`), `SkiaSharp` 2.88.6, `BarData` (local nupkg feed), `xUnit 2.9.x`. **No new NuGet dependencies.**
 - 027-map-terrain-viz: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Client` (`MapCacheFile`, `MapGrid`, `MapQuery`), `FSBar.Viz` (`LayerRenderer`, `SceneBuilder`, `PreviewSession`, `GameViz`, `ColorMaps`, `VizTypes`), `SkiaViewer` 1.1.3-dev (`InputEvent.FrameTick`, `Scene`, `Shader.Image`), `SkiaSharp` 2.88.6, `xUnit 2.9.x`. **No new NuGet dependencies.**
 - 026-permanent-map-cache: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Client` (`MapGrid`, `SmfParser`, `Chokepoints`, `BasePlan`, `MapQuery`), BCL `System.IO.Compression` (already used for gzipped blobs), BCL `System.Text.Json` (already used by `14-cache-map-analysis.fsx`). **No new NuGet dependencies.**
-- 025-macro-primitive-driven: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot script is `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client` (all 024 primitives: `Pathing`, `Chokepoints`, `BasePlan`, `WallIn`, `SmfParser`, plus pre-024 `Commands`, `Callbacks`, `GameState`, `MapGrid`, `UnitDefCache`, `Protocol`), `FSBar.Proto` (generated types incl. `Highbar.AICommand`), `BarData` (NuGet local feed, unit definitions), `xUnit 2.9.x` for Commands unit test. **No new NuGet dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

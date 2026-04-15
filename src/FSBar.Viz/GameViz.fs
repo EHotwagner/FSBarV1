@@ -77,6 +77,31 @@ module GameViz =
             | Key.H ->
                 let ov = if Set.contains OverlayKind.EconomyHud config.ActiveOverlays then Set.remove OverlayKind.EconomyHud config.ActiveOverlays else Set.add OverlayKind.EconomyHud config.ActiveOverlays
                 config <- { config with ActiveOverlays = ov }
+            // --- Unit-glyph overlays (feature 028-unit-viz-language) ---
+            | Key.W ->
+                let ov =
+                    if Set.contains OverlayKind.WeaponRanges config.ActiveOverlays
+                    then Set.remove OverlayKind.WeaponRanges config.ActiveOverlays
+                    else Set.add OverlayKind.WeaponRanges config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
+            | Key.L ->
+                let ov =
+                    if Set.contains OverlayKind.SightRanges config.ActiveOverlays
+                    then Set.remove OverlayKind.SightRanges config.ActiveOverlays
+                    else Set.add OverlayKind.SightRanges config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
+            | Key.C ->
+                let ov =
+                    if Set.contains OverlayKind.CommandQueue config.ActiveOverlays
+                    then Set.remove OverlayKind.CommandQueue config.ActiveOverlays
+                    else Set.add OverlayKind.CommandQueue config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
+            | Key.N ->
+                let ov =
+                    if Set.contains OverlayKind.FullNames config.ActiveOverlays
+                    then Set.remove OverlayKind.FullNames config.ActiveOverlays
+                    else Set.add OverlayKind.FullNames config.ActiveOverlays
+                config <- { config with ActiveOverlays = ov }
             | Key.Home ->
                 mapGridRef |> Option.iter computeAutoFit
             | _ -> ())

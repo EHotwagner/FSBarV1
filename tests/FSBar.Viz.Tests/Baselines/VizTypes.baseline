@@ -23,6 +23,11 @@ type OverlayKind =
     | Grid
     | MetalSpots
     | EconomyHud
+    // --- Unit-glyph overlays (feature 028-unit-viz-language) ---
+    | WeaponRanges
+    | SightRanges
+    | CommandQueue
+    | FullNames
 
 /// Transient visual event types for animated indicators.
 [<RequireQualifiedAccess>]
@@ -31,6 +36,120 @@ type EventKind =
     | UnitDestroyed
     | EnemySpotted
     | Combat
+
+// --- Unit-glyph types (feature 028-unit-viz-language) ---
+
+[<RequireQualifiedAccess>]
+type MovementShape =
+    | Bot
+    | Vehicle
+    | Hover
+    | Ship
+    | Air
+    | Building
+    | Unknown
+
+[<RequireQualifiedAccess>]
+type Tier =
+    | T1
+    | T2
+    | T3
+
+[<RequireQualifiedAccess>]
+type FactionId =
+    | Armada
+    | Cortex
+    | Legion
+    | Raptors
+    | Scavengers
+    | Neutral
+
+[<RequireQualifiedAccess>]
+type OrderKind =
+    | Move
+    | Attack
+    | Patrol
+    | Guard
+    | Build
+    | Reclaim
+    | Other
+
+type StatusFlags =
+    { IsUnderConstruction: bool
+      IsStunned: bool
+      JustDamagedWithinMs: int option
+      JustCompletedWithinMs: int option
+      IsCloaked: bool }
+
+type CommandWaypoint =
+    { Order: OrderKind
+      X: float32
+      Y: float32
+      Z: float32
+      IsCurrent: bool }
+
+type UnitDisplay =
+    { UnitId: int
+      DefId: int
+      InternalName: string
+      Shape: MovementShape
+      Faction: FactionId
+      Tier: Tier
+      LabelCode: string
+      FootprintWidthElmo: float32
+      FootprintHeightElmo: float32
+      TeamId: int
+      PositionX: float32
+      PositionY: float32
+      PositionZ: float32
+      HeadingRadians: float32
+      CurrentHealth: float32
+      MaxHealth: float32
+      BuildProgress: float32
+      Status: StatusFlags
+      WeaponRangesElmo: float32 list
+      SightRangeElmo: float32
+      BuildRangeElmo: float32 option
+      CommandQueue: CommandWaypoint list }
+
+type FactionPalette =
+    { Armada: SKColor
+      Cortex: SKColor
+      Legion: SKColor
+      Raptors: SKColor
+      Scavengers: SKColor
+      Neutral: SKColor }
+
+type TeamPalette =
+    { ByTeamId: Map<int, SKColor>
+      Fallback: SKColor }
+
+type UnitGlyphStyle =
+    { FactionPalette: FactionPalette
+      TeamPalette: TeamPalette
+      MinPixelRadius: float32
+      T1StrokeWidth: float32
+      T2StrokeWidth: float32
+      T3StrokeWidth: float32
+      FacingPipRadius: float32
+      HpArcWidth: float32
+      LowHpFraction: float32
+      LabelFontSizePx: float32
+      LabelLegibilityZoomThreshold: float32
+      EventFlashDurationMs: int
+      JustBuiltRingDurationMs: int }
+
+[<RequireQualifiedAccess>]
+type EventEffectKind =
+    | UnderAttackFlash
+    | JustBuiltRing
+    | StunnedDesaturate
+
+type EventEffect =
+    { UnitId: int
+      Kind: EventEffectKind
+      StartedAtMs: int
+      DurationMs: int }
 
 /// Maps a normalized float32 value in [0..1] to a color.
 type ColorScheme =
@@ -56,7 +175,10 @@ type VizConfig =
       ShowGridLines: bool
       GridLineSpacing: int
       BackgroundColor: SKColor
-      LabelColor: SKColor }
+      LabelColor: SKColor
+      // --- Unit-glyph renderer (feature 028-unit-viz-language) ---
+      UseGlyphRenderer: bool
+      GlyphStyle: UnitGlyphStyle }
 
 /// Tracked unit snapshot for visualization.
 type UnitState =
@@ -111,8 +233,5 @@ type VizCommand =
     | ToggleGridLines
     | Stop
 
-/// Default values for visualization state.
-module VizDefaults =
-    val defaultViewState: ViewState
-    val defaultEconomy: EconomyData
-    val defaultConfig: VizConfig
+// `VizDefaults` has moved to VizDefaults.fsi — it consumes `UnitGlyphPalettes`
+// (feature 028-unit-viz-language), which compiles after this file.

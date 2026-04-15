@@ -12,6 +12,18 @@
   <ItemGroup>
     <Compile Include="VizTypes.fsi" />
     <Compile Include="VizTypes.fs" />
+    <Compile Include="UnitGlyphPalettes.fsi" />
+    <Compile Include="UnitGlyphPalettes.fs" />
+    <Compile Include="VizDefaults.fsi" />
+    <Compile Include="VizDefaults.fs" />
+    <Compile Include="UnitLabelsGenerator.fsi" />
+    <Compile Include="UnitLabelsGenerator.fs" />
+    <Compile Include="UnitLabels.generated.fsi" />
+    <Compile Include="UnitLabels.generated.fs" />
+    <Compile Include="UnitGlyph.fsi" />
+    <Compile Include="UnitGlyph.fs" />
+    <Compile Include="SyntheticDataAdapter.fsi" />
+    <Compile Include="SyntheticDataAdapter.fs" />
     <Compile Include="ColorMaps.fsi" />
     <Compile Include="ColorMaps.fs" />
     <Compile Include="LayerRenderer.fsi" />
