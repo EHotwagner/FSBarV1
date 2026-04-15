@@ -179,6 +179,79 @@ module UnitGlyph =
         let a = clamp01 alpha |> (*) 255.0f |> byte
         SKColor(color.Red, color.Green, color.Blue, a)
 
+    // Shape outline as a closed path starting at the unit's "front" (east,
+    // i.e. +X) and walking clockwise around the perimeter. The returned
+    // commands form a single closed loop so `PathEffect.Trim` can extract
+    // the back half of the outline by path-length fractions:
+    //   fraction 0.0  = front (east, +X)
+    //   fraction 0.25 = south (+Z)
+    //   fraction 0.5  = back (west, -X)
+    //   fraction 0.75 = north (-Z)
+    // The whole shape is expected to be rotated by `heading` around (mx, mz)
+    // so the rendered front always points along the unit's heading.
+    let private shapeOutlineCommands
+        (shape: MovementShape)
+        (mx: float32)
+        (mz: float32)
+        (r: float32)
+        : PathCommand list =
+        match shape with
+        | MovementShape.Bot
+        | MovementShape.Unknown ->
+            // Explicit circle path starting at east, going clockwise.
+            // Four quadrant arcs keep path length ≈ 2πr so PathEffect.Trim
+            // fractions line up with angular position.
+            let rect = SKRect(mx - r, mz - r, mx + r, mz + r)
+            [ PathCommand.MoveTo(mx + r, mz)
+              PathCommand.ArcTo(rect, 0.0f, 90.0f)
+              PathCommand.ArcTo(rect, 90.0f, 90.0f)
+              PathCommand.ArcTo(rect, 180.0f, 90.0f)
+              PathCommand.ArcTo(rect, 270.0f, 90.0f)
+              PathCommand.Close ]
+        | MovementShape.Vehicle ->
+            // Square with front at +X centre. Start at front-centre so
+            // fraction 0.5 lands on back-centre.
+            [ PathCommand.MoveTo(mx + r, mz)
+              PathCommand.LineTo(mx + r, mz + r)
+              PathCommand.LineTo(mx - r, mz + r)
+              PathCommand.LineTo(mx - r, mz - r)
+              PathCommand.LineTo(mx + r, mz - r)
+              PathCommand.LineTo(mx + r, mz)
+              PathCommand.Close ]
+        | MovementShape.Hover ->
+            // Diamond — front vertex at +X.
+            [ PathCommand.MoveTo(mx + r, mz)
+              PathCommand.LineTo(mx, mz + r)
+              PathCommand.LineTo(mx - r, mz)
+              PathCommand.LineTo(mx, mz - r)
+              PathCommand.Close ]
+        | MovementShape.Ship ->
+            // Wide rectangle (1.2r × 0.7r half-extents) oriented east.
+            let halfW = 1.2f * r
+            let halfH = 0.7f * r
+            [ PathCommand.MoveTo(mx + halfW, mz)
+              PathCommand.LineTo(mx + halfW, mz + halfH)
+              PathCommand.LineTo(mx - halfW, mz + halfH)
+              PathCommand.LineTo(mx - halfW, mz - halfH)
+              PathCommand.LineTo(mx + halfW, mz - halfH)
+              PathCommand.LineTo(mx + halfW, mz)
+              PathCommand.Close ]
+        | MovementShape.Air ->
+            // Isoceles triangle pointing east.
+            [ PathCommand.MoveTo(mx + r, mz)
+              PathCommand.LineTo(mx - 0.5f * r, mz + 0.9f * r)
+              PathCommand.LineTo(mx - 0.5f * r, mz - 0.9f * r)
+              PathCommand.Close ]
+        | MovementShape.Building ->
+            let sixth = float32 (Math.PI / 3.0)
+            let pts =
+                [ for i in 0 .. 5 ->
+                    let ang = float32 i * sixth
+                    SKPoint(mx + r * cos ang, mz + r * sin ang) ]
+            [ yield PathCommand.MoveTo(pts.[0].X, pts.[0].Y)
+              for p in pts.[1..] -> PathCommand.LineTo(p.X, p.Y)
+              yield PathCommand.Close ]
+
     // Shape primitive — returns a single path/ellipse/rect element covering
     // the body of the unit. The element is placed at (mx, mz) in world space.
     let private bodyPrimitive
@@ -261,21 +334,7 @@ module UnitGlyph =
             else teamColor
 
         let fillPaint = Scene.fill (applyAlpha effectiveFill fillAlpha)
-        let body = bodyPrimitive unit'.Shape mx mz r fillPaint
-
-        // Stroke overlay: dashed when under construction.
-        // The existing SkiaViewer Paint API doesn't expose dashing through a
-        // high-level helper, so we emulate dashed-stroke under construction
-        // by rendering the outline as several short arcs. For MVP we keep
-        // the outline solid and differentiate under-construction via the
-        // fill alpha, which is already visually distinct.
-        let strokePaint =
-            // `Paint` doesn't have `.IsStroke` here; we use the framework's
-            // Scene.stroke helper below by drawing an outline body.
-            Scene.stroke strokeColor strokeWidth
-
-        // Build an outline element by reusing bodyPrimitive with a stroke paint.
-        let outline = bodyPrimitive unit'.Shape mx mz r strokePaint
+        let strokePaint = Scene.stroke strokeColor strokeWidth
 
         // Under-construction extra marker (small dashed hint) — a short line
         // inside the shape to distinguish from an operational unit.
@@ -284,36 +343,64 @@ module UnitGlyph =
                 [ Scene.line (mx - r * 0.5f) mz (mx + r * 0.5f) mz strokePaint ]
             else []
 
-        // Facing pip.
-        let pip =
-            let heading =
-                if Single.IsNaN unit'.HeadingRadians then 0.0f else unit'.HeadingRadians
-            let px = mx + r * cos heading
-            let pz = mz + r * sin heading
-            let pipPaint = Scene.fill (applyAlpha strokeColor 1.0f)
-            Scene.ellipse px pz style.FacingPipRadius style.FacingPipRadius pipPaint
+        let heading =
+            if Single.IsNaN unit'.HeadingRadians then 0.0f else unit'.HeadingRadians
 
-        // HP arc. Hidden at full HP; shifted red below low-HP fraction.
-        let hpArc =
-            if unit'.MaxHealth <= 0.0f then []
+        // Canonical (east-facing) outline of this shape. Body + outline
+        // + HP stroke are all rendered from the same path and rotated
+        // together so the unit's front always points along `heading`.
+        let shapeCmds = shapeOutlineCommands unit'.Shape mx mz r
+        let bodyFillElement = Scene.path shapeCmds fillPaint
+        let bodyOutlineElement = Scene.path shapeCmds strokePaint
+
+        // HP indicator — red stroke along the back half of the unit's
+        // outline. `PathEffect.Trim` keeps only the sub-segment
+        // `[0.5 − 0.25·frac, 0.5 + 0.25·frac]` of the path, centered on the
+        // back midpoint (fraction 0.5). At full HP this is the whole back
+        // half of the perimeter; at 0 HP the window collapses to a point.
+        let hpStrokeElement =
+            if unit'.MaxHealth <= 0.0f then None
             else
                 let frac = clamp01 (unit'.CurrentHealth / unit'.MaxHealth)
-                if frac >= 1.0f then []
+                if frac <= 0.0f then None
                 else
-                    let arcColor =
-                        if frac <= style.LowHpFraction then SKColor(220uy, 40uy, 40uy)
-                        else SKColor(220uy, 200uy, 40uy)
-                    let arcPaint = Scene.stroke arcColor style.HpArcWidth
-                    // Position the arc as a small line opposite the facing pip.
-                    let heading =
-                        if Single.IsNaN unit'.HeadingRadians then 0.0f else unit'.HeadingRadians
-                    let opp = heading + float32 Math.PI
-                    let length = r * 1.2f * (1.0f - frac)
-                    let ax = mx + r * cos opp
-                    let az = mz + r * sin opp
-                    let bx = ax + length * cos (opp + float32 Math.PI / 2.0f)
-                    let bz = az + length * sin (opp + float32 Math.PI / 2.0f)
-                    [ Scene.line ax az bx bz arcPaint ]
+                    let hpColor = SKColor(230uy, 50uy, 50uy)
+                    let baseHp = Scene.stroke hpColor (strokeWidth + style.HpArcWidth)
+                    let hpPaint =
+                        { baseHp with
+                            PathEffect =
+                                Some (PathEffect.Trim(
+                                        0.5f - 0.25f * frac,
+                                        0.5f + 0.25f * frac,
+                                        TrimMode.Normal))
+                            StrokeCap = StrokeCap.Round }
+                    Some (Scene.path shapeCmds hpPaint)
+
+        // Group body, outline and HP stroke under a single rotation around
+        // (mx, mz) so all three stay aligned with heading.
+        let headingDeg = heading * 180.0f / float32 Math.PI
+        let shapeChildren =
+            [ yield bodyFillElement
+              yield bodyOutlineElement
+              match hpStrokeElement with
+              | Some e -> yield e
+              | None -> () ]
+        let rotatedShape =
+            Scene.rotate headingDeg mx mz shapeChildren
+
+        // Facing pip — white, pulsing, drawn outside the shape in the
+        // direction of travel.
+        let pip =
+            let pipR = style.FacingPipRadius
+            let offset = r + pipR * 2.0f
+            let px = mx + offset * cos heading
+            let pz = mz + offset * sin heading
+            let t =
+                float32 (DateTime.UtcNow.Ticks % 10_000_000L) / 10_000_000.0f
+            let pulse = 0.5f + 0.5f * cos (t * 2.0f * float32 Math.PI)
+            let alpha = byte (int (110.0f + 145.0f * pulse))
+            let pipPaint = Scene.fill (SKColor(255uy, 255uy, 255uy, alpha))
+            Scene.ellipse px pz pipR pipR pipPaint
 
         // Low-HP tint overlay (FR-010 — noise deferred, tint-only for MVP).
         let lowHpTint =
@@ -325,15 +412,26 @@ module UnitGlyph =
                     let tint = SKColor(255uy, 40uy, 40uy, 80uy)
                     [ bodyPrimitive unit'.Shape mx mz r (Scene.fill tint) ]
 
-        // Label text beside the shape. Fallback via UnitLabels lookup when
-        // `LabelCode` was not populated by the data source.
+        // Label text centered inside the shape. Fallback via UnitLabels
+        // lookup when `LabelCode` was not populated by the data source.
+        // Colour is picked for contrast against the unit's fill: black on
+        // light fills, white on dark fills.
         let labelCode =
             if String.IsNullOrEmpty unit'.LabelCode
             then UnitLabels.lookupOrFallback unit'.InternalName
             else unit'.LabelCode
         let labelElement =
-            let txtPaint = Scene.fill (applyAlpha strokeColor 1.0f)
-            Scene.text labelCode (mx + r + 2.0f) (mz + style.LabelFontSizePx * 0.35f)
+            let luminance =
+                (0.299f * float32 effectiveFill.Red
+                 + 0.587f * float32 effectiveFill.Green
+                 + 0.114f * float32 effectiveFill.Blue) / 255.0f
+            let labelColor =
+                if luminance > 0.5f then SKColor(0uy, 0uy, 0uy)
+                else SKColor(255uy, 255uy, 255uy)
+            let txtPaint = Scene.fill labelColor
+            let approxCharWidth = style.LabelFontSizePx * 0.55f
+            let textWidth = float32 (String.length labelCode) * approxCharWidth
+            Scene.text labelCode (mx - textWidth * 0.5f) (mz + style.LabelFontSizePx * 0.35f)
                 style.LabelFontSizePx txtPaint
 
         // Event effects layered on top.
@@ -351,11 +449,9 @@ module UnitGlyph =
                 | EventEffectKind.StunnedDesaturate ->
                     []) // handled via body-fill mixing above
 
-        [ yield body
+        [ yield rotatedShape
           yield! lowHpTint
-          yield outline
           yield pip
-          yield! hpArc
           yield! constructionHint
           yield labelElement
           yield! effectElements ]

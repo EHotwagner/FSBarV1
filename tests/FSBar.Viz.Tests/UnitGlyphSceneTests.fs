@@ -2,6 +2,7 @@ module FSBar.Viz.Tests.UnitGlyphSceneTests
 
 open Xunit
 open FSBar.Viz
+open SkiaViewer
 
 // Helpers ------------------------------------------------------------------
 
@@ -70,15 +71,23 @@ let ``buildUnitsGlyph: every unit contributes at least one primitive`` () =
         $"Expected >= {List.length units} primitives, got {List.length primitives}")
 
 [<Fact>]
-let ``buildUnit: full HP unit produces no HP-arc-specific path primitives`` () =
+let ``buildUnit: HP stroke drops out when a unit is dead`` () =
     UnitGlyph.resetSession()
     let full = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 1.0f 1.0f 0.0f defaultStatus
-    let damaged = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 0.4f 1.0f 0.0f defaultStatus
-    let fullPrims = UnitGlyph.buildUnit full style []
-    let dmgPrims = UnitGlyph.buildUnit damaged style []
+    let dead = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 0.0f 1.0f 0.0f defaultStatus
+    // The HP indicator is drawn along the back half of the unit outline and
+    // lives inside the first element (a rotated Group containing body,
+    // outline, and — when HP > 0 — the red trimmed HP stroke). Unwrap the
+    // group to count children rather than top-level primitives.
+    let groupChildCount (els: Element list) =
+        match els with
+        | Element.Group(_, _, _, children) :: _ -> List.length children
+        | _ -> 0
+    let fullChildren = UnitGlyph.buildUnit full style [] |> groupChildCount
+    let deadChildren = UnitGlyph.buildUnit dead style [] |> groupChildCount
     Assert.True(
-        List.length dmgPrims > List.length fullPrims,
-        $"Damaged unit should produce more primitives than full-HP unit ({List.length dmgPrims} vs {List.length fullPrims})")
+        fullChildren > deadChildren,
+        $"Live unit's shape group should contain more children than a dead one ({fullChildren} vs {deadChildren})")
 
 // T018 ---------------------------------------------------------------------
 
