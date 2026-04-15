@@ -34,11 +34,15 @@ type ConnectionTests(engine: EngineFixture) =
 
     [<Fact>]
     [<Trait("Category", "Connection")>]
-    member _.``First frames contain Init event``() =
-        let hasInit =
-            engine.InitialEvents
-            |> List.exists (function GameEvent.Init _ -> true | _ -> false)
-        Assert.True(hasInit, "Init event should appear in the initial warm-up frames")
+    member _.``Init event is processed during startup``() =
+        // BarClient.Start() consumes the first ~60 frames internally (to absorb
+        // early spawn events before the UnitDefCache bulk load), so the Init
+        // event is not visible to WaitFrames callers. Instead, verify the
+        // observable consequence: GameState.TeamId was populated from Init and
+        // matches the handshake-reported team.
+        let hs = engine.Client.Handshake
+        Assert.True(hs.IsSome, "Handshake info should be available")
+        Assert.Equal(hs.Value.TeamId, engine.Client.GameState.TeamId)
 
     [<Fact>]
     [<Trait("Category", "Connection")>]

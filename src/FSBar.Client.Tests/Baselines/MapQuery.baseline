@@ -56,6 +56,21 @@ module MapQuery =
 
     val resourceHotspots: grid: MapGrid -> x1: int -> z1: int -> x2: int -> z2: int -> threshold: int -> (int * int * int) list
 
+    /// <summary>
+    /// Scans <c>grid.ResourceMap</c> for connected components of non-zero cells using
+    /// 8-way connectivity and returns one synthetic metal spot per cluster, in
+    /// <c>(worldX, worldY, worldZ, richness)</c> tuples matching the shape of
+    /// <see cref="T:FSBar.Client.GameSnapshot"/>.MetalSpots.
+    /// </summary>
+    /// <remarks>
+    /// worldX and worldZ are the cluster's centroid in elmos (heightmap cells * 8).
+    /// worldY is the height at the centroid as read from <c>grid.HeightMap</c>
+    /// (nearest-cell lookup). richness is the cluster's mean cell value normalised
+    /// to <c>[0, 1]</c> against the grid's global max resource value. Returns an
+    /// empty array when the grid contains no non-zero cells. Deterministic.
+    /// </remarks>
+    val metalSpotsFromResourceMap: grid: MapGrid -> (float32 * float32 * float32 * float32) array
+
     /// <summary>Converts elmo (world) coordinates to heightmap grid indices by dividing by 8.</summary>
     /// <param name="x">X coordinate in elmos.</param>
     /// <param name="z">Z coordinate in elmos.</param>

@@ -26,6 +26,7 @@ let ``VizTypes - LayerKind type exists with expected cases`` () =
     Assert.True(Reflection.FSharpType.IsUnion(t), "LayerKind should be a discriminated union")
     let cases = Reflection.FSharpType.GetUnionCases(t)
     let caseNames = cases |> Array.map (fun c -> c.Name)
+    Assert.Contains("BaseTerrain", caseNames)
     Assert.Contains("HeightMap", caseNames)
     Assert.Contains("SlopeMap", caseNames)
     Assert.Contains("ResourceMap", caseNames)
@@ -163,6 +164,8 @@ let ``PreviewSession module has expected members`` () =
     Assert.True(moduleHasMember t "startWithMap")
     Assert.True(moduleHasMember t "startWithSnapshot")
     Assert.True(moduleHasMember t "startPlayback")
+    Assert.True(moduleHasMember t "startWithCachedMaps")
+    Assert.True(moduleHasMember t "advanceCycleIndex")
     Assert.True(moduleHasMember t "stop")
 
 // ---- GameViz ----
@@ -209,8 +212,8 @@ let ``LiveSessionHandle type has expected members`` () =
 [<Fact>]
 let ``smoke test - VizDefaults defaultConfig is valid`` () =
     let config = VizDefaults.defaultConfig
-    Assert.Equal(LayerKind.HeightMap, config.BaseLayer)
-    Assert.True(Set.isEmpty config.ActiveOverlays)
+    Assert.Equal(LayerKind.BaseTerrain, config.BaseLayer)
+    Assert.Contains(OverlayKind.MetalSpots, config.ActiveOverlays)
     Assert.Equal(6.0f, config.UnitMarkerSize)
 
 [<Fact>]
@@ -223,6 +226,7 @@ let ``smoke test - VizDefaults defaultViewState is valid`` () =
 [<Fact>]
 let ``smoke test - ColorMaps colorSchemeFor all layer kinds`` () =
     let layers = [
+        LayerKind.BaseTerrain
         LayerKind.HeightMap; LayerKind.SlopeMap; LayerKind.ResourceMap
         LayerKind.LosMap; LayerKind.RadarMap; LayerKind.TerrainClassification
         LayerKind.Passability MoveType.Kbot

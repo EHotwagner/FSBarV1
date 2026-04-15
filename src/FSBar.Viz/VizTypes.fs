@@ -5,6 +5,7 @@ open FSBar.Client
 
 [<RequireQualifiedAccess>]
 type LayerKind =
+    | BaseTerrain
     | HeightMap
     | SlopeMap
     | ResourceMap
@@ -115,8 +116,8 @@ module VizDefaults =
           Storage = 0.0f }
 
     let defaultConfig =
-        { BaseLayer = LayerKind.HeightMap
-          ActiveOverlays = Set.empty
+        { BaseLayer = LayerKind.BaseTerrain
+          ActiveOverlays = Set.ofList [ OverlayKind.MetalSpots ]
           ColorSchemes = Map.empty
           UnitMarkerSize = 6.0f
           OverlayOpacity = 0.8f

@@ -6,6 +6,7 @@ open FSBar.Client
 /// Selects which map data layer to render as the base.
 [<RequireQualifiedAccess>]
 type LayerKind =
+    | BaseTerrain
     | HeightMap
     | SlopeMap
     | ResourceMap

@@ -117,6 +117,81 @@ module MapQuery =
                     bestIdx <- i
             Some spots.[bestIdx]
 
+    let metalSpotsFromResourceMap (grid: MapGrid) : (float32 * float32 * float32 * float32) array =
+        let resource = grid.ResourceMap
+        let heights = grid.HeightMap
+        let rh = Array2D.length1 resource
+        let rw = Array2D.length2 resource
+        if rh = 0 || rw = 0 then [||]
+        else
+            let mutable globalMax = 0
+            for z in 0 .. rh - 1 do
+                for x in 0 .. rw - 1 do
+                    let v = resource.[z, x]
+                    if v > globalMax then globalMax <- v
+            if globalMax <= 0 then [||]
+            else
+                let hh = Array2D.length1 heights
+                let hw = Array2D.length2 heights
+                let visited = Array2D.init rh rw (fun _ _ -> false)
+                let clusters = System.Collections.Generic.List<int * int * int * int * int64 * int>()
+                // tuple: (minZ, minX, sumZ, sumX, sumValue, cellCount)
+                let queue = System.Collections.Generic.Queue<int * int>()
+                let offsets =
+                    [| (-1, -1); (-1, 0); (-1, 1)
+                       ( 0, -1);            ( 0, 1)
+                       ( 1, -1); ( 1, 0); ( 1, 1) |]
+                for z0 in 0 .. rh - 1 do
+                    for x0 in 0 .. rw - 1 do
+                        if not visited.[z0, x0] && resource.[z0, x0] > 0 then
+                            visited.[z0, x0] <- true
+                            queue.Clear()
+                            queue.Enqueue((z0, x0))
+                            let mutable minZ = z0
+                            let mutable minX = x0
+                            let mutable sumZ = 0
+                            let mutable sumX = 0
+                            let mutable sumValue = 0L
+                            let mutable cellCount = 0
+                            while queue.Count > 0 do
+                                let (cz, cx) = queue.Dequeue()
+                                let v = resource.[cz, cx]
+                                sumZ <- sumZ + cz
+                                sumX <- sumX + cx
+                                sumValue <- sumValue + int64 v
+                                cellCount <- cellCount + 1
+                                if cz < minZ then minZ <- cz
+                                if cx < minX then minX <- cx
+                                for (dz, dx) in offsets do
+                                    let nz = cz + dz
+                                    let nx = cx + dx
+                                    if nz >= 0 && nz < rh && nx >= 0 && nx < rw
+                                       && not visited.[nz, nx]
+                                       && resource.[nz, nx] > 0 then
+                                        visited.[nz, nx] <- true
+                                        queue.Enqueue((nz, nx))
+                            clusters.Add((minZ, minX, sumZ, sumX, sumValue, cellCount))
+                clusters
+                |> Seq.sortBy (fun (mz, mx, _, _, _, _) -> (mz, mx))
+                |> Seq.map (fun (_, _, sumZ, sumX, sumValue, cellCount) ->
+                    let cz = float32 sumZ / float32 cellCount
+                    let cx = float32 sumX / float32 cellCount
+                    let nearestZ = min (hh - 1) (max 0 (int (cz + 0.5f)))
+                    let nearestX = min (hw - 1) (max 0 (int (cx + 0.5f)))
+                    let worldY =
+                        if hh > 0 && hw > 0 then heights.[nearestZ, nearestX]
+                        else 0.0f
+                    let worldX = cx * 8.0f
+                    let worldZ = cz * 8.0f
+                    let mean = float32 sumValue / float32 cellCount
+                    let richness =
+                        let r = mean / float32 globalMax
+                        if r < 0.0f then 0.0f
+                        elif r > 1.0f then 1.0f
+                        else r
+                    (worldX, worldY, worldZ, richness))
+                |> Seq.toArray
+
     let resourceHotspots (grid: MapGrid) (x1: int) (z1: int) (x2: int) (z2: int) (threshold: int) : (int * int * int) list =
         let rw = Array2D.length1 grid.ResourceMap
         let rh = Array2D.length2 grid.ResourceMap

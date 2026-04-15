@@ -13,6 +13,37 @@ module SceneBuilder =
 
     let private lerpF (a: float32) (b: float32) (t: float32) = a + (b - a) * t
 
+    // --- Metal-spot pulse state ---
+    let mutable private pulsePhase = 0.0f
+    // Cumulative wall-clock seconds since the session started. SkiaViewer's
+    // `InputEvent.FrameTick(delta)` passes per-frame delta, not a running
+    // total, so we accumulate it ourselves.
+    let mutable private pulseElapsedSeconds = 0.0
+
+    let private twoPi = 2.0 * System.Math.PI
+
+    let computePulseAlpha (elapsed: float) (periodSeconds: float) : byte =
+        let phase = 0.5 + 0.5 * sin (twoPi * elapsed / periodSeconds)
+        let v = 60.0 + 160.0 * phase
+        let clamped =
+            if v < 60.0 then 60.0
+            elif v > 220.0 then 220.0
+            else v
+        byte clamped
+
+    /// Reset the pulse clock — call on session start/stop so two back-to-back
+    /// viewers don't leak state.
+    let resetPulsePhase () : unit =
+        pulseElapsedSeconds <- 0.0
+        pulsePhase <- 0.0f
+
+    /// Advance the pulse clock by one FrameTick's delta and recompute the
+    /// shared phase used by metal-spot markers.
+    let updatePulsePhase (deltaSeconds: float) : unit =
+        pulseElapsedSeconds <- pulseElapsedSeconds + deltaSeconds
+        let phase = 0.5 + 0.5 * sin (twoPi * pulseElapsedSeconds / 1.5)
+        pulsePhase <- float32 phase
+
     // --- Coordinate transform helpers ---
     let inline private mapX (posX: float32) = posX / 8.0f
     let inline private mapZ (posZ: float32) = posZ / 8.0f
@@ -64,23 +95,34 @@ module SceneBuilder =
             lines |> Seq.toList
 
     // --- Metal Spots Overlay ---
-    let private buildMetalSpots (snap: GameSnapshot) (config: VizConfig) =
+    let private buildMetalSpots (snap: GameSnapshot) (config: VizConfig) (vs: ViewState) =
         if not (Set.contains OverlayKind.MetalSpots config.ActiveOverlays) then []
         else
-            snap.MetalSpots |> Array.toList |> List.map (fun (x, _y, z, richness) ->
+            let phase = pulsePhase
+            // Gentle pulse — 30% of the earlier swings.
+            // Alpha: 160..210, dot: 200..225, radius scale: 0.91..1.09 (~±9%).
+            let coreAlpha = byte (160.0f + 50.0f * phase)
+            let dotAlpha = byte (200.0f + 25.0f * phase)
+            let radiusScale = 0.91f + 0.18f * phase
+            // Target sizes in SCREEN pixels, converted to world space by dividing
+            // by viewState.Scale — so markers stay the same apparent size when
+            // the user zooms in/out.
+            let scale = max 0.0001f vs.Scale
+            let nominalScreenR = 4.5f
+            let dotScreenR = 0.9f
+            snap.MetalSpots |> Array.toList |> List.collect (fun (x, _y, z, richness) ->
                 let mx = mapX x
                 let mz = mapZ z
-                let r = 2.0f + richness * 3.0f
-                let paint =
-                    Scene.fill SKColors.Transparent
-                    |> Scene.withShader (
-                        Shader.RadialGradient(
-                            SKPoint(mx, mz), r,
-                            [| SKColor(180uy, 180uy, 180uy, 200uy); SKColor(180uy, 180uy, 180uy, 0uy) |],
-                            [| 0.0f; 1.0f |],
-                            TileMode.Clamp))
+                let r = (nominalScreenR + richness * 1.5f) * radiusScale / scale
+                let dotR = dotScreenR / scale
+                let glowPaint =
+                    Scene.fill (SKColor(255uy, 210uy, 40uy, coreAlpha))
                     |> Scene.withOpacity config.OverlayOpacity
-                Scene.ellipse mx mz r r paint)
+                let dotPaint =
+                    Scene.fill (SKColor(20uy, 10uy, 0uy, dotAlpha))
+                    |> Scene.withOpacity config.OverlayOpacity
+                [ Scene.ellipse mx mz r r glowPaint
+                  Scene.ellipse mx mz dotR dotR dotPaint ])
 
     // --- Unit Overlay ---
     let private buildUnits (snap: GameSnapshot) (config: VizConfig) =
@@ -288,7 +330,7 @@ module SceneBuilder =
             List.concat [
                 buildBaseLayer snapshot config viewState
                 buildGrid snapshot config
-                buildMetalSpots snapshot config
+                buildMetalSpots snapshot config viewState
                 buildUnits snapshot config
                 buildEvents snapshot config
             ]

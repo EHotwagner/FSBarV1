@@ -60,8 +60,13 @@ module ColorMaps =
         { Name = "Binary"
           MapValue = fun v -> if v > 0.5f then SKColors.Green else SKColors.Red }
 
+    let private identity: ColorScheme =
+        { Name = "Identity"
+          MapValue = fun _ -> SKColors.Black }
+
     let colorSchemeFor (layer: LayerKind) : ColorScheme =
         match layer with
+        | LayerKind.BaseTerrain -> identity
         | LayerKind.HeightMap -> terrain
         | LayerKind.TerrainClassification -> terrain
         | LayerKind.SlopeMap -> heatMap

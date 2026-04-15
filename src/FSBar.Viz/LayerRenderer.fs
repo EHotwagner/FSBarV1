@@ -13,6 +13,7 @@ module LayerRenderer =
 
     let private cacheKey (layer: LayerKind) =
         match layer with
+        | LayerKind.BaseTerrain -> "base-terrain"
         | LayerKind.HeightMap -> "height"
         | LayerKind.SlopeMap -> "slope"
         | LayerKind.ResourceMap -> "resource"
@@ -109,6 +110,100 @@ module LayerRenderer =
         copyPixelsToBitmap pixels bmp
         bmp
 
+    let private clamp01 (v: float32) =
+        if v < 0.0f then 0.0f
+        elif v > 1.0f then 1.0f
+        else v
+
+    let private brownLandRamp (t: float32) : struct (byte * byte * byte) =
+        let t = clamp01 t
+        let r = byte (58.0f + (214.0f - 58.0f) * t)
+        let g = byte (36.0f + (172.0f - 36.0f) * t)
+        let b = byte (18.0f + (120.0f - 18.0f) * t)
+        struct (r, g, b)
+
+    let private blueWaterRamp (t: float32) : struct (byte * byte * byte) =
+        let t = clamp01 t
+        let r = byte (10.0f + (120.0f - 10.0f) * t)
+        let g = byte (22.0f + (196.0f - 22.0f) * t)
+        let b = byte (60.0f + (232.0f - 60.0f) * t)
+        struct (r, g, b)
+
+    // Maximum fraction by which slope may lift a base cell toward white.
+    // 1.0f would blow out fully to white on the steepest cell; 0.65f keeps
+    // the underlying brown/blue tint readable even on sheer cliffs.
+    let private slopeLiftCeiling = 0.65f
+
+    let private renderBaseTerrain (grid: MapGrid) : SKBitmap =
+        let data = grid.HeightMap
+        let slope = grid.SlopeMap
+        let h = Array2D.length1 data
+        let w = Array2D.length2 data
+        if h = 0 || w = 0 then
+            new SKBitmap(1, 1)
+        else
+        let slopeH = Array2D.length1 slope
+        let slopeW = Array2D.length2 slope
+        // First pass: elevation min/max per water/land band + max slope.
+        let mutable minLand = System.Single.MaxValue
+        let mutable maxLand = System.Single.MinValue
+        let mutable minWater = System.Single.MaxValue
+        let mutable maxWater = System.Single.MinValue
+        for z = 0 to h - 1 do
+            for x = 0 to w - 1 do
+                let v = data.[z, x]
+                if v >= 0.0f then
+                    if v < minLand then minLand <- v
+                    if v > maxLand then maxLand <- v
+                else
+                    if v < minWater then minWater <- v
+                    if v > maxWater then maxWater <- v
+        let mutable maxSlope = 0.0f
+        if slopeH > 0 && slopeW > 0 then
+            for sz = 0 to slopeH - 1 do
+                for sx = 0 to slopeW - 1 do
+                    let s = slope.[sz, sx]
+                    if s > maxSlope then maxSlope <- s
+        let landRange = maxLand - minLand
+        let waterRange = maxWater - minWater
+        let bmp = new SKBitmap(w, h, SKColorType.Rgba8888, SKAlphaType.Premul)
+        let pixels = Array.zeroCreate<byte> (w * h * 4)
+        for z = 0 to h - 1 do
+            for x = 0 to w - 1 do
+                let v = data.[z, x]
+                let struct (r0, g0, b0) =
+                    if v >= 0.0f then
+                        let t =
+                            if landRange > 0.0f then (v - minLand) / landRange
+                            else 0.5f
+                        brownLandRamp t
+                    else
+                        // Deeper (more negative) water = darker; shallow water = lighter.
+                        let t =
+                            if waterRange > 0.0f then (v - minWater) / waterRange
+                            else 0.5f
+                        blueWaterRamp t
+                // Slope lift — the SlopeMap is at half the heightmap resolution,
+                // so map (z, x) -> (z/2, x/2) and clamp to the slope array bounds.
+                let lift =
+                    if maxSlope > 0.0f && slopeH > 0 && slopeW > 0 then
+                        let sz = min (slopeH - 1) (z / 2)
+                        let sx = min (slopeW - 1) (x / 2)
+                        let norm = slope.[sz, sx] / maxSlope
+                        clamp01 norm * slopeLiftCeiling
+                    else
+                        0.0f
+                let liftChannel (c: byte) =
+                    let f = float32 c
+                    byte (f + (255.0f - f) * lift)
+                let i = (z * w + x) * 4
+                pixels.[i] <- liftChannel r0
+                pixels.[i + 1] <- liftChannel g0
+                pixels.[i + 2] <- liftChannel b0
+                pixels.[i + 3] <- 255uy
+        copyPixelsToBitmap pixels bmp
+        bmp
+
     let private renderTerrainClassification (grid: MapGrid) (scheme: ColorScheme) =
         let h = grid.HeightHeightmap
         let w = grid.WidthHeightmap
@@ -145,6 +240,7 @@ module LayerRenderer =
                 System.Threading.Interlocked.Increment(&misses) |> ignore
                 let bmp =
                     match layer with
+                    | LayerKind.BaseTerrain -> renderBaseTerrain grid
                     | LayerKind.HeightMap -> renderFloatArray grid.HeightMap scheme
                     | LayerKind.SlopeMap -> renderFloatArray grid.SlopeMap scheme
                     | LayerKind.ResourceMap -> renderIntArray grid.ResourceMap scheme

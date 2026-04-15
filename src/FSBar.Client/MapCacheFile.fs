@@ -27,6 +27,27 @@ module MapCacheFile =
             { Chokepoints.defaultChokepointQuery MoveType.Kbot with
                 MaxWidthElmos = 240.0f
                 SearchRadiusElmos = 5500.0f } }
+        { MapName = "Altair Crossing 4.1"
+          Sd7FileStem = "altair_crossing_v4.1"
+          BaseCentre = (500.0f, 0.0f, 500.0f)
+          ChokepointQuery =
+            { Chokepoints.defaultChokepointQuery MoveType.Kbot with
+                MaxWidthElmos = 240.0f
+                SearchRadiusElmos = 5500.0f } }
+        { MapName = "All That Glitters 2.2.3"
+          Sd7FileStem = "all_that_glitters_v2.2.3"
+          BaseCentre = (500.0f, 0.0f, 500.0f)
+          ChokepointQuery =
+            { Chokepoints.defaultChokepointQuery MoveType.Kbot with
+                MaxWidthElmos = 240.0f
+                SearchRadiusElmos = 5500.0f } }
+        { MapName = "Onyx Cauldron 2.2.2"
+          Sd7FileStem = "onyx_cauldron_2.2.2"
+          BaseCentre = (500.0f, 0.0f, 500.0f)
+          ChokepointQuery =
+            { Chokepoints.defaultChokepointQuery MoveType.Kbot with
+                MaxWidthElmos = 240.0f
+                SearchRadiusElmos = 5500.0f } }
     ]
 
     let tryFindSupportedMap (mapName: string) : SupportedMap option =

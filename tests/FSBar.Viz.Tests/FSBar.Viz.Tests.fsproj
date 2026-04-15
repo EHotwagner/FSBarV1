@@ -13,6 +13,10 @@
     <Compile Include="VizEngineFixture.fs" />
     <Compile Include="ColorMapsTests.fs" />
     <Compile Include="LayerRendererTests.fs" />
+    <Compile Include="BaseTerrainRenderingTests.fs" />
+    <Compile Include="MetalPulseSceneTests.fs" />
+    <Compile Include="LiveSessionSmokeTests.fs" />
+    <Compile Include="PreviewSessionCyclingTests.fs" />
     <Compile Include="MapDataTests.fs" />
     <Compile Include="MockSnapshotTests.fs" />
     <Compile Include="SceneBuilderTests.fs" />

@@ -23,15 +23,15 @@ module GameViz =
     let mutable private metalSpots: (float32 * float32 * float32 * float32) array = [||]
     let mutable private dragStart: (float32 * float32) option = None
     let mutable private dragOrigin: (float32 * float32) option = None
-    let mutable private autoFitDone = false
 
     let private computeAutoFit (grid: MapGrid) =
         let mapW = float32 grid.WidthHeightmap
         let mapH = float32 grid.HeightHeightmap
-        let scaleX = float32 viewState.WindowWidth / mapW
-        let scaleY = float32 viewState.WindowHeight / mapH
-        let scale = min scaleX scaleY
-        viewState <- { viewState with Scale = scale; OriginX = 0.0f; OriginY = 0.0f; AutoFit = false }
+        if mapW > 0.0f && mapH > 0.0f then
+            let scaleX = float32 viewState.WindowWidth / mapW
+            let scaleY = float32 viewState.WindowHeight / mapH
+            let scale = min scaleX scaleY
+            viewState <- { viewState with Scale = scale; OriginX = 0.0f; OriginY = 0.0f }
 
     let private buildSnapshot (grid: MapGrid) (frameNum: int) (connected: bool) (metalEcon: EconomyData) (energyEcon: EconomyData) =
         { FrameNumber = frameNum
@@ -53,6 +53,7 @@ module GameViz =
     let private processKey (key: Key) =
         lock stateLock (fun () ->
             match key with
+            | Key.B -> config <- { config with BaseLayer = LayerKind.BaseTerrain }
             | Key.Number1 -> config <- { config with BaseLayer = LayerKind.HeightMap }
             | Key.Number2 -> config <- { config with BaseLayer = LayerKind.SlopeMap }
             | Key.Number3 -> config <- { config with BaseLayer = LayerKind.ResourceMap }
@@ -105,14 +106,17 @@ module GameViz =
         | InputEvent.MouseUp _ ->
             lock stateLock (fun () -> dragStart <- None; dragOrigin <- None)
         | InputEvent.WindowResize(w, h) ->
-            lock stateLock (fun () -> viewState <- { viewState with WindowWidth = w; WindowHeight = h })
-        | InputEvent.FrameTick _ ->
             lock stateLock (fun () ->
-                if not autoFitDone then
+                viewState <- { viewState with WindowWidth = w; WindowHeight = h }
+                if viewState.AutoFit then
                     mapGridRef |> Option.iter (fun g ->
-                        if g.WidthHeightmap > 0 then
-                            computeAutoFit g
-                            autoFitDone <- true)
+                        if g.WidthHeightmap > 0 then computeAutoFit g))
+        | InputEvent.FrameTick elapsed ->
+            lock stateLock (fun () ->
+                SceneBuilder.updatePulsePhase elapsed
+                if viewState.AutoFit then
+                    mapGridRef |> Option.iter (fun g ->
+                        if g.WidthHeightmap > 0 then computeAutoFit g)
                 emitScene ())
         | _ -> ()
 
@@ -122,7 +126,6 @@ module GameViz =
             viewState <- VizDefaults.defaultViewState
             units <- Map.empty
             indicators <- []
-            autoFitDone <- false
             let evt = Event<Scene>()
             sceneEvent <- Some evt
             let viewerConfig: ViewerConfig =
@@ -151,7 +154,6 @@ module GameViz =
             clientRef <- None
             snapshot <- None
             metalSpots <- [||]
-            autoFitDone <- false
             LayerRenderer.invalidateAll ()
             eprintfn "[GameViz] Stopped")
 

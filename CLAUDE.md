@@ -46,6 +46,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-15
 - Filesystem only. Extended `bots/trainer/map-cache/<map>.json` carries a compressed MapGrid blob (heightmap + slope map + resource map + dimensions) alongside the existing chokepoint list — OR the bot inline re-parses `.sd7` via `SmfParser` at warmup, pending the Phase-0 R1 measurement decision. Bot run artifacts land under `bots/runs/` (gitignored, unchanged from 020/023/024). (025-macro-primitive-driven)
 - F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Client` (`MapGrid`, `SmfParser`, `Chokepoints`, `BasePlan`, `MapQuery`), BCL `System.IO.Compression` (already used for gzipped blobs), BCL `System.Text.Json` (already used by `14-cache-map-analysis.fsx`). **No new NuGet dependencies.** (026-permanent-map-cache)
 - Filesystem. Committed JSON files under `bots/trainer/map-cache/<safe-name>.json`, one per supported map. Each file is a self-describing record containing schema version, `codeVersion`, analysis parameters, source map identity, and gzip+base64 blobs for heightmap / slope map / resource map. Typical size 500 KB – 1 MB per map per the feature 025 notes; capped at ~1.5 MB/map and ~15 MB total by SC-005. (026-permanent-map-cache)
+- F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Client` (`MapCacheFile`, `MapGrid`, `MapQuery`), `FSBar.Viz` (`LayerRenderer`, `SceneBuilder`, `PreviewSession`, `GameViz`, `ColorMaps`, `VizTypes`), `SkiaViewer` 1.1.3-dev (`InputEvent.FrameTick`, `Scene`, `Shader.Image`), `SkiaSharp` 2.88.6, `xUnit 2.9.x`. **No new NuGet dependencies.** (027-map-terrain-viz)
+- Filesystem read-only — reads cached `bots/trainer/map-cache/<map>.json` files via `MapCacheFile.read`. No new on-disk formats. (027-map-terrain-viz)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -81,9 +83,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 027-map-terrain-viz: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Client` (`MapCacheFile`, `MapGrid`, `MapQuery`), `FSBar.Viz` (`LayerRenderer`, `SceneBuilder`, `PreviewSession`, `GameViz`, `ColorMaps`, `VizTypes`), `SkiaViewer` 1.1.3-dev (`InputEvent.FrameTick`, `Scene`, `Shader.Image`), `SkiaSharp` 2.88.6, `xUnit 2.9.x`. **No new NuGet dependencies.**
 - 026-permanent-map-cache: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Client` (`MapGrid`, `SmfParser`, `Chokepoints`, `BasePlan`, `MapQuery`), BCL `System.IO.Compression` (already used for gzipped blobs), BCL `System.Text.Json` (already used by `14-cache-map-analysis.fsx`). **No new NuGet dependencies.**
 - 025-macro-primitive-driven: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). Trainer bot script is `.fsx` loaded by `dotnet fsi`. + existing in-repo `FSBar.Client` (all 024 primitives: `Pathing`, `Chokepoints`, `BasePlan`, `WallIn`, `SmfParser`, plus pre-024 `Commands`, `Callbacks`, `GameState`, `MapGrid`, `UnitDefCache`, `Protocol`), `FSBar.Proto` (generated types incl. `Highbar.AICommand`), `BarData` (NuGet local feed, unit definitions), `xUnit 2.9.x` for Commands unit test. **No new NuGet dependencies.**
-- 024-tactical-map-primitives: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + existing in-repo `FSBar.Client` (`MapGrid`, `MapQuery`, `Callbacks`, `GameState`), `BarData` (NuGet local feed, unit definitions), `xUnit 2.9.x` for tests. **No new NuGet dependencies.** `bsdtar` (system tool, present on dev image via libarchive) is shelled out to extract `.sd7` → `.smf` at SMF-parser runtime.
 
 
 <!-- MANUAL ADDITIONS START -->
