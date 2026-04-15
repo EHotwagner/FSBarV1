@@ -1,88 +1,170 @@
 // Show every Armada unit at 50% health in a SkiaViewer window.
 // Usage (from repo root):
 //   dotnet fsi src/FSBar.Viz/scripts/armada-half-health.fsx
-// or load in the FSI MCP session.
+//
+// The script loads BarData, classifies every Armada unit into
+// (shape, tier, faction), constructs fully populated UnitDisplay
+// records, and drives `SkiaViewer.Viewer.run` directly. The scene is
+// rebuilt on every FrameTick so the front-facing alliance pip keeps
+// pulsing.
+//
+// Ctrl+C to exit.
 
-#load "prelude.fsx"
+open System
+open System.IO
+open System.Runtime.InteropServices
 
-open FSBar.Client
+let private repoRoot =
+    Path.GetFullPath(Path.Combine(__SOURCE_DIRECTORY__, "..", "..", ".."))
+
+let private testBin =
+    Path.Combine(repoRoot, "tests", "FSBar.Viz.Tests", "bin", "Debug", "net10.0")
+
+let private nativeDir =
+    Path.Combine(testBin, "runtimes", "linux-x64", "native")
+
+[<DllImport("libdl.so.2")>]
+extern nativeint dlopen(string filename, int flags)
+
+let private preloadNative () =
+    let _ = dlopen(Path.Combine(nativeDir, "libglfw.so.3"), 0x2 ||| 0x100)
+    let _ = dlopen(Path.Combine(nativeDir, "libSkiaSharp.so"), 0x2 ||| 0x100)
+    ()
+
+preloadNative ()
+
+#r "nuget: Silk.NET.Input.Common, 2.22.0"
+#r "../../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/BarData.dll"
+#r "../../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Proto.dll"
+#r "../../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Client.dll"
+#r "../../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.SyntheticData.dll"
+#r "../../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Viz.dll"
+#r "../../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/SkiaSharp.dll"
+#r "../../../tests/FSBar.Viz.Tests/bin/Debug/net10.0/SkiaViewer.dll"
+
 open FSBar.Viz
-open FSBar.SyntheticData
+open SkiaSharp
+open SkiaViewer
 
-let private armadaDefIds =
-    [ UnitDefs.ArmCommander
-      UnitDefs.ArmMex
-      UnitDefs.ArmSolar
-      UnitDefs.ArmWind
-      UnitDefs.ArmLab
-      UnitDefs.ArmPeewee
-      UnitDefs.ArmFlash
-      UnitDefs.ArmRockko
-      UnitDefs.ArmSamson
-      UnitDefs.ArmFark
-      UnitDefs.ArmAdvLab
-      UnitDefs.ArmZeus
-      UnitDefs.ArmAnni
-      UnitDefs.ArmStorage ]
+// --- data ------------------------------------------------------------------
 
-let mapWidth = 2048.0f
-let mapHeight = 2048.0f
-let cache = UnitDefs.sceneC
+let private defaultStatus : StatusFlags =
+    { IsUnderConstruction = false
+      IsStunned = false
+      JustDamagedWithinMs = None
+      JustCompletedWithinMs = None
+      IsCloaked = false }
 
-let private cols = 5
-let private spacing = 300.0f
-let private originX = 400.0f
-let private originZ = 400.0f
+let private shapeOf (d: BarData.UnitDef) =
+    let canMove = match d.movement with Some m -> m.canMove | None -> false
+    let canFly = match d.movement with Some m -> m.canFly | None -> false
+    let mClass = match d.movement with Some m -> m.movementClass | None -> None
+    UnitGlyph.classifyShape canMove canFly mClass ignore
 
-let private mkUnit (index: int) (defId: int) : int * UnitState =
-    let col = index % cols
-    let row = index / cols
-    let x = originX + float32 col * spacing
-    let z = originZ + float32 row * spacing
-    let maxHp = UnitDefs.maxHealthFor defId cache
-    let unit =
-        { UnitId = index + 1
-          PositionX = x
-          PositionY = 0.0f
-          PositionZ = z
-          TeamId = 0
-          DefId = defId
-          Health = maxHp * 0.5f
-          MaxHealth = maxHp
-          IsEnemy = false }
-    unit.UnitId, unit
+let private armadaDefs =
+    BarData.AllUnitDefs.all
+    |> List.map (fun (_, _, d) -> d)
+    |> List.filter (fun d ->
+        UnitGlyph.classifyFaction d.subfolder d.name ignore = FactionId.Armada)
+    |> List.sortBy (fun d ->
+        let t =
+            match UnitGlyph.classifyTier d.customParams d.category ignore with
+            | Tier.T1 -> 1
+            | Tier.T2 -> 2
+            | Tier.T3 -> 3
+        t, d.name)
 
-let units = armadaDefIds |> List.mapi mkUnit |> Map.ofList
+// 24x12 grid on a 1200x800 window.
+let private cols = 24
+let private cellW = 50.0f
+let private cellH = 66.0f
+let private originPx = 25.0f
+let private originPy = 40.0f
 
-let w = int mapWidth / 8
-let h = int mapHeight / 8
-let grid : MapGrid =
-    { WidthElmos = int mapWidth
-      HeightElmos = int mapHeight
-      WidthHeightmap = w
-      HeightHeightmap = h
-      HeightMap = Array2D.zeroCreate (h + 1) (w + 1)
-      SlopeMap = Array2D.zeroCreate (h / 2) (w / 2)
-      ResourceMap = Array2D.zeroCreate h w
-      LosMap = Array2D.create h w 1
-      RadarMap = Array2D.create h w 1 }
+let private mkDisplay (i: int) (d: BarData.UnitDef) : UnitDisplay =
+    let col = i % cols
+    let row = i / cols
+    let pxX = originPx + float32 col * cellW
+    let pxY = originPy + float32 row * cellH
+    let shape = shapeOf d
+    let tier = UnitGlyph.classifyTier d.customParams d.category ignore
+    let faction = UnitGlyph.classifyFaction d.subfolder d.name ignore
+    let label = UnitLabels.lookupOrFallback d.name
+    let hp =
+        match d.health with
+        | BarData.ValueOrExpr.Concrete v -> float32 v
+        | _ -> 100.0f
+    { UnitId = i + 1
+      DefId = i + 1
+      InternalName = d.name
+      Shape = shape
+      Faction = faction
+      Tier = tier
+      LabelCode = label
+      FootprintWidthElmo = float32 d.footprintX * 16.0f
+      FootprintHeightElmo = float32 d.footprintZ * 16.0f
+      TeamId = 0
+      PositionX = pxX * 8.0f
+      PositionY = 0.0f
+      PositionZ = pxY * 8.0f
+      HeadingRadians = -float32 Math.PI / 2.0f
+      CurrentHealth = hp * 0.5f
+      MaxHealth = hp
+      BuildProgress = 1.0f
+      Status = defaultStatus
+      WeaponRangesElmo = []
+      SightRangeElmo = 0.0f
+      BuildRangeElmo = None
+      CommandQueue = [] }
 
-let zeroEcon : EconomyData =
-    { Current = 0.0f; Income = 0.0f; Usage = 0.0f; Storage = 1000.0f }
+let private displays = armadaDefs |> List.mapi mkDisplay
 
-let snapshot : GameSnapshot =
-    { FrameNumber = 0
-      MapGrid = grid
-      Units = units
-      EventIndicators = []
-      EconomyMetal = zeroEcon
-      EconomyEnergy = zeroEcon
-      MetalSpots = [||]
-      Connected = true }
+// --- style -----------------------------------------------------------------
 
-printfn "Showing %d Armada units at 50%% health." (Map.count units)
-for (_, u) in Map.toList units do
-    printfn "  def=%2d  hp=%6.0f / %6.0f  pos=(%.0f, %.0f)"
-        u.DefId u.Health u.MaxHealth u.PositionX u.PositionZ
+let private demoStyle : UnitGlyphStyle =
+    let baseStyle = VizDefaults.defaultConfig.GlyphStyle
+    { baseStyle with
+        MinPixelRadius = 16.0f
+        LabelFontSizePx = 10.0f
+        HpArcWidth = 2.0f
+        FacingPipRadius = 3.0f
+        // Demo alliance colour for Team 0 — a distinct cyan so the pip
+        // stands out against the faction-coloured outline.
+        TeamPalette =
+            { baseStyle.TeamPalette with
+                ByTeamId = Map.ofList [ 0, SKColor(80uy, 220uy, 255uy) ] } }
 
-let session = PreviewSession.startWithSnapshot snapshot
+// --- viewer ----------------------------------------------------------------
+
+let private ground = SKColor(30uy, 30uy, 34uy)
+
+let private buildScene () : Scene =
+    let els = UnitGlyph.buildUnitsGlyph displays demoStyle Set.empty
+    let bg = Scene.rect 0.0f 0.0f 1200.0f 800.0f (Scene.fill ground)
+    Scene.create ground (bg :: els)
+
+let private sceneEvt = Event<Scene>()
+
+let private viewerCfg : ViewerConfig =
+    { Title = "Armada @ 50%"
+      Width = 1200
+      Height = 800
+      TargetFps = 60
+      ClearColor = ground
+      PreferredBackend = Some Backend.GL }
+
+let private handle, inputs = Viewer.run viewerCfg sceneEvt.Publish
+
+// Rebuild per FrameTick so the pulsing alliance pip actually animates.
+let private frameSub =
+    inputs
+    |> Observable.subscribe (fun evt ->
+        match evt with
+        | InputEvent.FrameTick _ -> sceneEvt.Trigger (buildScene ())
+        | _ -> ())
+
+sceneEvt.Trigger (buildScene ())
+printfn "Showing %d Armada units at 50%% HP. Ctrl+C to exit." displays.Length
+
+// Block so the script (and therefore the viewer window) stays alive.
+System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite)

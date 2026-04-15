@@ -334,7 +334,11 @@ module UnitGlyph =
             else teamColor
 
         let fillPaint = Scene.fill (applyAlpha effectiveFill fillAlpha)
-        let strokePaint = Scene.stroke strokeColor strokeWidth
+        // Faction outline matches the damage-stroke width so the two read
+        // as equals — a heavily damaged unit looks like its outline is
+        // changing colour rather than picking up a thin red highlight.
+        let outlineStrokeWidth = strokeWidth + style.HpArcWidth
+        let strokePaint = Scene.stroke strokeColor outlineStrokeWidth
 
         // Under-construction extra marker (small dashed hint) — a short line
         // inside the shape to distinguish from an operational unit.
@@ -353,25 +357,39 @@ module UnitGlyph =
         let bodyFillElement = Scene.path shapeCmds fillPaint
         let bodyOutlineElement = Scene.path shapeCmds strokePaint
 
-        // HP indicator — red stroke along the back half of the unit's
-        // outline. `PathEffect.Trim` keeps only the sub-segment
-        // `[0.5 − 0.25·frac, 0.5 + 0.25·frac]` of the path, centered on the
-        // back midpoint (fraction 0.5). At full HP this is the whole back
-        // half of the perimeter; at 0 HP the window collapses to a point.
+        // Damage indicator — red stroke along the back half of the unit's
+        // outline, growing as the unit takes damage. `PathEffect.Trim`
+        // keeps only the sub-segment
+        // `[0.5 − 0.25·damage, 0.5 + 0.25·damage]` of the path, centered
+        // on the back midpoint (fraction 0.5). At full HP `damage = 0`
+        // and no stroke is emitted; at zero HP `damage = 1` and the
+        // entire back half of the perimeter is red.
         let hpStrokeElement =
             if unit'.MaxHealth <= 0.0f then None
             else
-                let frac = clamp01 (unit'.CurrentHealth / unit'.MaxHealth)
-                if frac <= 0.0f then None
+                let health = clamp01 (unit'.CurrentHealth / unit'.MaxHealth)
+                let damage = 1.0f - health
+                if damage <= 0.0f then None
                 else
-                    let hpColor = SKColor(230uy, 50uy, 50uy)
-                    let baseHp = Scene.stroke hpColor (strokeWidth + style.HpArcWidth)
+                    // Damage stroke colour is pure white so it contrasts
+                    // against every faction outline — dark red blends into
+                    // Armada's fuchsia, orange blends with Cortex, etc.
+                    // The alpha pulses with the same clock as the facing
+                    // pip (1 s period); the oscillation amplitude scales
+                    // with `damage`, so a lightly-grazed unit shows a
+                    // steady stripe while a near-dead unit flashes hard.
+                    let t =
+                        float32 (DateTime.UtcNow.Ticks % 10_000_000L) / 10_000_000.0f
+                    let pulse = 0.5f + 0.5f * cos (t * 2.0f * float32 Math.PI)
+                    let alpha = byte (int (255.0f - 200.0f * damage * pulse))
+                    let hpColor = SKColor(255uy, 255uy, 255uy, alpha)
+                    let baseHp = Scene.stroke hpColor outlineStrokeWidth
                     let hpPaint =
                         { baseHp with
                             PathEffect =
                                 Some (PathEffect.Trim(
-                                        0.5f - 0.25f * frac,
-                                        0.5f + 0.25f * frac,
+                                        0.5f - 0.25f * damage,
+                                        0.5f + 0.25f * damage,
                                         TrimMode.Normal))
                             StrokeCap = StrokeCap.Round }
                     Some (Scene.path shapeCmds hpPaint)
@@ -388,8 +406,9 @@ module UnitGlyph =
         let rotatedShape =
             Scene.rotate headingDeg mx mz shapeChildren
 
-        // Facing pip — white, pulsing, drawn outside the shape in the
-        // direction of travel.
+        // Facing pip — alliance (team) coloured, pulsing, drawn outside the
+        // shape in the direction of travel. Defaults to the team palette's
+        // Fallback colour when no per-team entry is configured.
         let pip =
             let pipR = style.FacingPipRadius
             let offset = r + pipR * 2.0f
@@ -399,18 +418,15 @@ module UnitGlyph =
                 float32 (DateTime.UtcNow.Ticks % 10_000_000L) / 10_000_000.0f
             let pulse = 0.5f + 0.5f * cos (t * 2.0f * float32 Math.PI)
             let alpha = byte (int (110.0f + 145.0f * pulse))
-            let pipPaint = Scene.fill (SKColor(255uy, 255uy, 255uy, alpha))
+            let allianceColor = teamFillColor style unit'.TeamId
+            let pipPaint =
+                Scene.fill (
+                    SKColor(allianceColor.Red, allianceColor.Green, allianceColor.Blue, alpha))
             Scene.ellipse px pz pipR pipR pipPaint
 
-        // Low-HP tint overlay (FR-010 — noise deferred, tint-only for MVP).
-        let lowHpTint =
-            if unit'.MaxHealth <= 0.0f then []
-            else
-                let frac = clamp01 (unit'.CurrentHealth / unit'.MaxHealth)
-                if frac >= style.LowHpFraction then []
-                else
-                    let tint = SKColor(255uy, 40uy, 40uy, 80uy)
-                    [ bodyPrimitive unit'.Shape mx mz r (Scene.fill tint) ]
+        // The red damage stroke now doubles as the low-HP alert, so the
+        // redundant body-tint overlay from the earlier design is dropped.
+        let lowHpTint : Element list = []
 
         // Label text centered inside the shape. Fallback via UnitLabels
         // lookup when `LabelCode` was not populated by the data source.

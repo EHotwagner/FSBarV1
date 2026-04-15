@@ -22,12 +22,27 @@ let barDataVersion = "1.0.3"
 // all 953 entries). See research.md R1 and the agent reflection output in
 // session logs.
 
-let names : string list =
-    BarData.AllUnitDefs.all
-    |> List.map (fun (_, _, (def: BarData.UnitDef)) -> def.name)
-    |> List.distinct
-    |> List.sort
+open FSBar.Viz
 
+// Each item carries the shape and faction we'll render it as so the
+// generator can uniquify labels per (shape, faction) bucket rather than
+// globally. Everything else — stroke colour, shape — already
+// distinguishes duplicates across buckets.
+let private itemOf (def: BarData.UnitDef) : string * MovementShape * FactionId =
+    let canMove = match def.movement with Some m -> m.canMove | None -> false
+    let canFly = match def.movement with Some m -> m.canFly | None -> false
+    let mClass = match def.movement with Some m -> m.movementClass | None -> None
+    let shape = UnitGlyph.classifyShape canMove canFly mClass ignore
+    let faction = UnitGlyph.classifyFaction def.subfolder def.name ignore
+    def.name, shape, faction
+
+let items : (string * MovementShape * FactionId) list =
+    BarData.AllUnitDefs.all
+    |> List.map (fun (_, _, def) -> itemOf def)
+    |> List.distinctBy (fun (n, _, _) -> n)
+    |> List.sortBy (fun (n, _, _) -> n)
+
+let names = items |> List.map (fun (n, _, _) -> n)
 printfn "Loaded %d unit names from BarData %s" (List.length names) barDataVersion
 
 // ---------------------------------------------------------------------------
@@ -71,14 +86,14 @@ printfn "Loaded %d previous labels from %s" (Map.count previous) outPath
 // ---------------------------------------------------------------------------
 // Generate.
 
-let labels = FSBar.Viz.UnitLabelsGenerator.generate names (Some previous)
+let labels = FSBar.Viz.UnitLabelsGenerator.generate items (Some previous)
 printfn "Generated %d labels" (Map.count labels)
 
-// Count 2-char vs 3-char rate.
-let twoChar =
-    labels |> Map.toList |> List.filter (fun (_, v) -> v.Length = 2) |> List.length
-let twoCharRate = float twoChar / float (Map.count labels)
-printfn "2-char rate: %.1f%% (%d / %d)" (twoCharRate * 100.0) twoChar (Map.count labels)
+// Rate: how many labels are a single glyph.
+let oneChar =
+    labels |> Map.toList |> List.filter (fun (_, v) -> v.Length = 1) |> List.length
+let oneCharRate = float oneChar / float (Map.count labels)
+printfn "1-char rate: %.1f%% (%d / %d)" (oneCharRate * 100.0) oneChar (Map.count labels)
 
 // Stability check.
 let preserved =

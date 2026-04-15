@@ -4,13 +4,18 @@ open SkiaSharp
 
 module UnitGlyphPalettes =
 
+    // Vivid factional palette. Avoid blue (reserved for water) and
+    // brown (reserved for ground). Team / alliance colours are separate
+    // and vary per match, so the faction palette sticks to five widely
+    // separated hues that read cleanly on both dark and light
+    // backgrounds.
     let defaultFactionPalette : FactionPalette =
-        { Armada     = SKColor(120uy, 180uy, 255uy)
-          Cortex     = SKColor(255uy, 120uy,  80uy)
-          Legion     = SKColor(180uy, 255uy, 120uy)
-          Raptors    = SKColor(255uy, 200uy,  40uy)
-          Scavengers = SKColor(200uy,  80uy, 220uy)
-          Neutral    = SKColor(180uy, 180uy, 180uy) }
+        { Armada     = SKColor(255uy,  64uy, 176uy)  // fuchsia / hot pink
+          Cortex     = SKColor(255uy, 120uy,  32uy)  // pure orange
+          Legion     = SKColor( 64uy, 240uy,  64uy)  // lime green
+          Raptors    = SKColor(255uy, 220uy,  32uy)  // saturated yellow
+          Scavengers = SKColor(176uy,  64uy, 255uy)  // vivid violet
+          Neutral    = SKColor(170uy, 170uy, 170uy) }
 
     let defaultTeamPalette : TeamPalette =
         { ByTeamId = Map.empty
@@ -20,9 +25,9 @@ module UnitGlyphPalettes =
         { FactionPalette = defaultFactionPalette
           TeamPalette = defaultTeamPalette
           MinPixelRadius = 4.0f
-          T1StrokeWidth = 1.0f
-          T2StrokeWidth = 2.0f
-          T3StrokeWidth = 3.0f
+          T1StrokeWidth = 2.0f
+          T2StrokeWidth = 3.5f
+          T3StrokeWidth = 5.0f
           FacingPipRadius = 1.5f
           HpArcWidth = 1.5f
           LowHpFraction = 0.25f

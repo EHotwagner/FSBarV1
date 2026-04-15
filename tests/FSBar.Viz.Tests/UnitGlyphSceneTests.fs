@@ -71,23 +71,23 @@ let ``buildUnitsGlyph: every unit contributes at least one primitive`` () =
         $"Expected >= {List.length units} primitives, got {List.length primitives}")
 
 [<Fact>]
-let ``buildUnit: HP stroke drops out when a unit is dead`` () =
+let ``buildUnit: damage stroke drops out when a unit is at full HP`` () =
     UnitGlyph.resetSession()
     let full = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 1.0f 1.0f 0.0f defaultStatus
-    let dead = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 0.0f 1.0f 0.0f defaultStatus
-    // The HP indicator is drawn along the back half of the unit outline and
+    let damaged = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 0.4f 1.0f 0.0f defaultStatus
+    // The damage indicator traces the back half of the unit outline and
     // lives inside the first element (a rotated Group containing body,
-    // outline, and — when HP > 0 — the red trimmed HP stroke). Unwrap the
-    // group to count children rather than top-level primitives.
+    // outline, and — when damage > 0 — the red trimmed damage stroke).
+    // Unwrap the group to count children rather than top-level primitives.
     let groupChildCount (els: Element list) =
         match els with
         | Element.Group(_, _, _, children) :: _ -> List.length children
         | _ -> 0
     let fullChildren = UnitGlyph.buildUnit full style [] |> groupChildCount
-    let deadChildren = UnitGlyph.buildUnit dead style [] |> groupChildCount
+    let damagedChildren = UnitGlyph.buildUnit damaged style [] |> groupChildCount
     Assert.True(
-        fullChildren > deadChildren,
-        $"Live unit's shape group should contain more children than a dead one ({fullChildren} vs {deadChildren})")
+        damagedChildren > fullChildren,
+        $"Damaged unit's shape group should contain more children than a full-HP one ({damagedChildren} vs {fullChildren})")
 
 // T018 ---------------------------------------------------------------------
 
