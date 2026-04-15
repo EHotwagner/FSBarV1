@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>FSBar.Viz</RootNamespace>
     <PackageId>FSBar.Viz</PackageId>
-    <VersionPrefix>0.2.10</VersionPrefix>
+    <VersionPrefix>0.2.11</VersionPrefix>
     <Description>In-process 2D map visualization for FSBar game sessions using declarative SkiaViewer Scene API</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
