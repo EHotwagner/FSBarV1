@@ -49,6 +49,8 @@
     <Compile Include="WallIn.fs" />
     <Compile Include="BasePlan.fsi" />
     <Compile Include="BasePlan.fs" />
+    <Compile Include="MapCacheFile.fsi" />
+    <Compile Include="MapCacheFile.fs" />
   </ItemGroup>
 
   <ItemGroup>

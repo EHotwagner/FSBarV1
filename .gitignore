@@ -21,6 +21,6 @@ tmp/
 # Trainer run artifacts (feature 020-bot-iterative-trainer)
 bots/runs/
 
-# Trainer map cache — generated artifacts, re-bake via
-# scripts/examples/14-cache-map-analysis.fsx (feature 025-macro-primitive-driven)
-bots/trainer/map-cache/*.json
+# Trainer map cache — committed artifacts (feature 026-permanent-map-cache).
+# Cache .json files are now tracked; refresh them via bots/trainer/map-cache/refresh-all.sh
+# after bumping MapCacheFile.codeVersion.

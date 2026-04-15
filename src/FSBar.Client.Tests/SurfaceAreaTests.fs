@@ -49,6 +49,7 @@ let private lineDiff (expected: string) (actual: string) =
 [<InlineData("EngineLauncher")>]
 [<InlineData("Events")>]
 [<InlineData("MapCache")>]
+[<InlineData("MapCacheFile")>]
 [<InlineData("MapGrid")>]
 [<InlineData("MapQuery")>]
 [<InlineData("Pathing")>]

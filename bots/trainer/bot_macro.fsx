@@ -406,94 +406,6 @@ let private emitWaypointCommands
                 yield MoveCommandQueued uid wx wy wz
             yield MoveCommandQueued uid tx ty tz ]
 
-/// 025 FR-014 reader: decompress a base64-gzipped 4-bytes-per-cell
-/// payload into an array of the declared row/col shape. Hard-fails on
-/// truncation or size mismatch — the warmup handler translates that
-/// into either a target-set hard-fail or a non-target-set degrade.
-let private base64GzipToBytes (b64: string) (expectedBytes: int) : byte[] =
-    let compressed = Convert.FromBase64String b64
-    use ms = new MemoryStream(compressed)
-    use gz = new GZipStream(ms, CompressionMode.Decompress)
-    let bytes = Array.zeroCreate<byte> expectedBytes
-    let mutable off = 0
-    while off < expectedBytes do
-        let n = gz.Read(bytes, off, expectedBytes - off)
-        if n = 0 then
-            failwithf "gzip stream truncated: got %d, expected %d" off expectedBytes
-        off <- off + n
-    bytes
-
-// Row-major 4-byte-per-cell deserialisation is the dominant warmup cost
-// by cell count (~700k cells across heightMap + slopeMap + resourceMap).
-// Per-cell BitConverter calls are slow enough to blow the FR-015 100 ms
-// warmup budget 5x over (measured 481 ms → stalls the engine-proxy
-// socket and trips FR-017). Array2D<'T> is backed by a contiguous flat
-// buffer, so Buffer.BlockCopy can move raw bytes into it in one shot.
-
-let private readFloat32Array2D (b64: string) (rows: int) (cols: int) : float32[,] =
-    let expected = rows * cols * 4
-    let bytes = base64GzipToBytes b64 expected
-    let result = Array2D.zeroCreate<float32> rows cols
-    Buffer.BlockCopy(bytes, 0, result, 0, expected)
-    result
-
-let private readInt32Array2D (b64: string) (rows: int) (cols: int) : int[,] =
-    let expected = rows * cols * 4
-    let bytes = base64GzipToBytes b64 expected
-    let result = Array2D.zeroCreate<int> rows cols
-    Buffer.BlockCopy(bytes, 0, result, 0, expected)
-    result
-
-/// 025 FR-014: reader for the mapGrid block in the extended
-/// map-cache schema (schemaVersion=1). Returns Some MapGrid when the
-/// cache file exists AND contains a v1 mapGrid block; returns None
-/// when the file is missing OR the mapGrid block is absent (the two
-/// cache-miss cases are indistinguishable at this layer and treated
-/// uniformly by the warmup handler). Hard-fails via failwithf on
-/// schema-version mismatch, dimension mismatch, or gzip truncation.
-let mapGridCacheLoad (fullPath: string) : MapGrid option =
-    if not (File.Exists fullPath) then None
-    else
-        let json = File.ReadAllText fullPath
-        use doc = JsonDocument.Parse(json)
-        let root = doc.RootElement
-        let mutable mg = Unchecked.defaultof<JsonElement>
-        if not (root.TryGetProperty("mapGrid", &mg)) then None
-        else
-            let schemaVersion = mg.GetProperty("schemaVersion").GetInt32()
-            if schemaVersion <> 1 then
-                failwithf "mapGrid.schemaVersion=%d not supported by this bot (expected 1)" schemaVersion
-            let we = mg.GetProperty("widthElmos").GetInt32()
-            let he = mg.GetProperty("heightElmos").GetInt32()
-            let wh = mg.GetProperty("widthHeightmap").GetInt32()
-            let hh = mg.GetProperty("heightHeightmap").GetInt32()
-            let hmRows = mg.GetProperty("heightMap.rows").GetInt32()
-            let hmCols = mg.GetProperty("heightMap.cols").GetInt32()
-            let smRows = mg.GetProperty("slopeMap.rows").GetInt32()
-            let smCols = mg.GetProperty("slopeMap.cols").GetInt32()
-            let rmRows = mg.GetProperty("resourceMap.rows").GetInt32()
-            let rmCols = mg.GetProperty("resourceMap.cols").GetInt32()
-            // Sanity checks against the 024/025 toMapGrid conventions.
-            if hmRows <> wh + 1 || hmCols <> hh + 1 then
-                failwithf "heightMap dimensions mismatch: got %dx%d, expected %dx%d" hmRows hmCols (wh + 1) (hh + 1)
-            if smRows <> wh / 2 || smCols <> hh / 2 then
-                failwithf "slopeMap dimensions mismatch: got %dx%d, expected %dx%d" smRows smCols (wh / 2) (hh / 2)
-            if rmRows <> wh || rmCols <> hh then
-                failwithf "resourceMap dimensions mismatch: got %dx%d, expected %dx%d" rmRows rmCols wh hh
-            let heightMap = readFloat32Array2D (mg.GetProperty("heightMap.gzip.b64").GetString()) hmRows hmCols
-            let slopeMap = readFloat32Array2D (mg.GetProperty("slopeMap.gzip.b64").GetString()) smRows smCols
-            let resourceMap = readInt32Array2D (mg.GetProperty("resourceMap.gzip.b64").GetString()) rmRows rmCols
-            Some
-                { WidthElmos = we
-                  HeightElmos = he
-                  WidthHeightmap = wh
-                  HeightHeightmap = hh
-                  HeightMap = heightMap
-                  SlopeMap = slopeMap
-                  ResourceMap = resourceMap
-                  LosMap = Array2D.zeroCreate wh hh
-                  RadarMap = Array2D.zeroCreate wh hh }
-
 let tacticsFn : TrainerTacticsFn =
     fun client frame commanderIdOpt ->
         match commanderIdOpt with
@@ -1198,65 +1110,49 @@ try
         // trace at > 100 ms; hard invariants live elsewhere.
         let warmupSw = Stopwatch.StartNew()
         try
-            let safeName =
-                // Mirror scripts/examples/14-cache-map-analysis.fsx's sanitise:
-                // lowercase + non-alphanum-or-dot → '_'. Keeping the two in
-                // sync is important — a mismatch means the runtime warmup
-                // silently falls through to the "no cache" branch.
-                mapName.ToLowerInvariant()
-                |> Seq.map (fun c ->
-                    if Char.IsLetterOrDigit(c) || c = '.' then c else '_')
-                |> Seq.toArray
-                |> System.String
-            let cachePath =
-                Path.Combine(Path.GetDirectoryName(botScript), "map-cache", safeName + ".json")
-            let fullCachePath =
-                if File.Exists cachePath then cachePath
-                else Path.Combine(Directory.GetCurrentDirectory(), "bots", "trainer", "map-cache", safeName + ".json")
-            if File.Exists fullCachePath then
-                let json = File.ReadAllText(fullCachePath)
-                use doc = JsonDocument.Parse(json)
-                let root = doc.RootElement
-                let cps =
-                    root.GetProperty("chokepoints").EnumerateArray()
-                    |> Seq.map (fun el ->
-                        let pos =
-                            (el.GetProperty("position.x").GetSingle(),
-                             el.GetProperty("position.y").GetSingle(),
-                             el.GetProperty("position.z").GetSingle())
-                        let outX = el.GetProperty("outwardDir.x").GetSingle()
-                        let outZ = el.GetProperty("outwardDir.z").GetSingle()
-                        { Id = ChokepointId (el.GetProperty("id").GetUInt32())
-                          Position = pos
-                          WidthElmos = el.GetProperty("widthElmos").GetSingle()
-                          OutwardDir = (outX, outZ)
-                          DistanceFromBase = el.GetProperty("distanceFromBase").GetSingle() })
-                    |> Seq.toList
-                pinnedChokepoints <- cps
-                printfn "[chokepoint] loaded %d chokepoints from cache %s" cps.Length fullCachePath
-                for cp in cps |> List.truncate 5 do
-                    let (px, _, pz) = cp.Position
-                    printfn "[chokepoint] pos=(%.0f,%.0f) width=%.0f id=%A distFromBase=%.0f"
-                        px pz cp.WidthElmos cp.Id cp.DistanceFromBase
-            else
-                printfn "[chokepoint] no cache at %s — run scripts/examples/14-cache-map-analysis.fsx '%s'"
-                    fullCachePath mapName
-
-            // 025 US4 / FR-014: load real MapGrid from the extended cache.
-            // Target-set maps (currently Avalanche 3.4) hard-fail warmup on
-            // cache miss; other maps degrade to the 024 synthetic skeleton
-            // with a loud [cache-miss] WARN trace.
+            // 026: permanent committed cache path — look up the SupportedMap,
+            // resolve the canonical cachePathFor, delegate parsing to
+            // FSBar.Client.MapCacheFile. Hard-abort with formatLoadError on
+            // any validation failure (FR-006).
+            let repoRoot =
+                // Prefer walking up from botScript; fall back to cwd if that
+                // path isn't a descendant of the repo.
+                let start =
+                    try Path.GetFullPath(Path.GetDirectoryName(botScript))
+                    with _ -> Directory.GetCurrentDirectory()
+                let rec climb (d: string) =
+                    if isNull d then Directory.GetCurrentDirectory()
+                    elif File.Exists(Path.Combine(d, "pack-dev.sh")) then d
+                    else climb (Path.GetDirectoryName d)
+                climb start
             let planMapGrid : MapGrid =
-                match mapGridCacheLoad fullCachePath with
-                | Some grid ->
-                    printfn "[mapgrid] loaded from cache %dx%d heightMap slopeMap resourceMap"
-                        grid.WidthHeightmap grid.HeightHeightmap
-                    grid
+                match MapCacheFile.tryFindSupportedMap mapName with
+                | Some supported ->
+                    let path = MapCacheFile.cachePathFor repoRoot supported
+                    let sw = Stopwatch.StartNew()
+                    match MapCacheFile.read supported path with
+                    | Result.Ok loaded ->
+                        sw.Stop()
+                        printfn "[mapcache] loaded %s in %dms (codeVersion=%d)"
+                            path sw.ElapsedMilliseconds MapCacheFile.codeVersion
+                        pinnedChokepoints <- loaded.Chokepoints
+                        printfn "[chokepoint] loaded %d chokepoints from cache %s"
+                            loaded.Chokepoints.Length path
+                        for cp in loaded.Chokepoints |> List.truncate 5 do
+                            let (px, _, pz) = cp.Position
+                            printfn "[chokepoint] pos=(%.0f,%.0f) width=%.0f id=%A distFromBase=%.0f"
+                                px pz cp.WidthElmos cp.Id cp.DistanceFromBase
+                        printfn "[mapgrid] loaded from cache %dx%d heightMap slopeMap resourceMap"
+                            loaded.Grid.WidthHeightmap loaded.Grid.HeightHeightmap
+                        loaded.Grid
+                    | Result.Error err ->
+                        failwith (MapCacheFile.formatLoadError err)
                 | None when Set.contains mapName mapTargetSet ->
-                    failwithf "[warmup] no MapGrid in cache at %s — run scripts/examples/14-cache-map-analysis.fsx '%s'"
-                        fullCachePath mapName
+                    failwithf "[warmup] map \"%s\" is in mapTargetSet but not in MapCacheFile.supportedMaps"
+                        mapName
                 | None ->
-                    printfn "[cache-miss] WARN: US1/US2 will behave like 024 partial — run 14-cache-map-analysis.fsx"
+                    printfn "[cache-miss] WARN: map \"%s\" not in MapCacheFile.supportedMaps — synthesising skeleton"
+                        mapName
                     let w = Callbacks.getMapWidth client.Stream
                     let h = Callbacks.getMapHeight client.Stream
                     { WidthElmos = w * 8

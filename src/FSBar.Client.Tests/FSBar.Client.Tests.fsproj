@@ -28,6 +28,11 @@
     <Compile Include="BarClientTests.fs" />
     <Compile Include="TrainerStallHelper.fs" />
     <Compile Include="TrainerStallTests.fs" />
+    <Compile Include="MapCacheFileRoundtripTests.fs" />
+    <Compile Include="MapCacheFileIntegrationTests.fs" />
+    <Compile Include="MapCacheFileVersionTests.fs" />
+    <Compile Include="MapCacheFileCorruptionTests.fs" />
+    <Compile Include="MapCacheFileDeterminismTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>
 
