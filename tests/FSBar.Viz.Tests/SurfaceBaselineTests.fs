@@ -14,7 +14,11 @@ let private moduleHasMember (moduleType: Type) (memberName: string) =
 
 let private getModuleType (assemblyQualifiedTypeName: string) =
     let asm = typeof<LayerKind>.Assembly
-    asm.GetType(assemblyQualifiedTypeName)
+    // When a module shares a name with a type in the same namespace, F#
+    // appends "Module" to the module's CLR name. Try both forms.
+    match asm.GetType(assemblyQualifiedTypeName + "Module") with
+    | null -> asm.GetType(assemblyQualifiedTypeName)
+    | t -> t
 
 // ---- VizTypes ----
 
@@ -190,6 +194,8 @@ let ``GameViz module has expected members`` () =
     Assert.True(moduleHasMember t "disableOverlay")
     Assert.True(moduleHasMember t "setConfig")
     Assert.True(moduleHasMember t "updateConfig")
+    Assert.True(moduleHasMember t "toggleConfigPanel")
+    Assert.True(moduleHasMember t "isConfigPanelOpen")
 
 // ---- LiveSession ----
 
@@ -208,6 +214,125 @@ let ``LiveSessionHandle type has expected members`` () =
     Assert.NotNull(t.GetProperty("FrameCount"))
     Assert.NotNull(t.GetProperty("IsRunning"))
     Assert.NotNull(t.GetProperty("LastError"))
+
+// ---- ConfigDescriptors (feature 033-viz-style-configurator) ----
+
+[<Fact>]
+let ``ConfigDescriptors module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.ConfigDescriptors"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "all")
+    Assert.True(moduleHasMember t "tryFind")
+    Assert.True(moduleHasMember t "applyValues")
+    Assert.True(moduleHasMember t "extractValues")
+    Assert.True(moduleHasMember t "isDirty")
+    Assert.True(moduleHasMember t "categoryLabel")
+    Assert.True(moduleHasMember t "categoryOrder")
+
+[<Fact>]
+let ``InputKind type exists with expected cases`` () =
+    let t = typeof<InputKind>
+    Assert.True(Reflection.FSharpType.IsUnion(t))
+    let names = Reflection.FSharpType.GetUnionCases(t) |> Array.map (fun c -> c.Name)
+    Assert.Contains("ColorPicker", names)
+    Assert.Contains("Slider", names)
+    Assert.Contains("IntSlider", names)
+    Assert.Contains("Toggle", names)
+    Assert.Contains("EnumChoice", names)
+
+[<Fact>]
+let ``AttributeCategory type exists with expected cases`` () =
+    let t = typeof<AttributeCategory>
+    Assert.True(Reflection.FSharpType.IsUnion(t))
+    let names = Reflection.FSharpType.GetUnionCases(t) |> Array.map (fun c -> c.Name)
+    Assert.Contains("Colors", names)
+    Assert.Contains("Sizes", names)
+    Assert.Contains("Strokes", names)
+    Assert.Contains("Overlays", names)
+    Assert.Contains("HealthDamage", names)
+    Assert.Contains("Effects", names)
+
+[<Fact>]
+let ``AttributeDescriptor record has expected fields`` () =
+    let t = typeof<AttributeDescriptor>
+    Assert.True(Reflection.FSharpType.IsRecord(t))
+    let fields = Reflection.FSharpType.GetRecordFields(t) |> Array.map (fun f -> f.Name)
+    Assert.Contains("Key", fields)
+    Assert.Contains("Label", fields)
+    Assert.Contains("Category", fields)
+    Assert.Contains("InputKind", fields)
+    Assert.Contains("Get", fields)
+    Assert.Contains("Set", fields)
+    Assert.Contains("Default", fields)
+
+// ---- StylePreset ----
+
+[<Fact>]
+let ``StylePreset module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.StylePreset"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "presetDirectory")
+    Assert.True(moduleHasMember t "isValidName")
+    Assert.True(moduleHasMember t "save")
+    Assert.True(moduleHasMember t "load")
+    Assert.True(moduleHasMember t "listNames")
+    Assert.True(moduleHasMember t "delete")
+    Assert.True(moduleHasMember t "fromConfig")
+    Assert.True(moduleHasMember t "applyToConfig")
+
+[<Fact>]
+let ``PresetValue type exists with expected cases`` () =
+    let t = typeof<PresetValue>
+    Assert.True(Reflection.FSharpType.IsUnion(t))
+    let names = Reflection.FSharpType.GetUnionCases(t) |> Array.map (fun c -> c.Name)
+    Assert.Contains("ColorVal", names)
+    Assert.Contains("FloatVal", names)
+    Assert.Contains("IntVal", names)
+    Assert.Contains("BoolVal", names)
+    Assert.Contains("StringVal", names)
+    Assert.Contains("StringSetVal", names)
+
+[<Fact>]
+let ``StylePreset record has expected fields`` () =
+    let t = typeof<StylePreset>
+    Assert.True(Reflection.FSharpType.IsRecord(t))
+    let fields = Reflection.FSharpType.GetRecordFields(t) |> Array.map (fun f -> f.Name)
+    Assert.Contains("Name", fields)
+    Assert.Contains("CreatedAt", fields)
+    Assert.Contains("Values", fields)
+
+// ---- ConfigPanel ----
+
+[<Fact>]
+let ``ConfigPanel module has expected members`` () =
+    let t = getModuleType "FSBar.Viz.ConfigPanel"
+    Assert.NotNull(t)
+    Assert.True(moduleHasMember t "panelWidth")
+    Assert.True(moduleHasMember t "initialState")
+    Assert.True(moduleHasMember t "toggle")
+    Assert.True(moduleHasMember t "hitTest")
+    Assert.True(moduleHasMember t "buildPanel")
+    Assert.True(moduleHasMember t "handleInput")
+
+[<Fact>]
+let ``ConfigPanelState record has expected fields`` () =
+    let t = typeof<ConfigPanelState>
+    Assert.True(Reflection.FSharpType.IsRecord(t))
+    let fields = Reflection.FSharpType.GetRecordFields(t) |> Array.map (fun f -> f.Name)
+    Assert.Contains("IsOpen", fields)
+    Assert.Contains("ScrollOffset", fields)
+    Assert.Contains("ExpandedSections", fields)
+    Assert.Contains("ActiveControl", fields)
+    Assert.Contains("DirtyIndicator", fields)
+
+[<Fact>]
+let ``ConfigPanelAction type exists with expected cases`` () =
+    let t = typeof<ConfigPanelAction>
+    Assert.True(Reflection.FSharpType.IsUnion(t))
+    let names = Reflection.FSharpType.GetUnionCases(t) |> Array.map (fun c -> c.Name)
+    Assert.Contains("SavePreset", names)
+    Assert.Contains("LoadPreset", names)
+    Assert.Contains("ResetDefaults", names)
 
 // ---- Smoke test: key functions can be called ----
 

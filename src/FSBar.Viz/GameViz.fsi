@@ -26,3 +26,8 @@ module GameViz =
     val pan: dx: float32 -> dy: float32 -> unit
     val zoom: factor: float32 -> centerX: float32 -> centerY: float32 -> unit
     val screenshot: folder: string -> Result<string, string>
+    // --- Configurator panel (feature 033-viz-style-configurator) ---
+    /// Toggle the style configurator side panel open/closed.
+    val toggleConfigPanel: unit -> unit
+    /// True if the configurator panel is currently open.
+    val isConfigPanelOpen: unit -> bool

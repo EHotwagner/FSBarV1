@@ -222,6 +222,16 @@ type GameSnapshot =
       MetalSpots: (float32 * float32 * float32 * float32) array
       Connected: bool }
 
+/// State for the configurator side panel (feature 033-viz-style-configurator).
+/// ExpandedSections uses string names of AttributeCategory cases (kept as
+/// strings here so VizTypes remains independent of ConfigDescriptors).
+type ConfigPanelState =
+    { IsOpen: bool
+      ScrollOffset: float32
+      ExpandedSections: Set<string>
+      ActiveControl: string option
+      DirtyIndicator: bool }
+
 /// User interaction commands.
 [<RequireQualifiedAccess>]
 type VizCommand =

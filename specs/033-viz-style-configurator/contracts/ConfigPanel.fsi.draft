@@ -1,0 +1,33 @@
+namespace FSBar.Viz
+
+open SkiaViewer
+
+/// Mutable state for the configurator side panel.
+type ConfigPanelState =
+    { IsOpen: bool
+      ScrollOffset: float32
+      ExpandedSections: Set<AttributeCategory>
+      ActiveControl: string option
+      DirtyIndicator: bool }
+
+/// Configurator side panel — renders UI and handles input.
+module ConfigPanel =
+    /// Fixed panel width in pixels.
+    val panelWidth: float32
+
+    /// Creates the initial (closed) panel state.
+    val initialState: ConfigPanelState
+
+    /// Build scene elements for the panel given current config and panel state.
+    /// Returns empty list when panel is closed.
+    val buildPanel: config: VizConfig -> panelState: ConfigPanelState -> windowWidth: float32 -> windowHeight: float32 -> Element list
+
+    /// Handle a mouse/keyboard event within the panel.
+    /// Returns updated panel state and optionally an updated VizConfig.
+    val handleInput: event: InputEvent -> config: VizConfig -> panelState: ConfigPanelState -> windowWidth: float32 -> ConfigPanelState * VizConfig option
+
+    /// Test whether a screen-space point falls within the panel bounds.
+    val hitTest: x: float32 -> y: float32 -> panelState: ConfigPanelState -> windowWidth: float32 -> bool
+
+    /// Toggle the panel open/closed.
+    val toggle: panelState: ConfigPanelState -> ConfigPanelState

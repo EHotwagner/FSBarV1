@@ -32,6 +32,9 @@
     <Compile Include="LiveSessionTests.fs" />
     <Compile Include="LiveSessionIntegrationTests.fs" />
     <Compile Include="SyntheticVizTests.fs" />
+    <Compile Include="ConfigDescriptorsTests.fs" />
+    <Compile Include="ConfigPanelTests.fs" />
+    <Compile Include="StylePresetTests.fs" />
     <Compile Include="SurfaceBaselineTests.fs" />
   </ItemGroup>
 

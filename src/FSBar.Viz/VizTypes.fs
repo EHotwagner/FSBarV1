@@ -206,6 +206,13 @@ type GameSnapshot =
       MetalSpots: (float32 * float32 * float32 * float32) array
       Connected: bool }
 
+type ConfigPanelState =
+    { IsOpen: bool
+      ScrollOffset: float32
+      ExpandedSections: Set<string>
+      ActiveControl: string option
+      DirtyIndicator: bool }
+
 [<RequireQualifiedAccess>]
 type VizCommand =
     | SetBaseLayer of LayerKind

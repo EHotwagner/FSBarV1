@@ -132,6 +132,11 @@ module GameViz =
     let mutable private dragStart: (float32 * float32) option = None
     let mutable private dragOrigin: (float32 * float32) option = None
 
+    // --- Configurator panel state (under configLock) ---
+    let mutable private panelState : ConfigPanelState = ConfigPanel.initialState
+    let mutable private activePresetName : string option = None
+    let mutable private referenceConfig : VizConfig = VizDefaults.defaultConfig
+
     // --- Lifecycle state (under lifecycleLock) ---
     let mutable private viewer: ViewerHandle option = None
     let mutable private sceneEvent: Event<Scene> option = None
@@ -366,8 +371,30 @@ module GameViz =
     // --- Render thread: emit scene ---
 
     let private emitScene () =
-        match sceneEvent, renderSnapshot with
-        | Some evt, Some snap ->
+        match sceneEvent with
+        | None -> ()
+        | Some evt ->
+        // Panel-only path: render just the configurator over the clear color
+        // when no game data is available yet. Lets users open the panel
+        // before any snapshot arrives (FR-010 synthetic-data support and
+        // interactive verification).
+        match renderSnapshot with
+        | None ->
+            let cfg = config
+            let vs = viewState
+            let panelElems =
+                let ps = panelState
+                if ps.IsOpen then
+                    let presetNames = try StylePreset.listNames() with _ -> []
+                    let dirty = ConfigDescriptors.isDirty cfg referenceConfig
+                    let ps' = { ps with DirtyIndicator = dirty }
+                    ConfigPanel.buildPanel cfg ps'
+                        (float32 vs.WindowWidth) (float32 vs.WindowHeight)
+                        presetNames activePresetName
+                else []
+            if not (List.isEmpty panelElems) then
+                evt.Trigger (Scene.create cfg.BackgroundColor panelElems)
+        | Some snap ->
             let snap = if Volatile.Read(&disconnected) > 0 then { snap with Connected = false } else snap
             // Advance interpolation
             let elapsedMs = interpStopwatch.Elapsed.TotalMilliseconds
@@ -405,15 +432,55 @@ module GameViz =
                     renderFpsDisplay stateUpsDisplay snap.FrameNumber stateFrameDelta
             let perfPaint = Scene.fill (SKColor(200uy, 200uy, 200uy, 200uy))
             let perfLabel = Scene.text perfText 8.0f (float32 vs.WindowHeight - 12.0f) 13.0f perfPaint
-            let augmented = Scene.create cfg.BackgroundColor (scene.Elements @ [ perfLabel ])
+            // Configurator panel overlay (feature 033-viz-style-configurator)
+            let panelElems =
+                let ps = panelState
+                if ps.IsOpen then
+                    let presetNames = try StylePreset.listNames() with _ -> []
+                    let dirty = ConfigDescriptors.isDirty cfg referenceConfig
+                    let ps' = { ps with DirtyIndicator = dirty }
+                    ConfigPanel.buildPanel cfg ps' (float32 vs.WindowWidth) (float32 vs.WindowHeight) presetNames activePresetName
+                else []
+            let augmented = Scene.create cfg.BackgroundColor (scene.Elements @ [ perfLabel ] @ panelElems)
             evt.Trigger augmented
-        | _ -> ()
 
     // --- Input handling ---
+
+    // --- Panel action application (caller must hold configLock) ---
+    let private applyPanelAction (action: ConfigPanelAction) =
+        match action with
+        | ConfigPanelAction.SavePreset name ->
+            let preset = StylePreset.fromConfig name config
+            match StylePreset.save preset with
+            | Result.Ok _ ->
+                activePresetName <- Some name
+                referenceConfig <- config
+            | Result.Error msg ->
+                eprintfn "[GameViz] preset save failed: %s" msg
+        | ConfigPanelAction.LoadPreset name ->
+            match StylePreset.load name with
+            | Result.Ok preset ->
+                config <- StylePreset.applyToConfig preset config
+                activePresetName <- Some name
+                referenceConfig <- config
+            | Result.Error msg ->
+                eprintfn "[GameViz] preset load failed: %s" msg
+        | ConfigPanelAction.DeletePreset name ->
+            match StylePreset.delete name with
+            | Result.Ok _ ->
+                if activePresetName = Some name then activePresetName <- None
+            | Result.Error msg ->
+                eprintfn "[GameViz] preset delete failed: %s" msg
+        | ConfigPanelAction.ResetDefaults ->
+            config <- VizDefaults.defaultConfig
+            activePresetName <- None
+            referenceConfig <- VizDefaults.defaultConfig
 
     let private processKey (key: Key) =
         lock configLock (fun () ->
             match key with
+            | Key.P ->
+                panelState <- ConfigPanel.toggle panelState
             | Key.B -> config <- { config with BaseLayer = LayerKind.BaseTerrain }
             | Key.Number1 -> config <- { config with BaseLayer = LayerKind.HeightMap }
             | Key.Number2 -> config <- { config with BaseLayer = LayerKind.SlopeMap }
@@ -467,30 +534,69 @@ module GameViz =
                 renderMapGrid |> Option.iter computeAutoFit
             | _ -> ())
 
+    // Try to route a mouse event to the panel. Returns true if the panel
+    // consumed the event (and the default pan/zoom/drag handlers should
+    // be skipped). Caller must NOT hold configLock.
+    let private routeToPanelIfOpen (evt: InputEvent) (x: float32) (y: float32) : bool =
+        // Snapshot panel state for a cheap bounds check outside the lock.
+        let ps = panelState
+        if not ps.IsOpen then false
+        else
+            let ww = float32 viewState.WindowWidth
+            // Only consume when the cursor is actually in the panel region,
+            // OR when the panel is currently dragging a control (so that
+            // MouseMove/MouseUp outside the panel bounds still updates the
+            // active slider).
+            let inPanel = ConfigPanel.hitTest x y ps ww
+            let dragging = ps.ActiveControl.IsSome
+            if not (inPanel || dragging) then false
+            else
+                lock configLock (fun () ->
+                    let ww = float32 viewState.WindowWidth
+                    let wh = float32 viewState.WindowHeight
+                    let res = ConfigPanel.handleInput evt config panelState ww wh
+                    panelState <- res.PanelState
+                    match res.UpdatedConfig with
+                    | Some c -> config <- c
+                    | None -> ()
+                    match res.Action with
+                    | Some a -> applyPanelAction a
+                    | None -> ())
+                true
+
     let private handleInput (evt: InputEvent) =
         match evt with
         | InputEvent.KeyDown key -> processKey key
         | InputEvent.MouseScroll(delta, x, y) ->
-            lock configLock (fun () ->
-                let factor = if delta > 0.0f then 1.1f else 1.0f / 1.1f
-                let mapX = x / viewState.Scale + viewState.OriginX
-                let mapY = y / viewState.Scale + viewState.OriginY
-                let newScale = viewState.Scale * factor
-                viewState <- { viewState with Scale = newScale; OriginX = mapX - x / newScale; OriginY = mapY - y / newScale; AutoFit = false })
+            if routeToPanelIfOpen evt x y then ()
+            else
+                lock configLock (fun () ->
+                    let factor = if delta > 0.0f then 1.1f else 1.0f / 1.1f
+                    let mapX = x / viewState.Scale + viewState.OriginX
+                    let mapY = y / viewState.Scale + viewState.OriginY
+                    let newScale = viewState.Scale * factor
+                    viewState <- { viewState with Scale = newScale; OriginX = mapX - x / newScale; OriginY = mapY - y / newScale; AutoFit = false })
         | InputEvent.MouseDown(_, x, y) ->
-            lock configLock (fun () ->
-                dragStart <- Some (x, y)
-                dragOrigin <- Some (viewState.OriginX, viewState.OriginY))
+            if routeToPanelIfOpen evt x y then ()
+            else
+                lock configLock (fun () ->
+                    dragStart <- Some (x, y)
+                    dragOrigin <- Some (viewState.OriginX, viewState.OriginY))
         | InputEvent.MouseMove(x, y) ->
-            lock configLock (fun () ->
-                match dragStart, dragOrigin with
-                | Some (sx, sy), Some (ox, oy) ->
-                    let dx = (x - sx) / viewState.Scale
-                    let dy = (y - sy) / viewState.Scale
-                    viewState <- { viewState with OriginX = ox - dx; OriginY = oy - dy; AutoFit = false }
-                | _ -> ())
-        | InputEvent.MouseUp _ ->
-            lock configLock (fun () -> dragStart <- None; dragOrigin <- None)
+            if routeToPanelIfOpen evt x y then ()
+            else
+                lock configLock (fun () ->
+                    match dragStart, dragOrigin with
+                    | Some (sx, sy), Some (ox, oy) ->
+                        let dx = (x - sx) / viewState.Scale
+                        let dy = (y - sy) / viewState.Scale
+                        viewState <- { viewState with OriginX = ox - dx; OriginY = oy - dy; AutoFit = false }
+                    | _ -> ())
+        | InputEvent.MouseUp (btn, x, y) ->
+            if routeToPanelIfOpen evt x y then ()
+            else
+                ignore btn
+                lock configLock (fun () -> dragStart <- None; dragOrigin <- None)
         | InputEvent.WindowResize(w, h) ->
             lock configLock (fun () ->
                 viewState <- { viewState with WindowWidth = w; WindowHeight = h }
@@ -843,3 +949,16 @@ module GameViz =
             match viewer with
             | Some v -> v.Screenshot(folder)
             | None -> Result.Error "No viewer running")
+
+    // --- Configurator panel (feature 033-viz-style-configurator) ---
+
+    let toggleConfigPanel () =
+        lock configLock (fun () ->
+            panelState <- ConfigPanel.toggle panelState
+            if panelState.IsOpen then
+                // Snapshot current config as the reference so dirty is false
+                // on first open.
+                referenceConfig <- config)
+
+    let isConfigPanelOpen () : bool =
+        panelState.IsOpen

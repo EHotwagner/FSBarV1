@@ -24,3 +24,6 @@ bots/runs/
 # Trainer map cache — committed artifacts (feature 026-permanent-map-cache).
 # Cache .json files are now tracked; refresh them via bots/trainer/map-cache/refresh-all.sh
 # after bumping MapCacheFile.codeVersion.
+
+# Viz configurator presets (feature 033-viz-style-configurator) — user-local
+viz-presets/*.json

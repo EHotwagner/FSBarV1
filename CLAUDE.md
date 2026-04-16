@@ -56,6 +56,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-16
 - N/A (in-memory only, no persistence changes) (030-gameviz-state-api)
 - Bash (run.sh) + F# 9 on .NET 10.0 (bot scripts) + FSBar.Client (BarClient, GameState), FSBar.Viz (GameViz, VizConfig, OverlayKind, LayerKind, VizDefaults) (031-full-trainer-viz-run)
 - F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6 (032-lockfree-viewer-dataflow)
+- F# 9 on .NET 10.0 + FSBar.Viz (in-repo), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6, System.Text.Json (BCL) (033-viz-style-configurator)
+- JSON files on disk (`viz-presets/` directory) for presets (033-viz-style-configurator)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -100,8 +102,31 @@ modules:
   game wiring via `FSBar.Client.TrackedUnit` is a follow-up feature.
 
 Hotkeys in `GameViz`: `W` weapon ranges, `L` sight, `C` command queue,
-`N` full names (sticky toggles). `UnitGlyph.statusLine` projects the
-active overlays to a `WLCN`-ordered string for the status-line widget.
+`N` full names (sticky toggles), `P` style configurator panel.
+`UnitGlyph.statusLine` projects the active overlays to a `WLCN`-ordered
+string for the status-line widget.
+
+## Style configurator (feature 033-viz-style-configurator)
+
+Press `P` in the live viewer to toggle a 280-pixel side panel on the
+right edge. Every `VizConfig` / `UnitGlyphStyle` attribute is exposed
+via typed descriptors with appropriate controls (color swatch cycling,
+sliders, toggles, enum cycling). Changes apply within one frame.
+
+Modules:
+
+- `src/FSBar.Viz/ConfigDescriptors.fsi` — static registry of
+  `AttributeDescriptor` records (key, label, category, input kind,
+  get/set, default, range). Single source of truth for what's editable.
+- `src/FSBar.Viz/ConfigPanel.fsi` — declarative panel rendering +
+  mouse/scroll input handling. Returns `ConfigPanelInputResult` with
+  optional updated `VizConfig` and optional `ConfigPanelAction`.
+- `src/FSBar.Viz/StylePreset.fsi` — JSON preset persistence under
+  `viz-presets/<name>.json` (gitignored, user-local). `fromConfig` /
+  `applyToConfig` convert via `ConfigDescriptors`.
+
+Add a new visual attribute by extending `ConfigDescriptors.all` (one
+entry) — the panel picks it up automatically and presets roundtrip it.
 
 Regenerate the label table whenever `nupkg/BarData.*.nupkg` changes.
 Keep the `.fsi` for `UnitLabels.generated` stable — the generator only
@@ -122,8 +147,8 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 033-viz-style-configurator: Added F# 9 on .NET 10.0 + FSBar.Viz (in-repo), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6, System.Text.Json (BCL)
 - 032-lockfree-viewer-dataflow: Added F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6
-- 031-full-trainer-viz-run: Added Bash (run.sh) + F# 9 on .NET 10.0 (bot scripts) + FSBar.Client (BarClient, GameState), FSBar.Viz (GameViz, VizConfig, OverlayKind, LayerKind, VizDefaults)
 - 031-full-trainer-viz-run: Added Bash (run.sh) + F# 9 on .NET 10.0 (bot scripts) + FSBar.Client (BarClient, GameState), FSBar.Viz (GameViz, VizConfig, OverlayKind, LayerKind, VizDefaults)
 
 

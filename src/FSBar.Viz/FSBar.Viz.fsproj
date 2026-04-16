@@ -16,6 +16,12 @@
     <Compile Include="UnitGlyphPalettes.fs" />
     <Compile Include="VizDefaults.fsi" />
     <Compile Include="VizDefaults.fs" />
+    <Compile Include="ConfigDescriptors.fsi" />
+    <Compile Include="ConfigDescriptors.fs" />
+    <Compile Include="StylePreset.fsi" />
+    <Compile Include="StylePreset.fs" />
+    <Compile Include="ConfigPanel.fsi" />
+    <Compile Include="ConfigPanel.fs" />
     <Compile Include="UnitLabelsGenerator.fsi" />
     <Compile Include="UnitLabelsGenerator.fs" />
     <Compile Include="UnitLabels.generated.fsi" />

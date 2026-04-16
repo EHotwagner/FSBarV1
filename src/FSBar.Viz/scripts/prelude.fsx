@@ -74,6 +74,33 @@ let playScene (sceneId: SceneId) (fps: int) =
     let snaps = scene.Frames |> Array.map (convertToSnapshot scene)
     PreviewSession.startPlayback snaps fps
 
+// --- Configurator helpers (feature 033-viz-style-configurator) ---
+
+/// Toggle the style configurator side panel in the live viewer.
+let openConfigurator () = GameViz.toggleConfigPanel ()
+
+/// List all saved style preset names.
+let listPresets () = StylePreset.listNames ()
+
+/// Save the current VizConfig as a preset with the given name.
+let savePreset (name: string) (cfg: VizConfig) =
+    StylePreset.fromConfig name cfg
+    |> StylePreset.save
+
+/// Load and apply a style preset to a VizConfig.
+let loadPreset (name: string) (cfg: VizConfig) =
+    match StylePreset.load name with
+    | Result.Ok preset -> Some (StylePreset.applyToConfig preset cfg)
+    | Result.Error _ -> None
+
+/// Show the list of attribute descriptors available in the configurator.
+let listDescriptors () =
+    ConfigDescriptors.all
+    |> List.map (fun d -> sprintf "%s  (%s)" d.Key d.Label)
+
 printfn "FSBar.Viz prelude loaded."
 printfn "  previewScene SceneId.SceneA 0  — preview a single frame"
 printfn "  playScene SceneId.SceneA 30    — play back a scene at 30 FPS"
+printfn "  openConfigurator ()            — toggle the style configurator (P in window)"
+printfn "  listPresets ()                 — list saved style presets"
+printfn "  listDescriptors ()             — list configurable attributes"
