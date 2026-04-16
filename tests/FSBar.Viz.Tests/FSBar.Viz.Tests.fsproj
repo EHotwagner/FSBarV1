@@ -28,6 +28,7 @@
     <Compile Include="ViewerTests.fs" />
     <Compile Include="GameVizIntegrationTests.fs" />
     <Compile Include="GameVizStateTests.fs" />
+    <Compile Include="GameVizThreadingTests.fs" />
     <Compile Include="LiveSessionTests.fs" />
     <Compile Include="LiveSessionIntegrationTests.fs" />
     <Compile Include="SyntheticVizTests.fs" />

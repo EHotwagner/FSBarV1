@@ -55,6 +55,7 @@ Auto-generated from all feature plans. Last updated: 2026-04-16
 - F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Viz` (`GameViz`, `SceneBuilder`, `VizTypes`, `UnitGlyph`, `UnitLabels`), `FSBar.Client` (`GameState`, `MapGrid`, `UnitDefCache`, `MapCacheFile`, `BarClient`), `SkiaViewer` 1.1.3-dev, `SkiaSharp` 2.88.6, `BarData` (NuGet from local store), `xUnit 2.9.x`. **No new NuGet dependencies.** (030-gameviz-state-api)
 - N/A (in-memory only, no persistence changes) (030-gameviz-state-api)
 - Bash (run.sh) + F# 9 on .NET 10.0 (bot scripts) + FSBar.Client (BarClient, GameState), FSBar.Viz (GameViz, VizConfig, OverlayKind, LayerKind, VizDefaults) (031-full-trainer-viz-run)
+- F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6 (032-lockfree-viewer-dataflow)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -121,9 +122,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 032-lockfree-viewer-dataflow: Added F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6
 - 031-full-trainer-viz-run: Added Bash (run.sh) + F# 9 on .NET 10.0 (bot scripts) + FSBar.Client (BarClient, GameState), FSBar.Viz (GameViz, VizConfig, OverlayKind, LayerKind, VizDefaults)
 - 031-full-trainer-viz-run: Added Bash (run.sh) + F# 9 on .NET 10.0 (bot scripts) + FSBar.Client (BarClient, GameState), FSBar.Viz (GameViz, VizConfig, OverlayKind, LayerKind, VizDefaults)
-- 030-gameviz-state-api: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Viz` (`GameViz`, `SceneBuilder`, `VizTypes`, `UnitGlyph`, `UnitLabels`), `FSBar.Client` (`GameState`, `MapGrid`, `UnitDefCache`, `MapCacheFile`, `BarClient`), `SkiaViewer` 1.1.3-dev, `SkiaSharp` 2.88.6, `BarData` (NuGet from local store), `xUnit 2.9.x`. **No new NuGet dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

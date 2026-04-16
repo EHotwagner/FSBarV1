@@ -1225,18 +1225,13 @@ try
 
         // Start viewer AFTER warmup — uses state-based path (no socket reads).
         startViewer mapGrid allSpots client.GameState.TeamId
-        // Push to viewer every N game frames. onFrameWithState is expensive
-        // (rebuilds unit maps + display units under stateLock). The macro
-        // bot gets per-frame protocol delivery (delta=1), so without
-        // aggressive skipping the viewer kills sim throughput.
-        // Skip 30 = ~5 viz updates/sec at 150 game fps.
-        let vizFrameSkip = 30
+        // Push to viewer on every frame. onFrameWithState is lock-free
+        // (atomic reference swap only) so it no longer blocks the bot thread.
         let wrappedTactics : TrainerTacticsFn =
             fun client frame cmdOpt ->
-                if int frame.FrameNumber % vizFrameSkip = 0 then
-                    match mapGrid with
-                    | Some grid -> viewerOnFrame client.GameState grid
-                    | None -> ()
+                match mapGrid with
+                | Some grid -> viewerOnFrame client.GameState grid
+                | None -> ()
                 tacticsFn client frame cmdOpt
 
         let result = trainerLoopRun client logger maxFrames wrappedTactics

@@ -1,6 +1,7 @@
 namespace FSBar.Viz
 
 open System
+open System.Threading
 open SkiaSharp
 open SkiaViewer
 open FSBar.Client
@@ -100,27 +101,66 @@ module GameViz =
           BuildRangeElmo = None
           CommandQueue = [] }
 
-    // --- Mutable state ---
+    // --- Lock-free dataflow types ---
 
-    let private stateLock = obj ()
+    /// Raw inputs from the bot thread, atomically published for the render thread.
+    type private RawFrame =
+        { GameState: GameState
+          MapGrid: MapGrid
+          MyTeamId: int
+          MetalSpots: (float32 * float32 * float32 * float32) array
+          FrameCounter: int }
+
+    // --- Locks ---
+    /// Protects config, viewState, dragStart, dragOrigin. Adequate for <10 ops/sec.
+    let private configLock = obj ()
+    /// Protects lifecycle state and socket-path publisher state.
+    let private lifecycleLock = obj ()
+
+    // --- Atomic shared state (bot thread -> render thread) ---
+    /// Atomically swapped by onFrameWithState; sampled by render thread.
+    let mutable private latestFrame: RawFrame option = None
+    let mutable private frameCounter = 0
+
+    /// Atomically published by onFrame (socket path); sampled by render thread.
+    let mutable private latestDirectSnapshot: GameSnapshot option = None
+    let mutable private directSnapshotCounter = 0
+
+    // --- Config/view state (configLock for writes; direct reads are safe on x86) ---
     let mutable private config = VizDefaults.defaultConfig
     let mutable private viewState = VizDefaults.defaultViewState
-    let mutable private snapshot: GameSnapshot option = None
+    let mutable private dragStart: (float32 * float32) option = None
+    let mutable private dragOrigin: (float32 * float32) option = None
+
+    // --- Lifecycle state (under lifecycleLock) ---
     let mutable private viewer: ViewerHandle option = None
     let mutable private sceneEvent: Event<Scene> option = None
     let mutable private inputSub: IDisposable option = None
     let mutable private clientRef: BarClient option = None
     let mutable private mapGridRef: MapGrid option = None
     let mutable private myTeamId = 0
+    let mutable private metalSpots: (float32 * float32 * float32 * float32) array = [||]
+    /// 0 = connected, 1 = disconnected. Int for Volatile.Read/Write compatibility.
+    let mutable private disconnected = 0
+
+    // --- Publisher state for socket path (under lifecycleLock) ---
     let mutable private units: Map<int, UnitState> = Map.empty
     let mutable private indicators: EventIndicator list = []
-    let mutable private metalSpots: (float32 * float32 * float32 * float32) array = [||]
-    let mutable private dragStart: (float32 * float32) option = None
-    let mutable private dragOrigin: (float32 * float32) option = None
     let mutable private defPropsCache: Map<int, DefProps> = Map.empty
     let mutable private unfinishedUnits: Set<int> = Set.empty
 
-    // Performance counter state
+    // --- Render-thread-local state (exclusively owned by the render thread) ---
+    let mutable private renderSnapshot: GameSnapshot option = None
+    let mutable private renderUnits: Map<int, UnitState> = Map.empty
+    let mutable private renderPrevUnits: Map<int, UnitState> = Map.empty
+    let mutable private renderIndicators: EventIndicator list = []
+    let mutable private renderDefPropsCache: Map<int, DefProps> = Map.empty
+    let mutable private renderUnfinishedUnits: Set<int> = Set.empty
+    let mutable private renderMapGrid: MapGrid option = None
+    let mutable private lastProcessedCounter = -1
+    let mutable private lastProcessedDirectCounter = -1
+
+    // Performance counter state (render-thread-local)
     let private perfStopwatch = System.Diagnostics.Stopwatch.StartNew()
     let mutable private renderFrameCount = 0
     let mutable private stateUpdateCount = 0
@@ -130,13 +170,15 @@ module GameViz =
     let mutable private lastStateFrame = 0
     let mutable private stateFrameDelta = 0
 
-    // Interpolation state: lerp unit positions between state updates
-    let mutable private prevUnits: Map<int, UnitState> = Map.empty
+    // Interpolation state (render-thread-local)
     let mutable private interpT = 1.0f  // 0..1 progress toward current snapshot
     let private interpStopwatch = System.Diagnostics.Stopwatch()
     let mutable private interpDurationMs = 200.0  // estimated ms between state updates
 
+    // --- Helpers ---
+
     let private computeAutoFit (grid: MapGrid) =
+        // Caller must hold configLock
         let mapW = float32 grid.WidthHeightmap
         let mapH = float32 grid.HeightHeightmap
         if mapW > 0.0f && mapH > 0.0f then
@@ -150,16 +192,6 @@ module GameViz =
         | Some _ -> ()
         | None ->
             let name = try Callbacks.getUnitDefName stream defId with _ -> sprintf "def%d" defId
-            defPropsCache <- Map.add defId (resolveDefPropsFromBarData name) defPropsCache
-
-    let private ensureDefPropsFromCache (unitDefs: UnitDefCache) (defId: int) =
-        match Map.tryFind defId defPropsCache with
-        | Some _ -> ()
-        | None ->
-            let name =
-                match UnitDefCache.tryFindById unitDefs defId with
-                | Some info -> info.Name
-                | None -> sprintf "def%d" defId
             defPropsCache <- Map.add defId (resolveDefPropsFromBarData name) defPropsCache
 
     let private trackedUnitToUnitState (teamId: int) (uid: int) (u: TrackedUnit) : UnitState =
@@ -177,6 +209,7 @@ module GameViz =
         { Current = snap.Current; Income = snap.Income; Usage = snap.Usage; Storage = snap.Storage }
 
     let private buildDisplayUnits () =
+        // Uses publisher state — socket path only
         units |> Map.map (fun unitId u ->
             let props =
                 match Map.tryFind u.DefId defPropsCache with
@@ -202,16 +235,147 @@ module GameViz =
             PositionY = prev.PositionY + (cur.PositionY - prev.PositionY) * t
             PositionZ = prev.PositionZ + (cur.PositionZ - prev.PositionZ) * t }
 
+    // --- Render thread: process new RawFrame from state-based path ---
+
+    let private processRawFrame (frame: RawFrame) =
+        let gs = frame.GameState
+        let frameNum = int gs.FrameNumber
+
+        stateUpdateCount <- stateUpdateCount + 1
+        stateFrameDelta <- frameNum - lastStateFrame
+        lastStateFrame <- frameNum
+
+        // Process events BEFORE rebuilding units so destruction/damage can read
+        // previous frame's positions from the existing renderUnits map.
+        for evt in gs.Events do
+            match evt with
+            | GameEvent.UnitCreated(unitId, _) ->
+                match Map.tryFind unitId gs.Units with
+                | Some u ->
+                    let (px, py, pz) = u.Position
+                    renderIndicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.UnitCreated; FrameCreated = frameNum; DurationFrames = 30 } :: renderIndicators
+                | None -> ()
+            | GameEvent.UnitDestroyed(unitId, _) ->
+                match Map.tryFind unitId renderUnits with
+                | Some u ->
+                    renderIndicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = frameNum; DurationFrames = 45 } :: renderIndicators
+                | None -> ()
+            | GameEvent.UnitDamaged(unitId, _, _, _, _) ->
+                match Map.tryFind unitId renderUnits with
+                | Some u ->
+                    renderIndicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.Combat; FrameCreated = frameNum; DurationFrames = 20 } :: renderIndicators
+                | None -> ()
+            | GameEvent.EnemyEnterLOS enemyId ->
+                match Map.tryFind enemyId gs.Enemies with
+                | Some e ->
+                    let (px, py, pz) = e.Position
+                    renderIndicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.EnemySpotted; FrameCreated = frameNum; DurationFrames = 40 } :: renderIndicators
+                | None -> ()
+            | GameEvent.EnemyDestroyed(enemyId, _) ->
+                match Map.tryFind enemyId renderUnits with
+                | Some u ->
+                    renderIndicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = frameNum; DurationFrames = 45 } :: renderIndicators
+                | None -> ()
+            | _ -> ()
+
+        // Rebuild units from GameState, preserving previous for interpolation
+        renderPrevUnits <- renderUnits
+        let mutable newUnits = Map.empty
+        for (KeyValue(uid, u)) in gs.Units do
+            newUnits <- Map.add uid (trackedUnitToUnitState frame.MyTeamId uid u) newUnits
+        for (KeyValue(eid, e)) in gs.Enemies do
+            if e.InLOS then
+                newUnits <- Map.add eid (trackedEnemyToUnitState eid e) newUnits
+        renderUnits <- newUnits
+
+        // Ensure def props for all encountered DefIds (render-local cache)
+        for (KeyValue(_, u)) in renderUnits do
+            match Map.tryFind u.DefId renderDefPropsCache with
+            | Some _ -> ()
+            | None ->
+                let name =
+                    match UnitDefCache.tryFindById gs.UnitDefs u.DefId with
+                    | Some info -> info.Name
+                    | None -> sprintf "def%d" u.DefId
+                renderDefPropsCache <- Map.add u.DefId (resolveDefPropsFromBarData name) renderDefPropsCache
+
+        // Track unfinished units
+        renderUnfinishedUnits <-
+            gs.Units
+            |> Map.toSeq
+            |> Seq.choose (fun (uid, u) -> if not u.IsFinished then Some uid else None)
+            |> Set.ofSeq
+
+        // Prune expired indicators
+        renderIndicators <- renderIndicators |> List.filter (fun ev ->
+            frameNum - ev.FrameCreated < ev.DurationFrames)
+
+        // Build display units from render-local state
+        let displayUnits =
+            renderUnits |> Map.map (fun unitId u ->
+                let props =
+                    match Map.tryFind u.DefId renderDefPropsCache with
+                    | Some p -> p
+                    | None -> resolveDefPropsFromBarData (sprintf "def%d" u.DefId)
+                toUnitDisplay u props (Set.contains unitId renderUnfinishedUnits))
+
+        // Derive economy
+        let metalEcon = economyFromSnapshot gs.Metal
+        let energyEcon = economyFromSnapshot gs.Energy
+
+        // Update render map grid
+        renderMapGrid <- Some frame.MapGrid
+
+        // Build snapshot
+        renderSnapshot <- Some
+            { FrameNumber = frameNum
+              MapGrid = frame.MapGrid
+              Units = renderUnits
+              DisplayUnits = displayUnits
+              EventIndicators = renderIndicators
+              EconomyMetal = metalEcon
+              EconomyEnergy = energyEcon
+              MetalSpots = frame.MetalSpots
+              Connected = Volatile.Read(&disconnected) = 0 }
+
+        // Reset interpolation timer
+        let elapsedSinceLastUpdate = interpStopwatch.Elapsed.TotalMilliseconds
+        if elapsedSinceLastUpdate > 10.0 then
+            interpDurationMs <- elapsedSinceLastUpdate
+        interpStopwatch.Restart()
+        interpT <- 0.0f
+        lastProcessedCounter <- frame.FrameCounter
+
+    // --- Render thread: process direct snapshot from socket path ---
+
+    let private processDirectSnapshot (snap: GameSnapshot) (counter: int) =
+        stateUpdateCount <- stateUpdateCount + 1
+        stateFrameDelta <- snap.FrameNumber - lastStateFrame
+        lastStateFrame <- snap.FrameNumber
+        renderPrevUnits <- renderUnits
+        renderUnits <- snap.Units
+        renderSnapshot <- Some snap
+        renderMapGrid <- Some snap.MapGrid
+        let elapsedSinceLastUpdate = interpStopwatch.Elapsed.TotalMilliseconds
+        if elapsedSinceLastUpdate > 10.0 then
+            interpDurationMs <- elapsedSinceLastUpdate
+        interpStopwatch.Restart()
+        interpT <- 0.0f
+        lastProcessedDirectCounter <- counter
+
+    // --- Render thread: emit scene ---
+
     let private emitScene () =
-        match sceneEvent, snapshot with
+        match sceneEvent, renderSnapshot with
         | Some evt, Some snap ->
+            let snap = if Volatile.Read(&disconnected) > 0 then { snap with Connected = false } else snap
             // Advance interpolation
             let elapsedMs = interpStopwatch.Elapsed.TotalMilliseconds
             interpT <- if interpDurationMs > 0.0 then min 1.0f (float32 (elapsedMs / interpDurationMs)) else 1.0f
             // Build interpolated units map
             let interpUnits =
                 snap.Units |> Map.map (fun uid cur ->
-                    match Map.tryFind uid prevUnits with
+                    match Map.tryFind uid renderPrevUnits with
                     | Some prev -> lerpUnit prev cur interpT
                     | None -> cur)
             let interpDisplayUnits =
@@ -220,7 +384,10 @@ module GameViz =
                     | Some u -> { du with PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ }
                     | None -> du)
             let interpSnap = { snap with Units = interpUnits; DisplayUnits = interpDisplayUnits }
-            // Update perf counters (sample once per second)
+            // Read config and viewState (atomic reference reads, safe on x86)
+            let cfg = config
+            let vs = viewState
+            // Update perf counters (sample once per 5 seconds)
             renderFrameCount <- renderFrameCount + 1
             let nowMs = perfStopwatch.Elapsed.TotalMilliseconds
             let elapsed = nowMs - perfLastSampleMs
@@ -232,18 +399,20 @@ module GameViz =
                 renderFrameCount <- 0
                 stateUpdateCount <- 0
                 perfLastSampleMs <- nowMs
-            let scene = SceneBuilder.buildScene interpSnap config viewState
+            let scene = SceneBuilder.buildScene interpSnap cfg vs
             let perfText =
                 sprintf "render %.0f fps | state %.0f ups | game frame %d (delta %d)"
                     renderFpsDisplay stateUpsDisplay snap.FrameNumber stateFrameDelta
             let perfPaint = Scene.fill (SKColor(200uy, 200uy, 200uy, 200uy))
-            let perfLabel = Scene.text perfText 8.0f (float32 viewState.WindowHeight - 12.0f) 13.0f perfPaint
-            let augmented = Scene.create config.BackgroundColor (scene.Elements @ [ perfLabel ])
+            let perfLabel = Scene.text perfText 8.0f (float32 vs.WindowHeight - 12.0f) 13.0f perfPaint
+            let augmented = Scene.create cfg.BackgroundColor (scene.Elements @ [ perfLabel ])
             evt.Trigger augmented
         | _ -> ()
 
+    // --- Input handling ---
+
     let private processKey (key: Key) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             match key with
             | Key.B -> config <- { config with BaseLayer = LayerKind.BaseTerrain }
             | Key.Number1 -> config <- { config with BaseLayer = LayerKind.HeightMap }
@@ -295,25 +464,25 @@ module GameViz =
                     else Set.add OverlayKind.FullNames config.ActiveOverlays
                 config <- { config with ActiveOverlays = ov }
             | Key.Home ->
-                mapGridRef |> Option.iter computeAutoFit
+                renderMapGrid |> Option.iter computeAutoFit
             | _ -> ())
 
     let private handleInput (evt: InputEvent) =
         match evt with
         | InputEvent.KeyDown key -> processKey key
         | InputEvent.MouseScroll(delta, x, y) ->
-            lock stateLock (fun () ->
+            lock configLock (fun () ->
                 let factor = if delta > 0.0f then 1.1f else 1.0f / 1.1f
                 let mapX = x / viewState.Scale + viewState.OriginX
                 let mapY = y / viewState.Scale + viewState.OriginY
                 let newScale = viewState.Scale * factor
                 viewState <- { viewState with Scale = newScale; OriginX = mapX - x / newScale; OriginY = mapY - y / newScale; AutoFit = false })
         | InputEvent.MouseDown(_, x, y) ->
-            lock stateLock (fun () ->
+            lock configLock (fun () ->
                 dragStart <- Some (x, y)
                 dragOrigin <- Some (viewState.OriginX, viewState.OriginY))
         | InputEvent.MouseMove(x, y) ->
-            lock stateLock (fun () ->
+            lock configLock (fun () ->
                 match dragStart, dragOrigin with
                 | Some (sx, sy), Some (ox, oy) ->
                     let dx = (x - sx) / viewState.Scale
@@ -321,30 +490,77 @@ module GameViz =
                     viewState <- { viewState with OriginX = ox - dx; OriginY = oy - dy; AutoFit = false }
                 | _ -> ())
         | InputEvent.MouseUp _ ->
-            lock stateLock (fun () -> dragStart <- None; dragOrigin <- None)
+            lock configLock (fun () -> dragStart <- None; dragOrigin <- None)
         | InputEvent.WindowResize(w, h) ->
-            lock stateLock (fun () ->
+            lock configLock (fun () ->
                 viewState <- { viewState with WindowWidth = w; WindowHeight = h }
                 if viewState.AutoFit then
-                    mapGridRef |> Option.iter (fun g ->
+                    renderMapGrid |> Option.iter (fun g ->
                         if g.WidthHeightmap > 0 then computeAutoFit g))
         | InputEvent.FrameTick elapsed ->
-            lock stateLock (fun () ->
-                SceneBuilder.updatePulsePhase elapsed
+            // No bot-thread lock on the hot path
+            SceneBuilder.updatePulsePhase elapsed
+            // Sample latest frame from state-based path (lock-free read)
+            let frame = latestFrame
+            match frame with
+            | Some f when f.FrameCounter > lastProcessedCounter ->
+                processRawFrame f
+            | _ ->
+                // Check socket-based path
+                let dsc = Volatile.Read(&directSnapshotCounter)
+                if dsc > lastProcessedDirectCounter then
+                    match latestDirectSnapshot with
+                    | Some snap -> processDirectSnapshot snap dsc
+                    | None -> ()
+            // Auto-fit check (requires configLock for viewState write)
+            lock configLock (fun () ->
                 if viewState.AutoFit then
-                    mapGridRef |> Option.iter (fun g ->
-                        if g.WidthHeightmap > 0 then computeAutoFit g)
-                emitScene ())
+                    renderMapGrid |> Option.iter (fun g ->
+                        if g.WidthHeightmap > 0 then computeAutoFit g))
+            emitScene ()
         | _ -> ()
 
+    // --- Public API ---
+
     let start (cfg: VizConfig option) =
-        lock stateLock (fun () ->
+        lock lifecycleLock (fun () ->
+            // Reset config (no render thread running yet)
             config <- cfg |> Option.defaultValue VizDefaults.defaultConfig
             viewState <- VizDefaults.defaultViewState
+            // Reset render-thread-local state (safe — no render thread yet)
+            renderUnits <- Map.empty
+            renderPrevUnits <- Map.empty
+            renderIndicators <- []
+            renderSnapshot <- None
+            renderDefPropsCache <- Map.empty
+            renderUnfinishedUnits <- Set.empty
+            renderMapGrid <- None
+            lastProcessedCounter <- -1
+            lastProcessedDirectCounter <- -1
+            latestFrame <- None
+            frameCounter <- 0
+            latestDirectSnapshot <- None
+            directSnapshotCounter <- 0
+            // Reset publisher state
             units <- Map.empty
             indicators <- []
             defPropsCache <- Map.empty
             unfinishedUnits <- Set.empty
+            disconnected <- 0
+            // Reset perf/interp state
+            renderFrameCount <- 0
+            stateUpdateCount <- 0
+            perfLastSampleMs <- perfStopwatch.Elapsed.TotalMilliseconds
+            renderFpsDisplay <- 0.0
+            stateUpsDisplay <- 0.0
+            lastStateFrame <- 0
+            stateFrameDelta <- 0
+            interpT <- 1.0f
+            interpStopwatch.Reset()
+            interpDurationMs <- 200.0
+            dragStart <- None
+            dragOrigin <- None
+            // Create viewer
             let evt = Event<Scene>()
             sceneEvent <- Some evt
             let viewerConfig: ViewerConfig =
@@ -361,29 +577,41 @@ module GameViz =
             eprintfn "[GameViz] Viewer started")
 
     let stop () =
-        lock stateLock (fun () ->
+        lock lifecycleLock (fun () ->
             inputSub |> Option.iter (fun s -> s.Dispose())
             inputSub <- None
             viewer |> Option.iter (fun v -> (v :> IDisposable).Dispose())
             viewer <- None
             sceneEvent <- None
+            // Clear publisher state
             units <- Map.empty
             indicators <- []
             defPropsCache <- Map.empty
             unfinishedUnits <- Set.empty
             mapGridRef <- None
             clientRef <- None
-            snapshot <- None
             metalSpots <- [||]
+            disconnected <- 0
+            // Clear render-thread-local state (safe — render thread stopped by viewer dispose)
+            renderSnapshot <- None
+            renderUnits <- Map.empty
+            renderPrevUnits <- Map.empty
+            renderIndicators <- []
+            renderDefPropsCache <- Map.empty
+            renderUnfinishedUnits <- Set.empty
+            renderMapGrid <- None
+            latestFrame <- None
+            latestDirectSnapshot <- None
             LayerRenderer.invalidateAll ()
             eprintfn "[GameViz] Stopped")
 
     let attachToClient (client: BarClient) =
-        lock stateLock (fun () ->
+        lock lifecycleLock (fun () ->
             clientRef <- Some client
             try
                 let grid = MapGrid.loadFromEngine client.Stream
                 mapGridRef <- Some grid
+                renderMapGrid <- Some grid
                 metalSpots <- Callbacks.getMetalSpots client.Stream
                 myTeamId <- Callbacks.getMyTeam client.Stream
                 eprintfn "[GameViz] Attached to client, map %dx%d" grid.WidthHeightmap grid.HeightHeightmap
@@ -391,7 +619,7 @@ module GameViz =
                 eprintfn "[GameViz] Failed to load map data: %s" ex.Message)
 
     let seedUnits (unitStates: UnitState list) =
-        lock stateLock (fun () ->
+        lock lifecycleLock (fun () ->
             for u in unitStates do
                 units <- Map.add u.UnitId u units
             match clientRef with
@@ -401,95 +629,31 @@ module GameViz =
             | None -> ())
 
     let attachWithState (mapGrid: MapGrid) (spots: (float32 * float32 * float32 * float32) array) (teamId: int) =
-        lock stateLock (fun () ->
+        lock lifecycleLock (fun () ->
             mapGridRef <- Some mapGrid
+            renderMapGrid <- Some mapGrid
             metalSpots <- spots
-            myTeamId <- teamId
-            computeAutoFit mapGrid
-            eprintfn "[GameViz] Attached via state, map %dx%d" mapGrid.WidthHeightmap mapGrid.HeightHeightmap)
+            myTeamId <- teamId)
+        lock configLock (fun () ->
+            computeAutoFit mapGrid)
+        eprintfn "[GameViz] Attached via state, map %dx%d" mapGrid.WidthHeightmap mapGrid.HeightHeightmap
 
     let onFrameWithState (gameState: GameState) (mapGrid: MapGrid) =
-        lock stateLock (fun () ->
-            let frameNum = int gameState.FrameNumber
-            stateUpdateCount <- stateUpdateCount + 1
-            stateFrameDelta <- frameNum - lastStateFrame
-            lastStateFrame <- frameNum
-
-            // Process events for indicators (before rebuilding units so destruction
-            // can read previous frame's positions from the existing units map)
-            for evt in gameState.Events do
-                match evt with
-                | GameEvent.UnitCreated(unitId, _) ->
-                    match Map.tryFind unitId gameState.Units with
-                    | Some u ->
-                        let (px, py, pz) = u.Position
-                        indicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.UnitCreated; FrameCreated = frameNum; DurationFrames = 30 } :: indicators
-                    | None -> ()
-                | GameEvent.UnitDestroyed(unitId, _) ->
-                    match Map.tryFind unitId units with
-                    | Some u ->
-                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = frameNum; DurationFrames = 45 } :: indicators
-                    | None -> ()
-                | GameEvent.UnitDamaged(unitId, _, _, _, _) ->
-                    match Map.tryFind unitId units with
-                    | Some u ->
-                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.Combat; FrameCreated = frameNum; DurationFrames = 20 } :: indicators
-                    | None -> ()
-                | GameEvent.EnemyEnterLOS enemyId ->
-                    match Map.tryFind enemyId gameState.Enemies with
-                    | Some e ->
-                        let (px, py, pz) = e.Position
-                        indicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.EnemySpotted; FrameCreated = frameNum; DurationFrames = 40 } :: indicators
-                    | None -> ()
-                | GameEvent.EnemyDestroyed(enemyId, _) ->
-                    match Map.tryFind enemyId units with
-                    | Some u ->
-                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = frameNum; DurationFrames = 45 } :: indicators
-                    | None -> ()
-                | _ -> ()
-
-            // Rebuild units from GameState, preserving previous for interpolation
-            prevUnits <- units
-            let mutable newUnits = Map.empty
-            for (KeyValue(uid, u)) in gameState.Units do
-                newUnits <- Map.add uid (trackedUnitToUnitState myTeamId uid u) newUnits
-            for (KeyValue(eid, e)) in gameState.Enemies do
-                if e.InLOS then
-                    newUnits <- Map.add eid (trackedEnemyToUnitState eid e) newUnits
-            units <- newUnits
-            // Reset interpolation timer
-            let elapsedSinceLastUpdate = interpStopwatch.Elapsed.TotalMilliseconds
-            if elapsedSinceLastUpdate > 10.0 then
-                interpDurationMs <- elapsedSinceLastUpdate
-            interpStopwatch.Restart()
-            interpT <- 0.0f
-
-            // Ensure def props for all encountered DefIds
-            for (KeyValue(_, u)) in units do
-                ensureDefPropsFromCache gameState.UnitDefs u.DefId
-
-            // Track unfinished units
-            unfinishedUnits <-
-                gameState.Units
-                |> Map.toSeq
-                |> Seq.choose (fun (uid, u) -> if not u.IsFinished then Some uid else None)
-                |> Set.ofSeq
-
-            // Prune expired indicators
-            indicators <- indicators |> List.filter (fun ev ->
-                frameNum - ev.FrameCreated < ev.DurationFrames)
-
-            // Derive economy
-            let metalEcon = economyFromSnapshot gameState.Metal
-            let energyEcon = economyFromSnapshot gameState.Energy
-
-            // Update map grid
-            mapGridRef <- Some mapGrid
-
-            snapshot <- Some (buildSnapshot mapGrid frameNum true metalEcon energyEcon))
+        // Lock-free: build RawFrame and atomically publish for the render thread.
+        // No derived-data computation — the render thread handles that.
+        let tid = myTeamId
+        let spots = metalSpots
+        let counter = Interlocked.Increment(&frameCounter)
+        let frame =
+            { GameState = gameState
+              MapGrid = mapGrid
+              MyTeamId = tid
+              MetalSpots = spots
+              FrameCounter = counter }
+        Interlocked.Exchange(&latestFrame, Some frame) |> ignore
 
     let onFrame (frame: GameFrame) =
-        lock stateLock (fun () ->
+        lock lifecycleLock (fun () ->
             let grid =
                 match mapGridRef, clientRef with
                 | Some g, Some c ->
@@ -610,70 +774,72 @@ module GameViz =
                         VizDefaults.defaultEconomy, VizDefaults.defaultEconomy
                 | None -> VizDefaults.defaultEconomy, VizDefaults.defaultEconomy
 
-            snapshot <- Some (buildSnapshot grid frameNum true metalEcon energyEcon))
+            // Build snapshot and publish atomically for the render thread
+            let snap = buildSnapshot grid frameNum true metalEcon energyEcon
+            latestDirectSnapshot <- Some snap
+            Volatile.Write(&directSnapshotCounter, directSnapshotCounter + 1))
 
     let setDisconnected () =
-        lock stateLock (fun () ->
-            snapshot <- snapshot |> Option.map (fun s -> { s with Connected = false })
-            eprintfn "[GameViz] Disconnected")
+        Volatile.Write(&disconnected, 1)
+        eprintfn "[GameViz] Disconnected"
 
     let resetView () =
-        lock stateLock (fun () ->
-            mapGridRef |> Option.iter computeAutoFit)
+        lock configLock (fun () ->
+            renderMapGrid |> Option.iter computeAutoFit)
 
     let setBaseLayer (layer: LayerKind) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             config <- { config with BaseLayer = layer })
 
     let toggleOverlay (overlay: OverlayKind) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             let ov = if Set.contains overlay config.ActiveOverlays then Set.remove overlay config.ActiveOverlays else Set.add overlay config.ActiveOverlays
             config <- { config with ActiveOverlays = ov })
 
     let enableOverlay (overlay: OverlayKind) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             config <- { config with ActiveOverlays = Set.add overlay config.ActiveOverlays })
 
     let disableOverlay (overlay: OverlayKind) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             config <- { config with ActiveOverlays = Set.remove overlay config.ActiveOverlays })
 
     let setConfig (cfg: VizConfig) =
-        lock stateLock (fun () -> config <- cfg)
+        lock configLock (fun () -> config <- cfg)
 
     let updateConfig (f: VizConfig -> VizConfig) =
-        lock stateLock (fun () -> config <- f config)
+        lock configLock (fun () -> config <- f config)
 
     let setColorScheme (layer: LayerKind) (scheme: ColorScheme) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             config <- { config with ColorSchemes = Map.add layer scheme config.ColorSchemes }
             LayerRenderer.invalidateCache layer)
 
     let setMarkerSize (size: float32) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             config <- { config with UnitMarkerSize = size })
 
     let setOverlayOpacity (opacity: float32) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             config <- { config with OverlayOpacity = max 0.0f (min 1.0f opacity) })
 
     let toggleGridLines () =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             config <- { config with ShowGridLines = not config.ShowGridLines })
 
     let pan (dx: float32) (dy: float32) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             viewState <- { viewState with OriginX = viewState.OriginX + dx; OriginY = viewState.OriginY + dy; AutoFit = false })
 
     let zoom (factor: float32) (centerX: float32) (centerY: float32) =
-        lock stateLock (fun () ->
+        lock configLock (fun () ->
             let mapX = centerX / viewState.Scale + viewState.OriginX
             let mapY = centerY / viewState.Scale + viewState.OriginY
             let newScale = viewState.Scale * factor
             viewState <- { viewState with Scale = newScale; OriginX = mapX - centerX / newScale; OriginY = mapY - centerY / newScale; AutoFit = false })
 
     let screenshot (folder: string) : Result<string, string> =
-        lock stateLock (fun () ->
+        lock lifecycleLock (fun () ->
             match viewer with
             | Some v -> v.Screenshot(folder)
             | None -> Result.Error "No viewer running")
