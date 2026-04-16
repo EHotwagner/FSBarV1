@@ -160,8 +160,9 @@ let private mkDisplay
 
 // --- Build the tableau ------------------------------------------------------
 
-let private colX = [ 190; 320; 450 ]          // faction columns (screen px)
-let private rowZ = [ 100; 170; 240; 310; 380; 450 ]  // shape rows (screen px)
+// Tableau occupies upper region; well-spaced so glyphs have room to breathe.
+let private colX = [ 230; 400; 570 ]          // faction columns (screen px)
+let private rowZ = [ 150; 220; 290; 360; 430; 500 ]  // shape rows (screen px)
 
 let private tableauUnits : UnitDisplay list =
     [
@@ -176,46 +177,62 @@ let private tableauUnits : UnitDisplay list =
                     eprintfn "[demo] no BarData unit for %A / %A" faction shape
     ]
 
-// --- Special units in the bottom row ---------------------------------------
+// --- Special showcase cells (bottom region) --------------------------------
 
-let private specialRowZ = 560
-let private armadaAnyBot = pickOne FactionId.Armada MovementShape.Bot |> Option.get
-let private armadaAnyTank = pickOne FactionId.Armada MovementShape.Vehicle |> Option.get
-let private cortexAnyBot = pickOne FactionId.Cortex MovementShape.Bot |> Option.get
-let private cortexAnyTank = pickOne FactionId.Cortex MovementShape.Vehicle |> Option.get
-let private cortexAnyAir = pickOne FactionId.Cortex MovementShape.Air |> Option.get
+// Five labeled cells below the tableau. Each cell has a title at the top and
+// its subject unit(s) below. Cells are wide enough that annotations render
+// comfortably above the glyphs.
+let private specialHeaderZ = 600   // section title Y
+let private specialLabelZ  = 635   // per-cell label Y
+let private specialUnitZ   = 710   // glyph centre Y
 
-// 1. Attacker (team 0) → Target (team 1)
+// Cell centre X positions: five evenly-spaced columns in the 1160px usable
+// area (left of the 280-px panel).
+let private cellXs = [ 100; 300; 500; 700; 900 ]
+
+let private armadaAnyBot   = pickOne FactionId.Armada MovementShape.Bot   |> Option.get
+let private armadaAnyTank  = pickOne FactionId.Armada MovementShape.Vehicle |> Option.get
+let private cortexAnyBot   = pickOne FactionId.Cortex MovementShape.Bot   |> Option.get
+let private cortexAnyTank  = pickOne FactionId.Cortex MovementShape.Vehicle |> Option.get
+let private cortexAnyAir   = pickOne FactionId.Cortex MovementShape.Air   |> Option.get
+
+// Cell 0: Attacker (team 0) → Target (team 1). Two glyphs side-by-side.
+let private attackerXPx = cellXs.[0] + 30   // left side of cell
+let private targetXPx   = cellXs.[0] + 150  // right side of cell
 let private attackerUid = 100
-let private targetUid = 101
+let private targetUid   = 101
 let private attacker =
-    mkDisplay armadaAnyTank attackerUid 0 150 specialRowZ 0.9f statusNone
+    mkDisplay armadaAnyTank attackerUid 0 attackerXPx specialUnitZ 0.9f statusNone
 let private target =
-    mkDisplay cortexAnyTank targetUid 1 220 specialRowZ 0.45f
+    mkDisplay cortexAnyTank targetUid 1 targetXPx specialUnitZ 0.45f
         { statusNone with JustDamagedWithinMs = Some 100 }
 
-// 2. Stealth unit (IsCloaked) — this demo renders it with reduced alpha
+// Cell 1: Cloaked stealth unit.
+let private stealthXPx = cellXs.[1] + 80
 let private stealthUid = 102
 let private stealth =
-    mkDisplay armadaAnyBot stealthUid 0 310 specialRowZ 1.0f
+    mkDisplay armadaAnyBot stealthUid 0 stealthXPx specialUnitZ 1.0f
         { statusNone with IsCloaked = true }
 
-// 3. Heavily damaged unit (low HP)
+// Cell 2: Heavily damaged unit (low HP).
+let private woundedXPx = cellXs.[2] + 80
 let private woundedUid = 103
 let private wounded =
-    mkDisplay cortexAnyBot woundedUid 1 370 specialRowZ 0.18f
+    mkDisplay cortexAnyBot woundedUid 1 woundedXPx specialUnitZ 0.18f
         { statusNone with JustDamagedWithinMs = Some 200 }
 
-// 4. Just-built unit
+// Cell 3: Just-built unit (under-construction glow).
+let private freshXPx = cellXs.[3] + 80
 let private freshUid = 104
 let private fresh =
-    mkDisplay cortexAnyAir freshUid 1 430 specialRowZ 1.0f
+    mkDisplay cortexAnyAir freshUid 1 freshXPx specialUnitZ 1.0f
         { statusNone with JustCompletedWithinMs = Some 400 }
 
-// 5. Stunned unit
+// Cell 4: Stunned unit.
+let private stunnedXPx = cellXs.[4] + 80
 let private stunnedUid = 105
 let private stunned =
-    mkDisplay armadaAnyBot stunnedUid 0 500 specialRowZ 0.7f
+    mkDisplay armadaAnyBot stunnedUid 0 stunnedXPx specialUnitZ 0.7f
         { statusNone with IsStunned = true }
 
 let private specials = [ attacker; target; stealth; wounded; fresh; stunned ]
@@ -228,12 +245,31 @@ let private textPaint = Scene.fill (SKColor(230uy, 230uy, 230uy))
 let private dimPaint  = Scene.fill (SKColor(160uy, 160uy, 170uy))
 let private accentPaint = Scene.fill (SKColor(240uy, 180uy, 80uy))
 
+let private cellLabels =
+    // (x-centre, label)
+    [ cellXs.[0] + 90, "ATTACK"
+      cellXs.[1] + 80, "CLOAKED"
+      cellXs.[2] + 80, "LOW HP"
+      cellXs.[3] + 80, "JUST BUILT"
+      cellXs.[4] + 80, "STUNNED" ]
+
+let private cellSubLabels =
+    [ cellXs.[0] + 90, "animated red projectile trail"
+      cellXs.[1] + 80, "shimmer rings overlay"
+      cellXs.[2] + 80, "18% health, damage flash"
+      cellXs.[3] + 80, "completed <400 ms ago"
+      cellXs.[4] + 80, "stunned desaturate" ]
+
 let private buildChromeLabels () : Element list =
     [
+      // Header
       yield Scene.text "Style Configurator Demo" 16.0f 28.0f 18.0f textPaint
-      yield Scene.text "Press  P  to toggle panel" 16.0f 52.0f 12.0f dimPaint
-      yield Scene.text "Press  W L C N  for weapon / sight / commands / names overlays"
-                16.0f 68.0f 12.0f dimPaint
+      yield Scene.text "P  toggle panel        W L C N  overlays        S  screenshot"
+                16.0f 54.0f 12.0f dimPaint
+      yield Scene.text "Ctrl+C  quit" 16.0f 72.0f 12.0f dimPaint
+      // Tableau column headers (Armada / Cortex / Legion) — pushed higher so
+      // they never overlap the glyphs beneath.
+      yield Scene.text "Every mobility type × faction" 16.0f 104.0f 13.0f accentPaint
       for (i, f) in List.indexed factions do
           let name =
               match f with
@@ -241,7 +277,8 @@ let private buildChromeLabels () : Element list =
               | FactionId.Cortex -> "Cortex"
               | FactionId.Legion -> "Legion"
               | _ -> string f
-          yield Scene.text name (float32 colX.[i] - 26.0f) 88.0f 14.0f textPaint
+          yield Scene.text name (float32 colX.[i] - 26.0f) 126.0f 14.0f textPaint
+      // Tableau row labels on the left edge.
       for (i, s) in List.indexed shapes do
           let name =
               match s with
@@ -252,18 +289,25 @@ let private buildChromeLabels () : Element list =
               | MovementShape.Air -> "Air"
               | MovementShape.Building -> "Building"
               | _ -> "?"
-          yield Scene.text name 10.0f (float32 rowZ.[i] + 4.0f) 12.0f textPaint
-      yield Scene.text "special:" 10.0f (float32 specialRowZ + 4.0f) 12.0f accentPaint
-      yield Scene.text "A → T" (float32 (colX.[0] - 30)) (float32 specialRowZ - 12.0f)
-                11.0f accentPaint
-      yield Scene.text "stealth"    (float32 310 - 16.0f) (float32 specialRowZ - 12.0f)
-                11.0f accentPaint
-      yield Scene.text "low HP"     (float32 370 - 14.0f) (float32 specialRowZ - 12.0f)
-                11.0f accentPaint
-      yield Scene.text "just built" (float32 430 - 20.0f) (float32 specialRowZ - 12.0f)
-                11.0f accentPaint
-      yield Scene.text "stunned"    (float32 500 - 16.0f) (float32 specialRowZ - 12.0f)
-                11.0f accentPaint
+          yield Scene.text name 18.0f (float32 rowZ.[i] + 4.0f) 12.0f textPaint
+      // Divider between tableau and special section
+      let divY = float32 specialHeaderZ - 30.0f
+      yield Scene.rect 16.0f divY 1120.0f 1.0f (Scene.fill (SKColor(64uy, 64uy, 72uy)))
+      // Special section header
+      yield Scene.text "Special cases"
+                18.0f (float32 specialHeaderZ) 14.0f accentPaint
+      // Per-cell labels (bold) and subtitles
+      for (cx, lbl) in cellLabels do
+          yield Scene.text lbl (float32 cx - 26.0f) (float32 specialLabelZ)
+                    12.0f textPaint
+      for (cx, sub) in cellSubLabels do
+          yield Scene.text sub (float32 cx - 60.0f) (float32 specialLabelZ + 16.0f)
+                    10.0f dimPaint
+      // Sub-labels under the attacker/target glyphs
+      yield Scene.text "A" (float32 attackerXPx - 3.0f)
+                (float32 specialUnitZ + 28.0f) 10.0f dimPaint
+      yield Scene.text "T" (float32 targetXPx - 3.0f)
+                (float32 specialUnitZ + 28.0f) 10.0f dimPaint
     ]
 
 // --- Config + panel state (mutable, single-threaded: render thread only) ---
@@ -272,6 +316,10 @@ let mutable private config = VizDefaults.defaultConfig
 let mutable private panelState = ConfigPanel.toggle ConfigPanel.initialState  // open by default
 let mutable private activePreset : string option = None
 let mutable private referenceConfig = config
+
+// --- Animation clock (driven by FrameTick) ---------------------------------
+
+let mutable private animTime : float32 = 0.0f
 
 // Give Team 0 a cyan fill and Team 1 a warm orange so the pair stands out.
 let private withDemoTeamColors (style: UnitGlyphStyle) : UnitGlyphStyle =
@@ -287,25 +335,79 @@ let private withDemoTeamColors (style: UnitGlyphStyle) : UnitGlyphStyle =
 
 let private bgPaint = Scene.fill (SKColor(20uy, 22uy, 28uy))
 
-let private buildAttackLine () =
-    // A dashed-looking line from attacker to target to signal combat intent.
-    let x1 = float32 colX.[0] - 30.0f  // attacker pixel x
-    let z1 = float32 specialRowZ
-    let x2 = 220.0f                    // target pixel x
-    let z2 = float32 specialRowZ
-    let paint = Scene.stroke (SKColor(255uy, 80uy, 80uy, 180uy)) 2.0f
-    Scene.line x1 z1 x2 z2 paint
+// --- Animated attack: projectile trail moving attacker → target ------------
+//
+// A comet-like trail of ~5 dots moves along the line from A to T. Each frame
+// we compute the head's normalised position (phase ∈ [0, 1]) from animTime,
+// then lay down trailing dots at decreasing phases. Colour fades from
+// near-white at the head through bright red to dark red at the tail — the
+// colour progression requested in the demo brief.
 
-let private applyCloakFade (elements: Element list) =
-    // The glyph renderer doesn't bake IsCloaked into alpha, so we can't
-    // easily post-apply opacity without walking the tree. Instead we draw
-    // a translucent overlay rectangle over the stealth unit's cell to
-    // signal it visually.
-    let box =
-        let x = 310.0f - 16.0f
-        let z = float32 specialRowZ - 16.0f
-        Scene.rect x z 32.0f 32.0f (Scene.fill (SKColor(40uy, 40uy, 60uy, 140uy)))
-    elements @ [ box ]
+let private attackLine () : Element =
+    // Static faint guide line so the trajectory is always readable.
+    let x1 = float32 attackerXPx + 10.0f
+    let z1 = float32 specialUnitZ
+    let x2 = float32 targetXPx  - 10.0f
+    let z2 = float32 specialUnitZ
+    Scene.line x1 z1 x2 z2 (Scene.stroke (SKColor(120uy, 30uy, 30uy, 100uy)) 1.0f)
+
+let private attackTrail () : Element list =
+    let x1 = float32 attackerXPx + 10.0f
+    let z1 = float32 specialUnitZ
+    let x2 = float32 targetXPx  - 10.0f
+    let z2 = float32 specialUnitZ
+    let period = 0.9f
+    let headPhase = (animTime % period) / period
+    // 6-dot tail, each offset ~0.065 of the travel behind the previous.
+    let steps = 6
+    [ for i in 0 .. steps - 1 ->
+        let t = headPhase - float32 i * 0.065f
+        if t < 0.0f then None
+        else
+            let x = x1 + (x2 - x1) * t
+            let z = z1 + (z2 - z1) * t
+            // Colour gradient along the tail:
+            //   i = 0  light-white-red  (255, 230, 220)
+            //   i = 1  bright red       (255, 100,  80)
+            //   i = 2  red              (230,  50,  50)
+            //   i = 3+ deep red         (160,  25,  25)
+            let r, g, b =
+                match i with
+                | 0 -> 255uy, 230uy, 220uy
+                | 1 -> 255uy, 140uy, 100uy
+                | 2 -> 240uy,  70uy,  50uy
+                | 3 -> 200uy,  30uy,  30uy
+                | 4 -> 140uy,  20uy,  20uy
+                | _ ->  90uy,  15uy,  15uy
+            let alpha = byte (max 0 (230 - i * 35))
+            let radius = 5.5f - float32 i * 0.55f
+            Some (Scene.circle x z radius (Scene.fill (SKColor(r, g, b, alpha))))
+    ] |> List.choose id
+
+// --- Cloaked unit: shimmer-ring shader animation ---------------------------
+//
+// Three concentric rings expand from the unit centre, each at a different
+// animation phase, fading as they grow. Effect evokes active cloak-field
+// shimmer without needing a pixel shader.
+
+let private cloakEffect () : Element list =
+    let cx = float32 stealthXPx
+    let cz = float32 specialUnitZ
+    let base1Col = SKColor(120uy, 220uy, 255uy)  // electric cyan
+    let rings =
+        [ for i in 0 .. 2 ->
+            let phase = (animTime * 0.9f + float32 i * 0.33f) % 1.0f
+            let r = 6.0f + phase * 22.0f
+            let alpha = byte (220.0f * (1.0f - phase))
+            let colr =
+                SKColor(base1Col.Red, base1Col.Green, base1Col.Blue, alpha)
+            Scene.circle cx cz r (Scene.stroke colr 1.3f) ]
+    // Subtle desaturate / dim backing circle so the unit beneath appears
+    // "phased out" even between ring pulses.
+    let dim =
+        Scene.circle cx cz 16.0f
+            (Scene.fill (SKColor(40uy, 60uy, 90uy, 90uy)))
+    dim :: rings
 
 let private buildScene () : Scene =
     let style = withDemoTeamColors config.GlyphStyle
@@ -313,15 +415,22 @@ let private buildScene () : Scene =
     let chrome = buildChromeLabels ()
     let glyphs =
         UnitGlyph.buildUnitsGlyph allUnits style config.ActiveOverlays
-        |> applyCloakFade
-    let attackLine = buildAttackLine ()
+    let attack = attackLine () :: attackTrail ()
+    let cloak = cloakEffect ()
     let presetNames = try StylePreset.listNames() with _ -> []
     let dirty = ConfigDescriptors.isDirty config referenceConfig
     let panelElems =
         ConfigPanel.buildPanel config { panelState with DirtyIndicator = dirty }
             (float32 winW) (float32 winH) presetNames activePreset
+    // Composition: background, chrome text, underlying attack line, glyphs,
+    // then effects overlay (attack trail + cloak shimmer) on top, then panel.
     let elements =
-        bg :: chrome @ (attackLine :: glyphs) @ panelElems
+        [ yield bg
+          yield! chrome
+          yield! attack          // guide line + moving projectile dots
+          yield! glyphs
+          yield! cloak            // rings above the stealth glyph
+          yield! panelElems ]
     Scene.create config.BackgroundColor elements
 
 // --- Input ------------------------------------------------------------------
@@ -387,7 +496,8 @@ let private routeInput (evt: InputEvent) =
         panelState <- res.PanelState
         match res.UpdatedConfig with Some c -> config <- c | None -> ()
         match res.Action with Some a -> applyPanelAction a | None -> ()
-    | InputEvent.FrameTick _, _ ->
+    | InputEvent.FrameTick dt, _ ->
+        animTime <- animTime + float32 dt
         sceneEvt.Trigger (buildScene ())
     | _ -> ()
 
