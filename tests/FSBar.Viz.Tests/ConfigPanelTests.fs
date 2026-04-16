@@ -61,21 +61,31 @@ let ``mouse down on empty area produces no config change`` () =
     Assert.True(res.UpdatedConfig.IsNone)
     Assert.True(res.Action.IsNone)
 
+// Row layout pitches mirrored from ConfigPanel.fs — kept in sync so tests
+// can compute click-Y from the current preset count without relying on
+// hard-coded offsets.
+let private rowHeight = 22.0f
+let private headerHeight = 24.0f
+let private spacerHeight = rowHeight / 2.0f
+
+/// Computed Y of the save button given the current preset file count.
+let private saveButtonY () =
+    let nPresets = FSBar.Viz.StylePreset.listNames().Length
+    // Title + PresetHeader + N×preset-item
+    headerHeight + headerHeight + float32 nPresets * rowHeight
+
+let private resetButtonY () = saveButtonY () + rowHeight
+
+/// Y of the Colors section header when all sections are collapsed.
+let private colorsHeaderY () = resetButtonY () + rowHeight + spacerHeight
+
 [<Fact>]
 let ``section toggle changes expanded set`` () =
-    // Close all sections first
     let mutable s = ConfigPanel.toggle ConfigPanel.initialState
-    let emptyExpanded = { s with ExpandedSections = Set.empty }
-    s <- emptyExpanded
-    // Build panel, find the Y of "Colors" header. With no sections expanded
-    // and no presets, rows: Title, PresetHeader, Save, Reset, Spacer,
-    // then SectionHeader(Colors). Spacer=11, Title=24, PresetHeader=24,
-    // Save=22, Reset=22, Spacer=11 → Colors header starts at 103.
-    // Click there.
-    let y = 103.0f + 2.0f
+    s <- { s with ExpandedSections = Set.empty }
+    let y = colorsHeaderY () + 2.0f
     let x = windowW - 100.0f
     let res = ConfigPanel.handleInput (InputEvent.MouseDown(MouseButton.Left, x, y)) cfg s windowW windowH
-    // Colors should now be expanded.
     Assert.True(Set.contains "Colors" res.PanelState.ExpandedSections)
 
 [<Fact>]
@@ -93,9 +103,7 @@ let ``scroll offset clamps to 0 when scrolling up at top`` () =
 [<Fact>]
 let ``save button click emits SavePreset action`` () =
     let s = { ConfigPanel.toggle ConfigPanel.initialState with ExpandedSections = Set.empty }
-    // With no presets, layout is Title(24) + PresetHeader(24) + Save(22).
-    // Save button starts at y=48, click at y=55.
-    let y = 48.0f + 4.0f
+    let y = saveButtonY () + 4.0f
     let x = windowW - 100.0f
     let res = ConfigPanel.handleInput (InputEvent.MouseDown(MouseButton.Left, x, y)) cfg s windowW windowH
     match res.Action with
@@ -105,8 +113,7 @@ let ``save button click emits SavePreset action`` () =
 [<Fact>]
 let ``reset button click emits ResetDefaults action`` () =
     let s = { ConfigPanel.toggle ConfigPanel.initialState with ExpandedSections = Set.empty }
-    // Reset button follows save: 24 + 24 + 22 = 70 → Reset at y=70..92
-    let y = 70.0f + 4.0f
+    let y = resetButtonY () + 4.0f
     let x = windowW - 100.0f
     let res = ConfigPanel.handleInput (InputEvent.MouseDown(MouseButton.Left, x, y)) cfg s windowW windowH
     match res.Action with

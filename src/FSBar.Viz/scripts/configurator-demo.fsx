@@ -270,7 +270,7 @@ let private cellLabels =
 let private cellSubLabels =
     [ cellXs.[0] + 90, "animated red projectile trail"
       cellXs.[1] + 80, "shimmer rings overlay"
-      cellXs.[2] + 80, "18% health, damage flash"
+      cellXs.[2] + 80, "18% health, rhythmic damage pulse"
       cellXs.[3] + 80, "completed <400 ms ago"
       cellXs.[4] + 80, "stunned desaturate" ]
 
@@ -335,7 +335,6 @@ let private zoomedInStyle =
         T1StrokeWidth  = 2.2f
         T2StrokeWidth  = 3.0f
         T3StrokeWidth  = 3.8f
-        FacingPipRadius = 3.0f
         HpArcWidth     = 3.0f
         LabelFontSizePx = 13.0f
         LabelLegibilityZoomThreshold = 0.0f }  // always show labels
@@ -413,6 +412,57 @@ let private attackTrail () : Element list =
             Some (Scene.circle x z radius (Scene.fill (SKColor(r, g, b, alpha))))
     ] |> List.choose id
 
+// --- Taking-damage effect --------------------------------------------------
+//
+// One "flash" of taking damage: an expanding red ring plus 4 spark
+// particles radiating outward. `intensity` ∈ [0, 1] — 1 = just hit, 0 =
+// faded. Pure function; callers compute the intensity from whatever clock
+// they want (projectile impact cycle, rhythmic HP pulse, etc).
+
+let private damageFlash (cx: float32) (cz: float32) (intensity: float32) : Element list =
+    if intensity <= 0.0f then []
+    else
+        let inv = 1.0f - intensity
+        let r = 10.0f + inv * 22.0f
+        let alpha = byte (255.0f * intensity)
+        let coreAlpha = byte (200.0f * intensity)
+        let ring =
+            Scene.circle cx cz r
+                (Scene.stroke (SKColor(255uy, 80uy, 60uy, alpha))
+                              (1.5f + intensity * 2.5f))
+        // Inner bright glow at the unit centre for the first half.
+        let glow =
+            if intensity > 0.5f then
+                [ Scene.circle cx cz 8.0f
+                    (Scene.fill (SKColor(255uy, 220uy, 180uy, coreAlpha))) ]
+            else []
+        // 6 radiating spark particles.
+        let nBurst = 6
+        let particles =
+            [ for i in 0 .. nBurst - 1 ->
+                let ang = (float32 i / float32 nBurst) * 2.0f * float32 System.Math.PI
+                let rr = 8.0f + inv * 18.0f
+                let px = cx + (cos ang) * rr
+                let pz = cz + (sin ang) * rr
+                Scene.circle px pz (2.5f * intensity)
+                    (Scene.fill (SKColor(255uy, 140uy, 90uy, alpha))) ]
+        glow @ (ring :: particles)
+
+// Intensity source for the attack target: flashes during the last 20% of
+// each projectile cycle (when the trail head is landing).
+let private attackImpactIntensity () =
+    let period = 0.9f
+    let headPhase = (animTime % period) / period
+    if headPhase < 0.80f then 0.0f
+    else 1.0f - (headPhase - 0.80f) / 0.20f
+
+// Intensity source for the low-HP unit: rapid rhythmic pulse (~2.5 Hz).
+let private lowHpDamageIntensity () =
+    let hitPeriod = 0.45f
+    let phase = (animTime % hitPeriod) / hitPeriod
+    if phase < 0.35f then 1.0f - phase / 0.35f
+    else 0.0f
+
 // --- Cloaked unit: shimmer-ring shader animation ---------------------------
 //
 // Three concentric rings expand from the unit centre, each at a different
@@ -446,6 +496,14 @@ let private buildScene () : Scene =
         UnitGlyph.buildUnitsGlyph allUnits style config.ActiveOverlays
     let attack = attackLine () :: attackTrail ()
     let cloak = cloakEffect ()
+    // Taking-damage effects — target gets hit each projectile cycle; the
+    // LOW-HP unit pulses continuously to show "under fire".
+    let targetFlash =
+        damageFlash (float32 targetXPx) (float32 specialUnitZ)
+            (attackImpactIntensity ())
+    let lowHpFlash =
+        damageFlash (float32 woundedXPx) (float32 specialUnitZ)
+            (lowHpDamageIntensity ())
     let presetNames = try StylePreset.listNames() with _ -> []
     let dirty = ConfigDescriptors.isDirty config referenceConfig
     let panelElems =
@@ -458,7 +516,9 @@ let private buildScene () : Scene =
           yield! chrome
           yield! attack          // guide line + moving projectile dots
           yield! glyphs
-          yield! cloak            // rings above the stealth glyph
+          yield! targetFlash      // damage burst on attack target
+          yield! lowHpFlash       // damage pulse on LOW HP unit
+          yield! cloak            // shimmer rings above the stealth glyph
           yield! panelElems ]
     Scene.create config.BackgroundColor elements
 
