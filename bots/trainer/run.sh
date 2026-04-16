@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # bots/trainer/run.sh — launch one trainer iteration and materialise a conformant run directory.
 #
-# Usage: bash bots/trainer/run.sh <rung_name> <iter_id>
+# Usage: bash bots/trainer/run.sh <rung_name> <iter_id> [OPTIONS]
 #   <rung_name>: must match a Rung.name from bots/trainer/ladder.json (e.g. "NullAI", "BARb/dev")
 #   <iter_id>  : iteration counter string (e.g. "001", "smoke", "042")
+#
+# Options:
+#   --viewer           Open FSBar.Viz viewer window (implies --speed 3 unless overridden)
+#   --speed <1-5|max>  Set game speed (1=realtime, 2=5x, 3=10x, 4=20x, 5=50x, max=100x)
+#   --map <name>       Override map (default: from ladder.json)
+#   --bot <script>     Override bot script (default: bot.fsx)
+#   --opponent <name>  Override opponent AI (default: from ladder.json)
+#   --profile <name>   Override opponent profile (default: from ladder.json)
 #
 # Produces a directory under bots/runs/ conforming to
 # specs/020-bot-iterative-trainer/contracts/run-directory.md. On any exit path, a
@@ -11,12 +19,93 @@
 set -euo pipefail
 
 if [[ $# -lt 2 ]]; then
-  echo "Usage: $0 <rung_name> <iter_id>" >&2
+  echo "Usage: $0 <rung_name> <iter_id> [OPTIONS]" >&2
+  echo "" >&2
+  echo "Options:" >&2
+  echo "  --viewer           Open FSBar.Viz viewer window (implies --speed 3 unless overridden)" >&2
+  echo "  --speed <1-5|max>  Set game speed (1=realtime, 2=5x, 3=10x, 4=20x, 5=50x, max=100x)" >&2
+  echo "  --map <name>       Override map (default: from ladder.json)" >&2
+  echo "  --bot <script>     Override bot script (default: bot.fsx)" >&2
+  echo "  --opponent <name>  Override opponent AI (default: from ladder.json)" >&2
+  echo "  --profile <name>   Override opponent profile (default: from ladder.json)" >&2
   exit 64
 fi
 
 rung_name="$1"
 iter_id="$2"
+shift 2
+
+# Parse optional CLI arguments
+opt_viewer=""
+opt_speed=""
+opt_map=""
+opt_bot=""
+opt_opponent=""
+opt_profile=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --viewer)
+      opt_viewer=1
+      shift
+      ;;
+    --speed)
+      if [[ -z "${2:-}" ]]; then
+        echo "ERROR: --speed requires a value (1-5 or max)" >&2
+        exit 64
+      fi
+      opt_speed="$2"
+      shift 2
+      ;;
+    --map)
+      if [[ -z "${2:-}" ]]; then
+        echo "ERROR: --map requires a non-empty value" >&2
+        exit 64
+      fi
+      opt_map="$2"
+      shift 2
+      ;;
+    --bot)
+      if [[ -z "${2:-}" ]]; then
+        echo "ERROR: --bot requires a non-empty value" >&2
+        exit 64
+      fi
+      opt_bot="$2"
+      shift 2
+      ;;
+    --opponent)
+      if [[ -z "${2:-}" ]]; then
+        echo "ERROR: --opponent requires a non-empty value" >&2
+        exit 64
+      fi
+      opt_opponent="$2"
+      shift 2
+      ;;
+    --profile)
+      if [[ -z "${2:-}" ]]; then
+        echo "ERROR: --profile requires a non-empty value" >&2
+        exit 64
+      fi
+      opt_profile="$2"
+      shift 2
+      ;;
+    *)
+      echo "ERROR: unknown option: $1" >&2
+      exit 64
+      ;;
+  esac
+done
+
+# Validate --speed
+if [[ -n "$opt_speed" ]]; then
+  case "$opt_speed" in
+    1|2|3|4|5|max) ;;
+    *)
+      echo "ERROR: --speed must be 1-5 or 'max' (got: $opt_speed)" >&2
+      exit 64
+      ;;
+  esac
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -31,9 +120,12 @@ source "$SCRIPT_DIR/lib/parse_unwired.sh"
 LADDER="$SCRIPT_DIR/ladder.json"
 # 023: BOT_SCRIPT selector — the runner can launch any .fsx in $SCRIPT_DIR.
 # Default keeps the rush bot (bot.fsx) as the implicit choice for backward
-# compatibility with 020/021/022 invocations. The macro bot is selected via
-#   BOT_SCRIPT=bot_macro.fsx bash bots/trainer/run.sh <rung> <iter>
-BOT_SCRIPT="${BOT_SCRIPT:-bot.fsx}"
+# compatibility with 020/021/022 invocations. CLI --bot overrides env var.
+if [[ -n "$opt_bot" ]]; then
+  BOT_SCRIPT="$opt_bot"
+elif [[ -z "${BOT_SCRIPT:-}" ]]; then
+  BOT_SCRIPT="bot.fsx"
+fi
 export BOT_SCRIPT
 BOT_FSX="$SCRIPT_DIR/$BOT_SCRIPT"
 
@@ -52,11 +144,44 @@ fi
 
 # Verify we are on the feature branch (warn but do not block — caller may be on a detached state)
 current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")"
-if [[ "$current_branch" != "023-trainer-builder-economy" ]]; then
+if [[ "$current_branch" != "029-trainer-viewer-options" ]]; then
   echo "[run.sh] WARNING: not on feature branch (current: $current_branch)" >&2
 fi
 
-echo "[run.sh] iter=$iter_id rung=$rung_name bot_script=$BOT_SCRIPT"
+# Map speed level to engine game speed value (FR-009)
+map_speed_level() {
+  case "$1" in
+    1)   echo 1   ;;
+    2)   echo 5   ;;
+    3)   echo 10  ;;
+    4)   echo 20  ;;
+    5)   echo 50  ;;
+    max) echo 100 ;;
+  esac
+}
+
+# Determine speed level and game speed
+if [[ -n "$opt_speed" ]]; then
+  BOT_SPEED_LEVEL="$opt_speed"
+  BOT_GAME_SPEED="$(map_speed_level "$opt_speed")"
+elif [[ -n "$opt_viewer" && -z "${BOT_GAME_SPEED:-}" ]]; then
+  # FR-010: viewer default is speed 3 (10x) when no explicit --speed
+  BOT_SPEED_LEVEL="3"
+  BOT_GAME_SPEED="10"
+else
+  BOT_SPEED_LEVEL="${BOT_SPEED_LEVEL:-max}"
+  BOT_GAME_SPEED="${BOT_GAME_SPEED:-100}"
+fi
+
+# Export viewer flag
+if [[ -n "$opt_viewer" ]]; then
+  export BOT_VIEWER=1
+fi
+
+export BOT_SPEED_LEVEL
+export BOT_GAME_SPEED
+
+echo "[run.sh] iter=$iter_id rung=$rung_name bot_script=$BOT_SCRIPT viewer=${BOT_VIEWER:-0} speed=$BOT_SPEED_LEVEL ($BOT_GAME_SPEED)"
 
 # Parse ladder
 map_name="$(jq -r '.map' "$LADDER")"
@@ -70,11 +195,28 @@ opponent="$(echo "$rung_json" | jq -r '.opponent')"
 opponent_options="$(echo "$rung_json" | jq -c '.options')"
 max_frames="$(echo "$rung_json" | jq -r '.max_frames')"
 
+# Apply CLI overrides for map, opponent, profile (T004)
+if [[ -n "$opt_map" ]]; then
+  map_name="$opt_map"
+fi
+if [[ -n "$opt_opponent" ]]; then
+  opponent="$opt_opponent"
+fi
+if [[ -n "$opt_profile" ]]; then
+  opponent_options="{\"profile\":\"$opt_profile\"}"
+fi
+
 echo "[run.sh] ladder: map=$map_name opponent=$opponent options=$opponent_options max_frames=$max_frames"
 
 # Build FSBar.Client so bot.fsx's #r directives find fresh DLLs (tests bin picks them up)
 echo "[run.sh] dotnet build src/FSBar.Client.Tests ..."
 dotnet build src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug --nologo --verbosity quiet >/dev/null
+
+# When viewer is active, also build FSBar.Viz.Tests so viewer.fsx can #r the viz DLLs
+if [[ "${BOT_VIEWER:-}" == "1" ]]; then
+  echo "[run.sh] dotnet build tests/FSBar.Viz.Tests (for viewer) ..."
+  dotnet build tests/FSBar.Viz.Tests/FSBar.Viz.Tests.fsproj -c Debug --nologo --verbosity quiet >/dev/null
+fi
 
 # Compose run directory name
 iso_ts="$(date -u +'%Y-%m-%dT%H-%M-%S')"
@@ -101,6 +243,12 @@ jq -n \
   --arg engine "$engine_version" \
   --arg sha "$git_sha" \
   --arg host "$host_name" \
+  --argjson viewer "${BOT_VIEWER:-0}" \
+  --arg speed_level "$BOT_SPEED_LEVEL" \
+  --arg map_override "${opt_map:-}" \
+  --arg bot_script "$BOT_SCRIPT" \
+  --arg opponent_override "${opt_opponent:-}" \
+  --arg opponent_profile "${opt_profile:-}" \
   '{
     iter_id: $iter_id,
     start_timestamp: $ts,
@@ -112,7 +260,13 @@ jq -n \
     max_frames: $max_frames,
     engine_version: $engine,
     git_sha: $sha,
-    host: $host
+    host: $host,
+    viewer: ($viewer == 1),
+    speed_level: $speed_level,
+    map_override: (if $map_override == "" then null else $map_override end),
+    bot_script: $bot_script,
+    opponent_override: (if $opponent_override == "" then null else $opponent_override end),
+    opponent_profile: (if $opponent_profile == "" then null else $opponent_profile end)
   }' > "$run_dir/meta.json"
 
 # Snapshot bot + ladder
@@ -183,12 +337,21 @@ export BOT_OPPONENT_OPTIONS="$opponent_options"
 export BOT_MAP="$map_name"
 export BOT_SEED="$seed"
 export BOT_MAX_FRAMES="$max_frames"
-export BOT_GAME_SPEED="${BOT_GAME_SPEED:-100}"
+# BOT_GAME_SPEED and BOT_VIEWER already exported above
 
 echo "[run.sh] launching dotnet fsi $BOT_FSX ..."
 set +e
-dotnet fsi "$BOT_FSX" > "$run_dir/stdout.log" 2>&1 &
-bot_pid=$!
+if [[ "${BOT_VIEWER:-}" == "1" ]]; then
+  # With viewer: tee stdout so operator sees output and the log file is still written.
+  # Ensure DISPLAY is set for the SkiaViewer window (GLFW needs it).
+  export DISPLAY="${DISPLAY:-:0}"
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/runtime-$(id -u)}"
+  dotnet fsi "$BOT_FSX" 2>&1 | tee "$run_dir/stdout.log" &
+  bot_pid=$!
+else
+  dotnet fsi "$BOT_FSX" > "$run_dir/stdout.log" 2>&1 &
+  bot_pid=$!
+fi
 wait $bot_pid
 bot_exit=$?
 set -e

@@ -12,6 +12,7 @@
 //   BOT_MAX_FRAMES        frame limit for this rung (integer)
 
 #load "helpers/prelude.fsx"
+#load "helpers/viewer.fsx"
 #load "helpers/log.fsx"
 #load "helpers/perception.fsx"
 #load "helpers/tactics.fsx"
@@ -24,6 +25,7 @@ open FSBar.Client.Commands
 open Log
 open Perception
 open Tactics
+open Viewer
 
 let envOrFail (name: string) : string =
     match Environment.GetEnvironmentVariable(name) with
@@ -284,7 +286,16 @@ try
         client.Start()
         printfn "[trainer] BarClient connected"
         if probeEnabled then runAttackProbe client
-        let result = trainerLoopRun client logger maxFrames tacticsFn
+        // Start viewer AFTER warmup/probe — attachToClient reads map data
+        // from the socket, so it must not overlap with other socket reads.
+        startViewer client
+        // Wrap tacticsFn to feed each frame to the viewer. viewerOnFrame
+        // runs inside WaitFrames so all socket reads are serialized.
+        let wrappedTactics : TrainerTacticsFn =
+            fun client frame cmdOpt ->
+                viewerOnFrame frame
+                tacticsFn client frame cmdOpt
+        let result = trainerLoopRun client logger maxFrames wrappedTactics
         writeResult
             logger
             result.Outcome
@@ -296,6 +307,7 @@ try
     with ex ->
         writeError logger ex
 finally
+    stopViewer ()
     match clientOpt with
     | Some c ->
         try c.Stop() with _ -> ()

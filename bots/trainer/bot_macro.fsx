@@ -19,6 +19,7 @@
 //   BOT_SCRIPT            set by run.sh, informational only
 
 #load "helpers/prelude.fsx"
+#load "helpers/viewer.fsx"
 #load "helpers/log.fsx"
 #load "helpers/perception.fsx"
 #load "helpers/tactics.fsx"
@@ -38,6 +39,7 @@ open FSBar.Client.Commands
 open Log
 open Perception
 open Tactics
+open Viewer
 open Opening_build
 open Production_queue
 open Constructor_dispatch
@@ -1215,7 +1217,17 @@ try
         FSBar.Client.Protocol.replayBufferEnabled <- true
         printfn "[tactical] Protocol.replayBufferEnabled = true (entering main loop)"
 
-        let result = trainerLoopRun client logger maxFrames tacticsFn
+        // Start viewer AFTER warmup — attachToClient reads map data from
+        // the socket, so it must not overlap with other socket reads.
+        startViewer client
+        // Wrap tacticsFn to feed each frame to the viewer. viewerOnFrame
+        // runs inside WaitFrames so all socket reads are serialized.
+        let wrappedTactics : TrainerTacticsFn =
+            fun client frame cmdOpt ->
+                viewerOnFrame frame
+                tacticsFn client frame cmdOpt
+
+        let result = trainerLoopRun client logger maxFrames wrappedTactics
         // Bot-side outcome/cause override per SC-010 and T027:
         // - FR-012 stall: outcome→loss, cause→loss-by-stall-upgrade-deadline
         // - Macro clean win: when trainerLoopRun reports a win AND we
@@ -1244,6 +1256,7 @@ try
     with ex ->
         writeError logger ex
 finally
+    stopViewer ()
     match clientOpt with
     | Some c ->
         try c.Stop() with _ -> ()
