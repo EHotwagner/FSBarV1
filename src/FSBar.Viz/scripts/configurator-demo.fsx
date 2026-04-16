@@ -268,10 +268,10 @@ let private cellLabels =
       cellXs.[4] + 80, "STUNNED" ]
 
 let private cellSubLabels =
-    [ cellXs.[0] + 90, "animated red projectile trail"
-      cellXs.[1] + 80, "shimmer rings overlay"
-      cellXs.[2] + 80, "18% health, rhythmic damage pulse"
-      cellXs.[3] + 80, "completed <400 ms ago"
+    [ cellXs.[0] + 90, "trail + shake, dmg 35%"
+      cellXs.[1] + 80, "shimmer rings"
+      cellXs.[2] + 80, "shake pulse, dmg 20%"
+      cellXs.[3] + 80, "just-built ring"
       cellXs.[4] + 80, "stunned desaturate" ]
 
 let private buildChromeLabels () : Element list =
@@ -412,56 +412,59 @@ let private attackTrail () : Element list =
             Some (Scene.circle x z radius (Scene.fill (SKColor(r, g, b, alpha))))
     ] |> List.choose id
 
-// --- Taking-damage effect --------------------------------------------------
+// --- Taking-damage effect: shake ------------------------------------------
 //
-// One "flash" of taking damage: an expanding red ring plus 4 spark
-// particles radiating outward. `intensity` ∈ [0, 1] — 1 = just hit, 0 =
-// faded. Pure function; callers compute the intensity from whatever clock
-// they want (projectile impact cycle, rhythmic HP pulse, etc).
+// A unit absorbing a hit shakes. Amplitude scales linearly with
+// `damageFraction` (damage ÷ maxHp) and with `intensity` ∈ [0,1] —
+// intensity = 1 at the moment of impact, decaying to 0 as the unit
+// recovers. Shake is a sum of two sinusoids at incommensurate
+// frequencies so it reads as chaotic rather than periodic. A per-unit
+// `seed` offsets the phase so nearby units don't oscillate in lock-step.
+//
+// Returned offsets are in *pixels* — the caller converts to elmos if
+// applying them to UnitDisplay.PositionX/Z (multiply by 8).
 
-let private damageFlash (cx: float32) (cz: float32) (intensity: float32) : Element list =
-    if intensity <= 0.0f then []
+let private shakeOffset (seed: float32) (intensity: float32) (damageFraction: float32)
+        : float32 * float32 =
+    if intensity <= 0.0f || damageFraction <= 0.0f then 0.0f, 0.0f
     else
-        let inv = 1.0f - intensity
-        let r = 10.0f + inv * 22.0f
-        let alpha = byte (255.0f * intensity)
-        let coreAlpha = byte (200.0f * intensity)
-        let ring =
-            Scene.circle cx cz r
-                (Scene.stroke (SKColor(255uy, 80uy, 60uy, alpha))
-                              (1.5f + intensity * 2.5f))
-        // Inner bright glow at the unit centre for the first half.
-        let glow =
-            if intensity > 0.5f then
-                [ Scene.circle cx cz 8.0f
-                    (Scene.fill (SKColor(255uy, 220uy, 180uy, coreAlpha))) ]
-            else []
-        // 6 radiating spark particles.
-        let nBurst = 6
-        let particles =
-            [ for i in 0 .. nBurst - 1 ->
-                let ang = (float32 i / float32 nBurst) * 2.0f * float32 System.Math.PI
-                let rr = 8.0f + inv * 18.0f
-                let px = cx + (cos ang) * rr
-                let pz = cz + (sin ang) * rr
-                Scene.circle px pz (2.5f * intensity)
-                    (Scene.fill (SKColor(255uy, 140uy, 90uy, alpha))) ]
-        glow @ (ring :: particles)
+        // 100% damage hit ⇒ 18 px peak shake. Tapers with intensity.
+        let ampPx = 18.0f * damageFraction * intensity
+        let t = animTime + seed
+        let dx = ampPx * sin (t * 42.0f)
+        let dy = ampPx * 0.75f * cos (t * 57.0f + 1.3f)
+        dx, dy
 
-// Intensity source for the attack target: flashes during the last 20% of
-// each projectile cycle (when the trail head is landing).
+// Attack impact: a hit in the last 20% of the projectile cycle. Intensity
+// spikes on landing and decays through the window. Damage fraction is the
+// hit amount as a fraction of the target's max HP.
 let private attackImpactIntensity () =
     let period = 0.9f
     let headPhase = (animTime % period) / period
     if headPhase < 0.80f then 0.0f
     else 1.0f - (headPhase - 0.80f) / 0.20f
 
-// Intensity source for the low-HP unit: rapid rhythmic pulse (~2.5 Hz).
+// Low-HP sustained-fire pulse: ~2.5 Hz rhythmic hit.
 let private lowHpDamageIntensity () =
     let hitPeriod = 0.45f
     let phase = (animTime % hitPeriod) / hitPeriod
     if phase < 0.35f then 1.0f - phase / 0.35f
     else 0.0f
+
+// Apply a shake to a UnitDisplay: offsets PositionX / PositionZ in elmos.
+let private shaken (seed: float32) (intensity: float32) (damageFraction: float32)
+                   (u: UnitDisplay) : UnitDisplay =
+    let dxPx, dzPx = shakeOffset seed intensity damageFraction
+    { u with
+        PositionX = u.PositionX + dxPx * 8.0f
+        PositionZ = u.PositionZ + dzPx * 8.0f }
+
+// Damage fractions for the two demo scenarios:
+//   * Attack target: each projectile hit does ~35% of max HP — so the
+//     shake is dramatic when the trail lands.
+//   * LOW HP unit: continuously taking ~20% / max HP chunks.
+let private attackDamageFraction = 0.35f
+let private lowHpDamageFraction  = 0.20f
 
 // --- Cloaked unit: shimmer-ring shader animation ---------------------------
 //
@@ -488,37 +491,37 @@ let private cloakEffect () : Element list =
             (Scene.fill (SKColor(40uy, 60uy, 90uy, 90uy)))
     dim :: rings
 
+// Rebuild the unit list each frame with the target and LOW-HP units
+// displaced by their current shake. Everything else is static.
+let private currentUnits () : UnitDisplay list =
+    let shakenTarget =
+        shaken 0.0f (attackImpactIntensity ()) attackDamageFraction target
+    let shakenWounded =
+        shaken 1.37f (lowHpDamageIntensity ()) lowHpDamageFraction wounded
+    let shakenSpecials =
+        [ attacker; shakenTarget; stealth; shakenWounded; fresh; stunned ]
+    tableauUnits @ shakenSpecials
+
 let private buildScene () : Scene =
     let style = withDemoTeamColors config.GlyphStyle
     let bg = Scene.rect 0.0f 0.0f (float32 winW) (float32 winH) bgPaint
     let chrome = buildChromeLabels ()
+    let units = currentUnits ()
     let glyphs =
-        UnitGlyph.buildUnitsGlyph allUnits style config.ActiveOverlays
+        UnitGlyph.buildUnitsGlyph units style config.ActiveOverlays
     let attack = attackLine () :: attackTrail ()
     let cloak = cloakEffect ()
-    // Taking-damage effects — target gets hit each projectile cycle; the
-    // LOW-HP unit pulses continuously to show "under fire".
-    let targetFlash =
-        damageFlash (float32 targetXPx) (float32 specialUnitZ)
-            (attackImpactIntensity ())
-    let lowHpFlash =
-        damageFlash (float32 woundedXPx) (float32 specialUnitZ)
-            (lowHpDamageIntensity ())
     let presetNames = try StylePreset.listNames() with _ -> []
     let dirty = ConfigDescriptors.isDirty config referenceConfig
     let panelElems =
         ConfigPanel.buildPanel config { panelState with DirtyIndicator = dirty }
             (float32 winW) (float32 winH) presetNames activePreset
-    // Composition: background, chrome text, underlying attack line, glyphs,
-    // then effects overlay (attack trail + cloak shimmer) on top, then panel.
     let elements =
         [ yield bg
           yield! chrome
-          yield! attack          // guide line + moving projectile dots
-          yield! glyphs
-          yield! targetFlash      // damage burst on attack target
-          yield! lowHpFlash       // damage pulse on LOW HP unit
-          yield! cloak            // shimmer rings above the stealth glyph
+          yield! attack          // guide line + projectile trail
+          yield! glyphs           // units (target & LOW-HP shaken in-place)
+          yield! cloak            // cloak shimmer rings over stealth unit
           yield! panelElems ]
     Scene.create config.BackgroundColor elements
 
