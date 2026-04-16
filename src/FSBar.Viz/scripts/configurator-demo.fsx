@@ -113,6 +113,12 @@ let private statusNone : StatusFlags =
       JustCompletedWithinMs = None
       IsCloaked = false }
 
+// Demo zoom factor — inflates footprints so the glyph renderer produces
+// radii in the 12–24 px range rather than the default 4–6 px. Emulates a
+// zoomed-in battlefield view, appropriate for a style configurator where
+// the point is to *see* the decorations (outlines, pips, arcs).
+let private footprintZoom = 4.0f
+
 let private mkDisplay
     (d: BarData.UnitDef)
     (uid: int) (teamId: int) (pxX: int) (pxZ: int)
@@ -142,8 +148,8 @@ let private mkDisplay
       Faction = factionOf d
       Tier = tierOf d
       LabelCode = UnitLabels.lookupOrFallback d.name
-      FootprintWidthElmo = float32 d.footprintX * 16.0f
-      FootprintHeightElmo = float32 d.footprintZ * 16.0f
+      FootprintWidthElmo = float32 d.footprintX * 16.0f * footprintZoom
+      FootprintHeightElmo = float32 d.footprintZ * 16.0f * footprintZoom
       TeamId = teamId
       PositionX = px pxX
       PositionY = 0.0f
@@ -160,9 +166,10 @@ let private mkDisplay
 
 // --- Build the tableau ------------------------------------------------------
 
-// Tableau occupies upper region; well-spaced so glyphs have room to breathe.
-let private colX = [ 230; 400; 570 ]          // faction columns (screen px)
-let private rowZ = [ 150; 220; 290; 360; 430; 500 ]  // shape rows (screen px)
+// Tableau occupies upper region; well-spaced so the larger zoomed-in
+// glyphs (up to ~24 px radius, plus outline + label) have room to breathe.
+let private colX = [ 240; 480; 720 ]          // faction columns (screen px)
+let private rowZ = [ 170; 240; 310; 380; 450; 520 ]  // shape rows (screen px)
 
 let private tableauUnits : UnitDisplay list =
     [
@@ -182,13 +189,14 @@ let private tableauUnits : UnitDisplay list =
 // Five labeled cells below the tableau. Each cell has a title at the top and
 // its subject unit(s) below. Cells are wide enough that annotations render
 // comfortably above the glyphs.
-let private specialHeaderZ = 600   // section title Y
-let private specialLabelZ  = 635   // per-cell label Y
-let private specialUnitZ   = 710   // glyph centre Y
+let private specialHeaderZ = 620   // section title Y
+let private specialLabelZ  = 655   // per-cell label Y
+let private specialUnitZ   = 780   // glyph centre Y (well below labels)
 
 // Cell centre X positions: five evenly-spaced columns in the 1160px usable
-// area (left of the 280-px panel).
-let private cellXs = [ 100; 300; 500; 700; 900 ]
+// area (left of the 280-px panel). Attack cell needs extra horizontal span
+// for the attacker→target pair, so it gets a wider slot at the start.
+let private cellXs = [ 80; 310; 500; 690; 900 ]
 
 let private armadaAnyBot   = pickOne FactionId.Armada MovementShape.Bot   |> Option.get
 let private armadaAnyTank  = pickOne FactionId.Armada MovementShape.Vehicle |> Option.get
@@ -197,8 +205,8 @@ let private cortexAnyTank  = pickOne FactionId.Cortex MovementShape.Vehicle |> O
 let private cortexAnyAir   = pickOne FactionId.Cortex MovementShape.Air   |> Option.get
 
 // Cell 0: Attacker (team 0) → Target (team 1). Two glyphs side-by-side.
-let private attackerXPx = cellXs.[0] + 30   // left side of cell
-let private targetXPx   = cellXs.[0] + 150  // right side of cell
+let private attackerXPx = cellXs.[0] + 40   // left side of cell
+let private targetXPx   = cellXs.[0] + 190  // right side of cell
 let private attackerUid = 100
 let private targetUid   = 101
 let private attacker =
@@ -312,7 +320,22 @@ let private buildChromeLabels () : Element list =
 
 // --- Config + panel state (mutable, single-threaded: render thread only) ---
 
-let mutable private config = VizDefaults.defaultConfig
+// Zoomed-in starting style — bigger min radius, thicker strokes, larger
+// labels. User can drag every one of these sliders back down via the
+// configurator panel to restore the battlefield-scale default.
+let private zoomedInStyle =
+    { VizDefaults.defaultConfig.GlyphStyle with
+        MinPixelRadius = 14.0f
+        T1StrokeWidth  = 2.2f
+        T2StrokeWidth  = 3.0f
+        T3StrokeWidth  = 3.8f
+        FacingPipRadius = 3.0f
+        HpArcWidth     = 3.0f
+        LabelFontSizePx = 13.0f
+        LabelLegibilityZoomThreshold = 0.0f }  // always show labels
+
+let mutable private config =
+    { VizDefaults.defaultConfig with GlyphStyle = zoomedInStyle }
 let mutable private panelState = ConfigPanel.toggle ConfigPanel.initialState  // open by default
 let mutable private activePreset : string option = None
 let mutable private referenceConfig = config
