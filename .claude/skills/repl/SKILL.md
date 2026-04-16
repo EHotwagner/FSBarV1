@@ -1,6 +1,6 @@
 ---
 name: "repl"
-description: "Start a headless BAR engine REPL in FSI. Restarts FSI, loads Repl.fsx, and opens the module."
+description: "Start a headless BAR engine REPL in FSI with live SkiaViewer visualization. Restarts FSI, loads Repl.fsx, and opens the module."
 user-invocable: true
 disable-model-invocation: true
 ---
@@ -13,4 +13,4 @@ disable-model-invocation: true
    #load "/home/developer/projects/FSBarV1/scripts/examples/Repl.fsx";; open Repl;;
    ```
 3. Wait a moment, then check `mcp__fsi-server__get_recent_fsi_events` to confirm the script loaded (look for "FSBar REPL loaded" or `val help`).
-4. Tell the user the REPL is ready. Remind them of key commands: `start()`, `step N`, `units()`, `economy()`, `help()`.
+4. Tell the user the REPL is ready. The SkiaViewer visualization window opens automatically when `start()` is called. Remind them of key commands: `start()`, `step N`, `units()`, `economy()`, `viz()` / `noviz()`, `help()`.

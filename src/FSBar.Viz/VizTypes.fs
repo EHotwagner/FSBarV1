@@ -199,6 +199,7 @@ type GameSnapshot =
     { FrameNumber: int
       MapGrid: MapGrid
       Units: Map<int, UnitState>
+      DisplayUnits: Map<int, UnitDisplay>
       EventIndicators: EventIndicator list
       EconomyMetal: EconomyData
       EconomyEnergy: EconomyData

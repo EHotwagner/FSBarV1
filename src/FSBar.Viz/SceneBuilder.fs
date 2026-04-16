@@ -125,12 +125,6 @@ module SceneBuilder =
                   Scene.ellipse mx mz dotR dotR dotPaint ])
 
     // --- Unit Overlay ---
-    // Adapter from legacy `UnitState` (no heading / buildProgress / status
-    // flags) to the new `UnitDisplay`. Used when the glyph renderer is
-    // enabled but the data source has not yet been upgraded to populate
-    // full `UnitDisplay` values. Shape/Faction/Tier default to Bot/Neutral/T1
-    // so the legacy path stays usable; a dedicated adapter that consults
-    // BarData is a follow-up feature.
     let private defaultStatus : StatusFlags =
         { IsUnderConstruction = false
           IsStunned = false
@@ -162,17 +156,16 @@ module SceneBuilder =
           BuildRangeElmo = None
           CommandQueue = [] }
 
+    let private resolveDisplayUnits (snap: GameSnapshot) =
+        if not (Map.isEmpty snap.DisplayUnits) then
+            snap.DisplayUnits |> Map.toSeq |> Seq.map snd
+        else
+            snap.Units |> Map.toSeq |> Seq.map (fun (_, u) -> legacyToUnitDisplay u)
+
     let private buildUnits (snap: GameSnapshot) (config: VizConfig) =
         if not (Set.contains OverlayKind.Units config.ActiveOverlays) then []
         elif config.UseGlyphRenderer then
-            // New glyph path (feature 028-unit-viz-language). Legacy
-            // `OverlayKind.Units` still gates visibility so existing
-            // toggles continue to work; the difference is in how the
-            // units are drawn.
-            let displays =
-                snap.Units
-                |> Map.toSeq
-                |> Seq.map (fun (_, u) -> legacyToUnitDisplay u)
+            let displays = resolveDisplayUnits snap
             let glyphOverlays =
                 config.ActiveOverlays
                 |> Set.filter (fun o ->
@@ -184,14 +177,13 @@ module SceneBuilder =
                     | _ -> false)
             UnitGlyph.buildUnitsGlyph displays config.GlyphStyle glyphOverlays
         else
-            // Legacy path — kept behind `UseGlyphRenderer = false` until
-            // every consumer has migrated to the glyph renderer.
-            snap.Units |> Map.toList |> List.collect (fun (_, u) ->
+            let displays = resolveDisplayUnits snap
+            displays |> Seq.toList |> List.collect (fun u ->
                 let mx = mapX u.PositionX
                 let mz = mapZ u.PositionZ
                 let r = config.UnitMarkerSize
                 let centerColor, edgeColor =
-                    if u.IsEnemy then
+                    if u.TeamId <> 0 then
                         SKColor(255uy, 40uy, 40uy, 220uy), SKColor(255uy, 40uy, 40uy, 0uy)
                     else
                         SKColor(40uy, 220uy, 255uy, 220uy), SKColor(40uy, 220uy, 255uy, 0uy)
@@ -205,8 +197,7 @@ module SceneBuilder =
                             TileMode.Clamp))
                     |> Scene.withOpacity config.OverlayOpacity
                 let marker = Scene.ellipse mx mz r r paint
-                // Health bar
-                let healthFrac = if u.MaxHealth > 0.0f then u.Health / u.MaxHealth else 1.0f
+                let healthFrac = if u.MaxHealth > 0.0f then u.CurrentHealth / u.MaxHealth else 1.0f
                 let barW = r * 1.5f
                 let barH = 1.5f
                 let barX = mx - barW / 2.0f

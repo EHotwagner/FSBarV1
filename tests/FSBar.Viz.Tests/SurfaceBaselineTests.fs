@@ -212,7 +212,7 @@ let ``LiveSessionHandle type has expected members`` () =
 [<Fact>]
 let ``smoke test - VizDefaults defaultConfig is valid`` () =
     let config = VizDefaults.defaultConfig
-    Assert.Equal(LayerKind.BaseTerrain, config.BaseLayer)
+    Assert.Equal(LayerKind.HeightMap, config.BaseLayer)
     Assert.Contains(OverlayKind.MetalSpots, config.ActiveOverlays)
     Assert.Equal(6.0f, config.UnitMarkerSize)
 

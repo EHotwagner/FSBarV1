@@ -1,9 +1,9 @@
-// Repl.fsx — Interactive headless engine REPL
+// Repl.fsx — Interactive headless engine REPL with live visualization
 //
-// Starts a headless BAR engine and provides helper functions for
-// interactive control via FSI. Load this script, then use the
-// helpers to step frames, query state, issue commands, and
-// optionally open a live visualization.
+// Starts a headless BAR engine with a SkiaViewer visualization window
+// and provides helper functions for interactive control via FSI.
+// Load this script, then use the helpers to step frames, query state,
+// and issue commands.
 //
 // Usage (from repo root):
 //   ./pack-dev.sh
@@ -115,7 +115,25 @@ let private warmup () =
     c.WaitFrames 30 processFrame
     printfn "Connected! Team %d | Frame %d | Units: %d" (Callbacks.getMyTeam c.Stream) _frame.FrameNumber _units.Count
 
-/// Start a headless engine session.
+let private openViz () =
+    if not _vizRunning then
+        GameViz.start None
+        GameViz.attachToClient (client ())
+        let s = stream ()
+        let seed =
+            _units |> Map.toList |> List.map (fun (_, u) ->
+                let (_, py, _) = Callbacks.getUnitPos s u.Id
+                { UnitId = u.Id; PositionX = u.X; PositionY = py; PositionZ = u.Z
+                  TeamId = Callbacks.getMyTeam s; DefId = u.DefId
+                  Health = u.Hp; MaxHealth = u.MaxHp; IsEnemy = false } : FSBar.Viz.UnitState)
+        GameViz.seedUnits seed
+        GameViz.enableOverlay OverlayKind.Units
+        GameViz.enableOverlay OverlayKind.Events
+        GameViz.enableOverlay OverlayKind.MetalSpots
+        GameViz.enableOverlay OverlayKind.EconomyHud
+        _vizRunning <- true
+
+/// Start a headless engine session with live visualization.
 let start () =
     if _client.IsSome then printfn "Session already running. Call stop() first."; ()
     else
@@ -125,6 +143,8 @@ let start () =
     c.Start()
     _client <- Some c
     warmup ()
+    openViz ()
+    printfn "Viz opened. Keys: 1-0=layers, U/E/G/M=overlays, Home=reset"
 
 /// Start with a custom config.
 let startWith (config: EngineConfig) =
@@ -135,6 +155,8 @@ let startWith (config: EngineConfig) =
     c.Start()
     _client <- Some c
     warmup ()
+    openViz ()
+    printfn "Viz opened. Keys: 1-0=layers, U/E/G/M=overlays, Home=reset"
 
 /// Stop the session and clean up.
 let stop () =
@@ -364,26 +386,11 @@ let spawnByName (name: string) (x: float32) (z: float32) =
 
 // ── Visualization ────────────────────────────────────────────
 
-/// Open the live visualization window.
+/// Open the live visualization window (called automatically by start).
 let viz () =
     if _vizRunning then printfn "Viz already running."; ()
     else
-    GameViz.start None
-    GameViz.attachToClient (client ())
-    // Seed viz with existing units the Repl already knows about
-    let s = stream ()
-    let seed =
-        _units |> Map.toList |> List.map (fun (_, u) ->
-            let (_, py, _) = Callbacks.getUnitPos s u.Id
-            { UnitId = u.Id; PositionX = u.X; PositionY = py; PositionZ = u.Z
-              TeamId = Callbacks.getMyTeam s; DefId = u.DefId
-              Health = u.Hp; MaxHealth = u.MaxHp; IsEnemy = false } : FSBar.Viz.UnitState)
-    GameViz.seedUnits seed
-    GameViz.enableOverlay OverlayKind.Units
-    GameViz.enableOverlay OverlayKind.Events
-    GameViz.enableOverlay OverlayKind.MetalSpots
-    GameViz.enableOverlay OverlayKind.EconomyHud
-    _vizRunning <- true
+    openViz ()
     printfn "Viz opened. Keys: 1-0=layers, U/E/G/M=overlays, Home=reset"
 
 /// Take a screenshot of the viz window.
@@ -403,7 +410,7 @@ let noviz () =
 
 let help () =
     printfn """
-FSBar Headless REPL
+FSBar REPL (auto-viz)
 ═══════════════════════════════════════════════════════
 Session:    start()  stop()  status()
 Stepping:   step N   step1()   stepWith N handler
@@ -415,7 +422,8 @@ Commands:   move id x z     fight id x z    patrol id x z
             build id defId x z facing       send [cmds]
 Cheats:     give resId amt  spawn defId x z
             spawnByName "armcom" x z
-Viz:        viz()  noviz()
+Viz:        viz()  noviz()  screenshot()
+            (viewer opens automatically on start)
 ═══════════════════════════════════════════════════════"""
 
 // ── Ready ────────────────────────────────────────────────────

@@ -88,6 +88,7 @@ let convertToSnapshot (scene: FSBar.SyntheticData.Scene) (gs: GameState) : GameS
     { FrameNumber = int gs.FrameNumber
       MapGrid = grid
       Units = units
+      DisplayUnits = Map.empty
       EventIndicators = []
       EconomyMetal = economyMetal
       EconomyEnergy = economyEnergy

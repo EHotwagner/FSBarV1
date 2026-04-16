@@ -8,6 +8,100 @@ open Silk.NET.Input
 
 module GameViz =
 
+    // --- BarData-backed unit enrichment ---
+
+    type private DefProps =
+        { InternalName: string
+          Shape: MovementShape
+          Faction: FactionId
+          Tier: Tier
+          LabelCode: string
+          FootprintW: float32
+          FootprintH: float32
+          WeaponRanges: float32 list
+          SightRange: float32 }
+
+    let private barDataByName =
+        lazy (
+            BarData.AllUnitDefs.all
+            |> List.map (fun (_, _, d: BarData.UnitDef) -> d.name, d)
+            |> Map.ofList)
+
+    let private concreteOrDefault (v: BarData.ValueOrExpr<float>) (fallback: float) : float =
+        match v with
+        | BarData.ValueOrExpr.Concrete x -> x
+        | _ -> fallback
+
+    let private resolveDefPropsFromBarData (name: string) : DefProps =
+        match Map.tryFind name barDataByName.Value with
+        | Some d ->
+            let canMove = match d.movement with Some m -> m.canMove | None -> false
+            let canFly = match d.movement with Some m -> m.canFly | None -> false
+            let mClass = match d.movement with Some m -> m.movementClass | None -> None
+            let weaponRanges =
+                match d.weapons with
+                | Some weapons ->
+                    weapons |> List.choose (fun w ->
+                        match w.range with
+                        | Some r -> Some (float32 (concreteOrDefault r 0.0))
+                        | None -> None)
+                    |> List.filter (fun r -> r > 0.0f)
+                | None -> []
+            { InternalName = name
+              Shape = UnitGlyph.classifyShape canMove canFly mClass ignore
+              Faction = UnitGlyph.classifyFaction d.subfolder d.name ignore
+              Tier = UnitGlyph.classifyTier d.customParams d.category ignore
+              LabelCode = UnitLabels.lookupOrFallback name
+              FootprintW = float32 d.footprintX * 16.0f
+              FootprintH = float32 d.footprintZ * 16.0f
+              WeaponRanges = weaponRanges
+              SightRange = float32 (concreteOrDefault d.sightDistance 0.0) }
+        | None ->
+            { InternalName = name
+              Shape = MovementShape.Bot
+              Faction = FactionId.Neutral
+              Tier = Tier.T1
+              LabelCode = UnitLabels.lookupOrFallback name
+              FootprintW = 32.0f
+              FootprintH = 32.0f
+              WeaponRanges = []
+              SightRange = 0.0f }
+
+    let private defaultStatus : StatusFlags =
+        { IsUnderConstruction = false
+          IsStunned = false
+          JustDamagedWithinMs = None
+          JustCompletedWithinMs = None
+          IsCloaked = false }
+
+    let private toUnitDisplay (u: UnitState) (props: DefProps) (isUnfinished: bool) : UnitDisplay =
+        { UnitId = u.UnitId
+          DefId = u.DefId
+          InternalName = props.InternalName
+          Shape = props.Shape
+          Faction = props.Faction
+          Tier = props.Tier
+          LabelCode = props.LabelCode
+          FootprintWidthElmo = props.FootprintW
+          FootprintHeightElmo = props.FootprintH
+          TeamId = u.TeamId
+          PositionX = u.PositionX
+          PositionY = u.PositionY
+          PositionZ = u.PositionZ
+          HeadingRadians = 0.0f
+          CurrentHealth = u.Health
+          MaxHealth = u.MaxHealth
+          BuildProgress = if isUnfinished then 0.5f else 1.0f
+          Status =
+              if isUnfinished then { defaultStatus with IsUnderConstruction = true }
+              else defaultStatus
+          WeaponRangesElmo = props.WeaponRanges
+          SightRangeElmo = props.SightRange
+          BuildRangeElmo = None
+          CommandQueue = [] }
+
+    // --- Mutable state ---
+
     let private stateLock = obj ()
     let mutable private config = VizDefaults.defaultConfig
     let mutable private viewState = VizDefaults.defaultViewState
@@ -23,6 +117,8 @@ module GameViz =
     let mutable private metalSpots: (float32 * float32 * float32 * float32) array = [||]
     let mutable private dragStart: (float32 * float32) option = None
     let mutable private dragOrigin: (float32 * float32) option = None
+    let mutable private defPropsCache: Map<int, DefProps> = Map.empty
+    let mutable private unfinishedUnits: Set<int> = Set.empty
 
     let private computeAutoFit (grid: MapGrid) =
         let mapW = float32 grid.WidthHeightmap
@@ -33,10 +129,26 @@ module GameViz =
             let scale = min scaleX scaleY
             viewState <- { viewState with Scale = scale; OriginX = 0.0f; OriginY = 0.0f }
 
+    let private ensureDefProps (stream: Net.Sockets.NetworkStream) (defId: int) =
+        match Map.tryFind defId defPropsCache with
+        | Some _ -> ()
+        | None ->
+            let name = try Callbacks.getUnitDefName stream defId with _ -> sprintf "def%d" defId
+            defPropsCache <- Map.add defId (resolveDefPropsFromBarData name) defPropsCache
+
+    let private buildDisplayUnits () =
+        units |> Map.map (fun unitId u ->
+            let props =
+                match Map.tryFind u.DefId defPropsCache with
+                | Some p -> p
+                | None -> resolveDefPropsFromBarData (sprintf "def%d" u.DefId)
+            toUnitDisplay u props (Set.contains unitId unfinishedUnits))
+
     let private buildSnapshot (grid: MapGrid) (frameNum: int) (connected: bool) (metalEcon: EconomyData) (energyEcon: EconomyData) =
         { FrameNumber = frameNum
           MapGrid = grid
           Units = units
+          DisplayUnits = buildDisplayUnits ()
           EventIndicators = indicators
           EconomyMetal = metalEcon
           EconomyEnergy = energyEcon
@@ -151,6 +263,8 @@ module GameViz =
             viewState <- VizDefaults.defaultViewState
             units <- Map.empty
             indicators <- []
+            defPropsCache <- Map.empty
+            unfinishedUnits <- Set.empty
             let evt = Event<Scene>()
             sceneEvent <- Some evt
             let viewerConfig: ViewerConfig =
@@ -175,6 +289,8 @@ module GameViz =
             sceneEvent <- None
             units <- Map.empty
             indicators <- []
+            defPropsCache <- Map.empty
+            unfinishedUnits <- Set.empty
             mapGridRef <- None
             clientRef <- None
             snapshot <- None
@@ -197,7 +313,12 @@ module GameViz =
     let seedUnits (unitStates: UnitState list) =
         lock stateLock (fun () ->
             for u in unitStates do
-                units <- Map.add u.UnitId u units)
+                units <- Map.add u.UnitId u units
+            match clientRef with
+            | Some c ->
+                for u in unitStates do
+                    try ensureDefProps c.Stream u.DefId with _ -> ()
+            | None -> ())
 
     let onFrame (frame: GameFrame) =
         lock stateLock (fun () ->
@@ -230,9 +351,11 @@ module GameViz =
                             let hp = Callbacks.getUnitHealth c.Stream unitId
                             let maxHp = Callbacks.getUnitMaxHealth c.Stream unitId
                             let (px, py, pz) = pos
+                            ensureDefProps c.Stream defId
                             let u = { UnitId = unitId; PositionX = px; PositionY = py; PositionZ = pz
                                       TeamId = myTeamId; DefId = defId; Health = hp; MaxHealth = maxHp; IsEnemy = false }
                             units <- Map.add unitId u units
+                            unfinishedUnits <- Set.add unitId unfinishedUnits
                             indicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.UnitCreated; FrameCreated = int frame.FrameNumber; DurationFrames = 30 } :: indicators
                         with _ -> ()
                     | None -> ()
@@ -242,6 +365,7 @@ module GameViz =
                         try
                             let pos = Callbacks.getUnitPos c.Stream unitId
                             let (px, py, pz) = pos
+                            unfinishedUnits <- Set.remove unitId unfinishedUnits
                             units <- units |> Map.change unitId (Option.map (fun u -> { u with PositionX = px; PositionY = py; PositionZ = pz }))
                         with _ -> ()
                     | None -> ()
@@ -250,6 +374,7 @@ module GameViz =
                     | Some u ->
                         indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = int frame.FrameNumber; DurationFrames = 45 } :: indicators
                         units <- Map.remove unitId units
+                        unfinishedUnits <- Set.remove unitId unfinishedUnits
                     | None -> ()
                 | GameEvent.EnemyEnterLOS enemyId ->
                     match clientRef with
@@ -258,6 +383,7 @@ module GameViz =
                             let pos = Callbacks.getUnitPos c.Stream enemyId
                             let (px, py, pz) = pos
                             let defId = try Callbacks.getUnitDef c.Stream enemyId with _ -> 0
+                            if defId > 0 then ensureDefProps c.Stream defId
                             let hp = try Callbacks.getUnitHealth c.Stream enemyId with _ -> 100.0f
                             let maxHp = try Callbacks.getUnitMaxHealth c.Stream enemyId with _ -> 100.0f
                             let u = { UnitId = enemyId; PositionX = px; PositionY = py; PositionZ = pz

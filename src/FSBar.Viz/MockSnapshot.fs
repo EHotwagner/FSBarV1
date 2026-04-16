@@ -14,6 +14,7 @@ module MockSnapshot =
         { FrameNumber = 0
           MapGrid = grid
           Units = Map.empty
+          DisplayUnits = Map.empty
           EventIndicators = []
           EconomyMetal = VizDefaults.defaultEconomy
           EconomyEnergy = VizDefaults.defaultEconomy

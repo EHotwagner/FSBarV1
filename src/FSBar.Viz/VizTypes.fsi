@@ -213,6 +213,9 @@ type GameSnapshot =
     { FrameNumber: int
       MapGrid: MapGrid
       Units: Map<int, UnitState>
+      /// BarData-enriched unit displays. When non-empty, SceneBuilder uses these
+      /// instead of the legacy UnitState→UnitDisplay adapter.
+      DisplayUnits: Map<int, UnitDisplay>
       EventIndicators: EventIndicator list
       EconomyMetal: EconomyData
       EconomyEnergy: EconomyData

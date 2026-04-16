@@ -54,7 +54,7 @@ let ``startPlayback with synthetic data runs and stops cleanly`` () =
                                 MaxHealth = 100.0f; IsEnemy = true } : UnitState))
                 (friendlies @ enemies) |> Map.ofList
             { FrameNumber = int gs.FrameNumber; MapGrid = grid; Units = units
-              EventIndicators = []
+              DisplayUnits = Map.empty; EventIndicators = []
               EconomyMetal = { Current = gs.Metal.Current; Income = gs.Metal.Income; Usage = gs.Metal.Usage; Storage = gs.Metal.Storage }
               EconomyEnergy = { Current = gs.Energy.Current; Income = gs.Energy.Income; Usage = gs.Energy.Usage; Storage = gs.Energy.Storage }
               MetalSpots = [||]; Connected = true })

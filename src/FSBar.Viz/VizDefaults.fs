@@ -19,7 +19,7 @@ module VizDefaults =
           Storage = 0.0f }
 
     let defaultConfig =
-        { BaseLayer = LayerKind.BaseTerrain
+        { BaseLayer = LayerKind.HeightMap
           ActiveOverlays = Set.ofList [ OverlayKind.MetalSpots ]
           ColorSchemes = Map.empty
           UnitMarkerSize = 6.0f

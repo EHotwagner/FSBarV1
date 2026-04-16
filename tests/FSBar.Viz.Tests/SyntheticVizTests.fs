@@ -37,7 +37,7 @@ let private convertFrame (scene: FSBar.SyntheticData.Scene) (sharedGrid: MapGrid
         { Current = gs.Energy.Current; Income = gs.Energy.Income
           Usage = gs.Energy.Usage; Storage = gs.Energy.Storage }
     { FrameNumber = int gs.FrameNumber; MapGrid = sharedGrid; Units = units
-      EventIndicators = []; EconomyMetal = economyMetal; EconomyEnergy = economyEnergy
+      DisplayUnits = Map.empty; EventIndicators = []; EconomyMetal = economyMetal; EconomyEnergy = economyEnergy
       MetalSpots = Array.empty; Connected = true }
 
 // ---- Per-SceneId tests ----
