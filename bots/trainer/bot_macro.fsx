@@ -72,7 +72,13 @@ let runDir = envOrFail "HIGHBAR_BOT_RUN_DIR"
 let opponent = envOrFail "BOT_OPPONENT"
 let opponentOptionsJson = envOr "BOT_OPPONENT_OPTIONS" "{}"
 let mapName = envOrFail "BOT_MAP"
-let maxFrames = Int32.Parse(envOrFail "BOT_MAX_FRAMES")
+let maxFrames =
+    let fullViz =
+        match Environment.GetEnvironmentVariable("BOT_FULL_VIZ") with
+        | "1" -> true
+        | _ -> false
+    if fullViz then Int32.MaxValue
+    else Int32.Parse(envOrFail "BOT_MAX_FRAMES")
 let _seed = Int32.Parse(envOr "BOT_SEED" "1")
 let gameSpeed = Int32.Parse(envOr "BOT_GAME_SPEED" "100")
 let botScript = envOr "BOT_SCRIPT" "bot_macro.fsx"
@@ -1219,12 +1225,18 @@ try
 
         // Start viewer AFTER warmup — uses state-based path (no socket reads).
         startViewer mapGrid allSpots client.GameState.TeamId
-        // Wrap tacticsFn to feed each frame to the viewer.
+        // Push to viewer every N game frames. onFrameWithState is expensive
+        // (rebuilds unit maps + display units under stateLock). The macro
+        // bot gets per-frame protocol delivery (delta=1), so without
+        // aggressive skipping the viewer kills sim throughput.
+        // Skip 30 = ~5 viz updates/sec at 150 game fps.
+        let vizFrameSkip = 30
         let wrappedTactics : TrainerTacticsFn =
             fun client frame cmdOpt ->
-                match mapGrid with
-                | Some grid -> viewerOnFrame client.GameState grid
-                | None -> ()
+                if int frame.FrameNumber % vizFrameSkip = 0 then
+                    match mapGrid with
+                    | Some grid -> viewerOnFrame client.GameState grid
+                    | None -> ()
                 tacticsFn client frame cmdOpt
 
         let result = trainerLoopRun client logger maxFrames wrappedTactics

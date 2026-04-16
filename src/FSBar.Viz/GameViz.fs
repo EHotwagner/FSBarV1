@@ -224,7 +224,7 @@ module GameViz =
             renderFrameCount <- renderFrameCount + 1
             let nowMs = perfStopwatch.Elapsed.TotalMilliseconds
             let elapsed = nowMs - perfLastSampleMs
-            if elapsed >= 1000.0 then
+            if elapsed >= 5000.0 then
                 renderFpsDisplay <- float renderFrameCount / (elapsed / 1000.0)
                 stateUpsDisplay <- float stateUpdateCount / (elapsed / 1000.0)
                 printfn "[viz-perf] render=%.0f fps  state=%.0f ups  game_frame=%d  delta=%d  interp=%.2f"

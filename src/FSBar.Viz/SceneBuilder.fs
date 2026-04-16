@@ -273,14 +273,14 @@ module SceneBuilder =
         if not (Set.contains OverlayKind.EconomyHud config.ActiveOverlays) then []
         else
             let ww = float32 vs.WindowWidth
-            let hudW = 220.0f
-            let hudH = 90.0f
+            let hudW = 320.0f
+            let hudH = 110.0f
             let hudX = ww - hudW - 10.0f
             let hudY = float32 vs.WindowHeight - hudH - 10.0f
-            let barW = 180.0f
-            let barH = 14.0f
+            let barW = 260.0f
+            let barH = 20.0f
             let labelX = hudX + 10.0f
-            let barX = hudX + 30.0f
+            let barX = hudX + 40.0f
 
             // Interpolate economy display values
             let metalFrac =
@@ -318,21 +318,21 @@ module SceneBuilder =
                             SKPoint(barX, 0.0f), SKPoint(barX + barW * metalDisplay, 0.0f),
                             metalGradColors, [| 0.0f; 1.0f |], TileMode.Clamp))
                 Scene.rect barX (hudY + 12.0f) (barW * metalDisplay) barH paint
-            let metalLabelColor = if metalLow then SKColor(255uy, 80uy, 80uy) else config.LabelColor
+            let metalLabelColor = if metalLow then SKColor(255uy, 80uy, 80uy) else SKColors.White
             let metalLabel =
-                Scene.text "M" labelX (hudY + 24.0f) 11.0f (Scene.fill metalLabelColor)
+                Scene.text "M" labelX (hudY + 28.0f) 16.0f (Scene.fill metalLabelColor)
             let metalValues =
                 let txt = sprintf "%.0f/%.0f +%.1f -%.1f"
                             snap.EconomyMetal.Current snap.EconomyMetal.Storage
                             snap.EconomyMetal.Income snap.EconomyMetal.Usage
-                Scene.text txt (barX + 4.0f) (hudY + 24.0f) 9.0f (Scene.fill (SKColor(220uy, 220uy, 220uy, 200uy)))
+                Scene.text txt (barX + 6.0f) (hudY + 28.0f) 13.0f (Scene.fill SKColors.White)
 
             // Energy bar
             let energyLow = energyDisplay < 0.1f
             let energyGradColors =
                 if energyLow then [| SKColor(200uy, 40uy, 40uy); SKColor(255uy, 80uy, 80uy) |]
                 else [| SKColor(220uy, 200uy, 40uy); SKColor(255uy, 180uy, 40uy) |]
-            let energyBarBg = Scene.rect barX (hudY + 34.0f) barW barH (Scene.fill (SKColor(40uy, 40uy, 50uy, 180uy)))
+            let energyBarBg = Scene.rect barX (hudY + 42.0f) barW barH (Scene.fill (SKColor(40uy, 40uy, 50uy, 180uy)))
             let energyBarFg =
                 let paint =
                     Scene.fill SKColors.Transparent
@@ -340,20 +340,20 @@ module SceneBuilder =
                         Shader.LinearGradient(
                             SKPoint(barX, 0.0f), SKPoint(barX + barW * energyDisplay, 0.0f),
                             energyGradColors, [| 0.0f; 1.0f |], TileMode.Clamp))
-                Scene.rect barX (hudY + 34.0f) (barW * energyDisplay) barH paint
-            let energyLabelColor = if energyLow then SKColor(255uy, 80uy, 80uy) else config.LabelColor
+                Scene.rect barX (hudY + 42.0f) (barW * energyDisplay) barH paint
+            let energyLabelColor = if energyLow then SKColor(255uy, 80uy, 80uy) else SKColors.White
             let energyLabel =
-                Scene.text "E" labelX (hudY + 46.0f) 11.0f (Scene.fill energyLabelColor)
+                Scene.text "E" labelX (hudY + 58.0f) 16.0f (Scene.fill energyLabelColor)
             let energyValues =
                 let txt = sprintf "%.0f/%.0f +%.1f -%.1f"
                             snap.EconomyEnergy.Current snap.EconomyEnergy.Storage
                             snap.EconomyEnergy.Income snap.EconomyEnergy.Usage
-                Scene.text txt (barX + 4.0f) (hudY + 46.0f) 9.0f (Scene.fill (SKColor(220uy, 220uy, 220uy, 200uy)))
+                Scene.text txt (barX + 6.0f) (hudY + 58.0f) 13.0f (Scene.fill SKColors.White)
 
             // Frame counter
             let frameText =
                 Scene.text (sprintf "Frame %d" snap.FrameNumber) (hudX + 10.0f) (hudY + hudH - 8.0f)
-                    9.0f (Scene.fill (SKColor(160uy, 160uy, 180uy, 180uy)))
+                    12.0f (Scene.fill (SKColor(200uy, 200uy, 220uy, 220uy)))
 
             [ bg; metalBarBg; metalBarFg; metalLabel; metalValues
               energyBarBg; energyBarFg; energyLabel; energyValues; frameText ]

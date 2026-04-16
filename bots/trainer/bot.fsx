@@ -330,9 +330,16 @@ try
                   ResourceMap = Array2D.zeroCreate 129 129
                   LosMap = Array2D.zeroCreate 129 129
                   RadarMap = Array2D.zeroCreate 129 129 }
+        // Throttle viz updates to ~60fps — onFrameWithState is expensive
+        let vizIntervalMs = 16.0
+        let mutable lastVizTime = 0.0
+        let vizStopwatch = System.Diagnostics.Stopwatch.StartNew()
         let wrappedTactics : TrainerTacticsFn =
             fun client frame cmdOpt ->
-                viewerOnFrame client.GameState viewerGrid
+                let now = vizStopwatch.Elapsed.TotalMilliseconds
+                if now - lastVizTime >= vizIntervalMs then
+                    lastVizTime <- now
+                    viewerOnFrame client.GameState viewerGrid
                 tacticsFn client frame cmdOpt
         let result = trainerLoopRun client logger maxFrames wrappedTactics
         writeResult
