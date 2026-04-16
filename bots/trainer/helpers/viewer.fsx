@@ -21,6 +21,11 @@ let private viewerEnabled =
     | "1" -> true
     | _ -> false
 
+let private fullVizEnabled =
+    match Environment.GetEnvironmentVariable("BOT_FULL_VIZ") with
+    | "1" -> true
+    | _ -> false
+
 let private displayAvailable =
     match Environment.GetEnvironmentVariable("DISPLAY") with
     | null | "" -> false
@@ -83,13 +88,27 @@ let startViewer (mapGrid: MapGrid option) (metalSpots: (float32 * float32 * floa
         try
             printfn "[viewer] starting GameViz..."
             let vizCfg =
-                { VizDefaults.defaultConfig with
-                    ActiveOverlays =
-                        Set.ofList
-                            [ OverlayKind.Units
-                              OverlayKind.Events
-                              OverlayKind.MetalSpots
-                              OverlayKind.EconomyHud ] }
+                if fullVizEnabled then
+                    { VizDefaults.defaultConfig with
+                        ActiveOverlays =
+                            Set.ofList
+                                [ OverlayKind.Units
+                                  OverlayKind.Events
+                                  OverlayKind.MetalSpots
+                                  OverlayKind.EconomyHud
+                                  OverlayKind.WeaponRanges
+                                  OverlayKind.SightRanges
+                                  OverlayKind.CommandQueue
+                                  OverlayKind.FullNames ]
+                        BaseLayer = LayerKind.BaseTerrain }
+                else
+                    { VizDefaults.defaultConfig with
+                        ActiveOverlays =
+                            Set.ofList
+                                [ OverlayKind.Units
+                                  OverlayKind.Events
+                                  OverlayKind.MetalSpots
+                                  OverlayKind.EconomyHud ] }
             GameViz.start (Some vizCfg)
             match mapGrid with
             | Some grid ->
@@ -132,10 +151,8 @@ let stopViewer () : unit =
         try
             GameViz.stop ()
             viewerStarted <- false
-            clientAttached <- false
-            pendingClient <- None
             printfn "[viewer] stopped"
         with ex ->
             printfn "[viewer] WARNING on stop: %s" ex.Message
 
-printfn "[viewer] helper loaded (enabled=%b display=%b)" viewerEnabled displayAvailable
+printfn "[viewer] helper loaded (enabled=%b display=%b full_viz=%b)" viewerEnabled displayAvailable fullVizEnabled

@@ -53,7 +53,13 @@ let runDir = envOrFail "HIGHBAR_BOT_RUN_DIR"
 let opponent = envOrFail "BOT_OPPONENT"
 let opponentOptionsJson = envOr "BOT_OPPONENT_OPTIONS" "{}"
 let mapName = envOrFail "BOT_MAP"
-let maxFrames = Int32.Parse(envOrFail "BOT_MAX_FRAMES")
+let maxFrames =
+    let fullViz =
+        match Environment.GetEnvironmentVariable("BOT_FULL_VIZ") with
+        | "1" -> true
+        | _ -> false
+    if fullViz then Int32.MaxValue
+    else Int32.Parse(envOrFail "BOT_MAX_FRAMES")
 let _seed = Int32.Parse(envOr "BOT_SEED" "1")
 let gameSpeed = Int32.Parse(envOr "BOT_GAME_SPEED" "100")
 
@@ -286,18 +292,44 @@ try
         client.Start()
         printfn "[trainer] BarClient connected"
         if probeEnabled then runAttackProbe client
+        // Load map grid from cache when available (full-viz needs real terrain).
+        let cachedGrid =
+            match MapCacheFile.tryFindSupportedMap mapName with
+            | Some supported ->
+                let repoRoot =
+                    let start = __SOURCE_DIRECTORY__
+                    let rec climb (d: string) =
+                        if isNull d then Directory.GetCurrentDirectory()
+                        elif File.Exists(Path.Combine(d, "pack-dev.sh")) then d
+                        else climb (Path.GetDirectoryName d)
+                    climb start
+                let path = MapCacheFile.cachePathFor repoRoot supported
+                match MapCacheFile.read supported path with
+                | Result.Ok loaded ->
+                    printfn "[trainer] loaded map cache: %s (%dx%d)"
+                        path loaded.Grid.WidthHeightmap loaded.Grid.HeightHeightmap
+                    Some loaded.Grid
+                | Result.Error err ->
+                    printfn "[trainer] WARNING: map cache load failed: %s"
+                        (MapCacheFile.formatLoadError err)
+                    None
+            | None ->
+                printfn "[trainer] map '%s' not in MapCacheFile.supportedMaps — using flat grid"
+                    mapName
+                None
         // Start viewer AFTER warmup/probe — uses state-based path (no socket reads).
-        startViewer None [||] client.GameState.TeamId
+        startViewer cachedGrid [||] client.GameState.TeamId
         // Wrap tacticsFn to feed each frame to the viewer.
-        // Simple bot has no pre-computed MapGrid — viewer uses flat fallback
         let viewerGrid =
-            { WidthElmos = 8192; HeightElmos = 8192
-              WidthHeightmap = 129; HeightHeightmap = 129
-              HeightMap = Array2D.zeroCreate 129 129
-              SlopeMap = Array2D.zeroCreate 129 129
-              ResourceMap = Array2D.zeroCreate 129 129
-              LosMap = Array2D.zeroCreate 129 129
-              RadarMap = Array2D.zeroCreate 129 129 }
+            cachedGrid
+            |> Option.defaultValue
+                { WidthElmos = 8192; HeightElmos = 8192
+                  WidthHeightmap = 129; HeightHeightmap = 129
+                  HeightMap = Array2D.zeroCreate 129 129
+                  SlopeMap = Array2D.zeroCreate 129 129
+                  ResourceMap = Array2D.zeroCreate 129 129
+                  LosMap = Array2D.zeroCreate 129 129
+                  RadarMap = Array2D.zeroCreate 129 129 }
         let wrappedTactics : TrainerTacticsFn =
             fun client frame cmdOpt ->
                 viewerOnFrame client.GameState viewerGrid

@@ -120,6 +120,22 @@ module GameViz =
     let mutable private defPropsCache: Map<int, DefProps> = Map.empty
     let mutable private unfinishedUnits: Set<int> = Set.empty
 
+    // Performance counter state
+    let private perfStopwatch = System.Diagnostics.Stopwatch.StartNew()
+    let mutable private renderFrameCount = 0
+    let mutable private stateUpdateCount = 0
+    let mutable private perfLastSampleMs = 0.0
+    let mutable private renderFpsDisplay = 0.0
+    let mutable private stateUpsDisplay = 0.0
+    let mutable private lastStateFrame = 0
+    let mutable private stateFrameDelta = 0
+
+    // Interpolation state: lerp unit positions between state updates
+    let mutable private prevUnits: Map<int, UnitState> = Map.empty
+    let mutable private interpT = 1.0f  // 0..1 progress toward current snapshot
+    let private interpStopwatch = System.Diagnostics.Stopwatch()
+    let mutable private interpDurationMs = 200.0  // estimated ms between state updates
+
     let private computeAutoFit (grid: MapGrid) =
         let mapW = float32 grid.WidthHeightmap
         let mapH = float32 grid.HeightHeightmap
@@ -179,11 +195,51 @@ module GameViz =
           MetalSpots = metalSpots
           Connected = connected }
 
+    let private lerpUnit (prev: UnitState) (cur: UnitState) (t: float32) : UnitState =
+        let t = min 1.0f (max 0.0f t)
+        { cur with
+            PositionX = prev.PositionX + (cur.PositionX - prev.PositionX) * t
+            PositionY = prev.PositionY + (cur.PositionY - prev.PositionY) * t
+            PositionZ = prev.PositionZ + (cur.PositionZ - prev.PositionZ) * t }
+
     let private emitScene () =
         match sceneEvent, snapshot with
         | Some evt, Some snap ->
-            let scene = SceneBuilder.buildScene snap config viewState
-            evt.Trigger scene
+            // Advance interpolation
+            let elapsedMs = interpStopwatch.Elapsed.TotalMilliseconds
+            interpT <- if interpDurationMs > 0.0 then min 1.0f (float32 (elapsedMs / interpDurationMs)) else 1.0f
+            // Build interpolated units map
+            let interpUnits =
+                snap.Units |> Map.map (fun uid cur ->
+                    match Map.tryFind uid prevUnits with
+                    | Some prev -> lerpUnit prev cur interpT
+                    | None -> cur)
+            let interpDisplayUnits =
+                snap.DisplayUnits |> Map.map (fun uid du ->
+                    match Map.tryFind uid interpUnits with
+                    | Some u -> { du with PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ }
+                    | None -> du)
+            let interpSnap = { snap with Units = interpUnits; DisplayUnits = interpDisplayUnits }
+            // Update perf counters (sample once per second)
+            renderFrameCount <- renderFrameCount + 1
+            let nowMs = perfStopwatch.Elapsed.TotalMilliseconds
+            let elapsed = nowMs - perfLastSampleMs
+            if elapsed >= 1000.0 then
+                renderFpsDisplay <- float renderFrameCount / (elapsed / 1000.0)
+                stateUpsDisplay <- float stateUpdateCount / (elapsed / 1000.0)
+                printfn "[viz-perf] render=%.0f fps  state=%.0f ups  game_frame=%d  delta=%d  interp=%.2f"
+                    renderFpsDisplay stateUpsDisplay snap.FrameNumber stateFrameDelta interpT
+                renderFrameCount <- 0
+                stateUpdateCount <- 0
+                perfLastSampleMs <- nowMs
+            let scene = SceneBuilder.buildScene interpSnap config viewState
+            let perfText =
+                sprintf "render %.0f fps | state %.0f ups | game frame %d (delta %d)"
+                    renderFpsDisplay stateUpsDisplay snap.FrameNumber stateFrameDelta
+            let perfPaint = Scene.fill (SKColor(200uy, 200uy, 200uy, 200uy))
+            let perfLabel = Scene.text perfText 8.0f (float32 viewState.WindowHeight - 12.0f) 13.0f perfPaint
+            let augmented = Scene.create config.BackgroundColor (scene.Elements @ [ perfLabel ])
+            evt.Trigger augmented
         | _ -> ()
 
     let private processKey (key: Key) =
@@ -297,7 +353,7 @@ module GameViz =
                   Height = 640
                   TargetFps = 60
                   ClearColor = SKColors.Black
-                  PreferredBackend = Some Backend.GL }
+                  PreferredBackend = Some Backend.Vulkan }
             let handle, inputs = Viewer.run viewerConfig evt.Publish
             viewer <- Some handle
             let sub = inputs |> Observable.subscribe handleInput
@@ -355,6 +411,9 @@ module GameViz =
     let onFrameWithState (gameState: GameState) (mapGrid: MapGrid) =
         lock stateLock (fun () ->
             let frameNum = int gameState.FrameNumber
+            stateUpdateCount <- stateUpdateCount + 1
+            stateFrameDelta <- frameNum - lastStateFrame
+            lastStateFrame <- frameNum
 
             // Process events for indicators (before rebuilding units so destruction
             // can read previous frame's positions from the existing units map)
@@ -389,7 +448,8 @@ module GameViz =
                     | None -> ()
                 | _ -> ()
 
-            // Rebuild units from GameState
+            // Rebuild units from GameState, preserving previous for interpolation
+            prevUnits <- units
             let mutable newUnits = Map.empty
             for (KeyValue(uid, u)) in gameState.Units do
                 newUnits <- Map.add uid (trackedUnitToUnitState myTeamId uid u) newUnits
@@ -397,6 +457,12 @@ module GameViz =
                 if e.InLOS then
                     newUnits <- Map.add eid (trackedEnemyToUnitState eid e) newUnits
             units <- newUnits
+            // Reset interpolation timer
+            let elapsedSinceLastUpdate = interpStopwatch.Elapsed.TotalMilliseconds
+            if elapsedSinceLastUpdate > 10.0 then
+                interpDurationMs <- elapsedSinceLastUpdate
+            interpStopwatch.Restart()
+            interpT <- 0.0f
 
             // Ensure def props for all encountered DefIds
             for (KeyValue(_, u)) in units do

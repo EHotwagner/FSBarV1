@@ -7,6 +7,7 @@
 #
 # Options:
 #   --viewer           Open FSBar.Viz viewer window (implies --speed 3 unless overridden)
+#   --full-viz         Viewer with all overlays, terrain, speed 2, no frame limit
 #   --speed <1-5|max>  Set game speed (1=realtime, 2=5x, 3=10x, 4=20x, 5=50x, max=100x)
 #   --map <name>       Override map (default: from ladder.json)
 #   --bot <script>     Override bot script (default: bot.fsx)
@@ -23,6 +24,7 @@ if [[ $# -lt 2 ]]; then
   echo "" >&2
   echo "Options:" >&2
   echo "  --viewer           Open FSBar.Viz viewer window (implies --speed 3 unless overridden)" >&2
+  echo "  --full-viz         Viewer with all overlays, terrain, speed 2, no frame limit" >&2
   echo "  --speed <1-5|max>  Set game speed (1=realtime, 2=5x, 3=10x, 4=20x, 5=50x, max=100x)" >&2
   echo "  --map <name>       Override map (default: from ladder.json)" >&2
   echo "  --bot <script>     Override bot script (default: bot.fsx)" >&2
@@ -37,6 +39,7 @@ shift 2
 
 # Parse optional CLI arguments
 opt_viewer=""
+opt_full_viz=""
 opt_speed=""
 opt_map=""
 opt_bot=""
@@ -46,6 +49,11 @@ opt_profile=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --viewer)
+      opt_viewer=1
+      shift
+      ;;
+    --full-viz)
+      opt_full_viz=1
       opt_viewer=1
       shift
       ;;
@@ -164,6 +172,10 @@ map_speed_level() {
 if [[ -n "$opt_speed" ]]; then
   BOT_SPEED_LEVEL="$opt_speed"
   BOT_GAME_SPEED="$(map_speed_level "$opt_speed")"
+elif [[ -n "$opt_full_viz" && -z "${BOT_GAME_SPEED:-}" ]]; then
+  # 031: full-viz default is speed 2 (5x) when no explicit --speed
+  BOT_SPEED_LEVEL="2"
+  BOT_GAME_SPEED="5"
 elif [[ -n "$opt_viewer" && -z "${BOT_GAME_SPEED:-}" ]]; then
   # FR-010: viewer default is speed 3 (10x) when no explicit --speed
   BOT_SPEED_LEVEL="3"
@@ -178,10 +190,15 @@ if [[ -n "$opt_viewer" ]]; then
   export BOT_VIEWER=1
 fi
 
+# Export full-viz flag
+if [[ -n "$opt_full_viz" ]]; then
+  export BOT_FULL_VIZ=1
+fi
+
 export BOT_SPEED_LEVEL
 export BOT_GAME_SPEED
 
-echo "[run.sh] iter=$iter_id rung=$rung_name bot_script=$BOT_SCRIPT viewer=${BOT_VIEWER:-0} speed=$BOT_SPEED_LEVEL ($BOT_GAME_SPEED)"
+echo "[run.sh] iter=$iter_id rung=$rung_name bot_script=$BOT_SCRIPT viewer=${BOT_VIEWER:-0} full_viz=${BOT_FULL_VIZ:-0} speed=$BOT_SPEED_LEVEL ($BOT_GAME_SPEED)"
 
 # Parse ladder
 map_name="$(jq -r '.map' "$LADDER")"
@@ -244,6 +261,7 @@ jq -n \
   --arg sha "$git_sha" \
   --arg host "$host_name" \
   --argjson viewer "${BOT_VIEWER:-0}" \
+  --argjson full_viz "${BOT_FULL_VIZ:-0}" \
   --arg speed_level "$BOT_SPEED_LEVEL" \
   --arg map_override "${opt_map:-}" \
   --arg bot_script "$BOT_SCRIPT" \
@@ -262,12 +280,14 @@ jq -n \
     git_sha: $sha,
     host: $host,
     viewer: ($viewer == 1),
+    full_viz: ($full_viz == 1),
     speed_level: $speed_level,
     map_override: (if $map_override == "" then null else $map_override end),
     bot_script: $bot_script,
     opponent_override: (if $opponent_override == "" then null else $opponent_override end),
     opponent_profile: (if $opponent_profile == "" then null else $opponent_profile end)
-  }' > "$run_dir/meta.json"
+  }
+  | if .full_viz then . + {initial_overlays: ["Units", "Events", "MetalSpots", "EconomyHud", "WeaponRanges", "SightRanges", "CommandQueue", "FullNames"]} else . end' > "$run_dir/meta.json"
 
 # Snapshot bot + ladder
 cp "$BOT_FSX" "$run_dir/bot.fsx.snapshot"
