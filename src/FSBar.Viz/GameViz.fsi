@@ -7,6 +7,8 @@ module GameViz =
     val start: cfg: VizConfig option -> unit
     val stop: unit -> unit
     val attachToClient: client: BarClient -> unit
+    val attachWithState: mapGrid: MapGrid -> metalSpots: (float32 * float32 * float32 * float32) array -> teamId: int -> unit
+    val onFrameWithState: gameState: GameState -> mapGrid: MapGrid -> unit
     val seedUnits: unitStates: UnitState list -> unit
     val onFrame: frame: GameFrame -> unit
     val setDisconnected: unit -> unit

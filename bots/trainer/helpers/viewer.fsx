@@ -2,17 +2,15 @@
 //
 // When BOT_VIEWER=1: loads native libraries (libglfw, libSkiaSharp) via dlopen,
 // references FSBar.Viz + SkiaViewer DLLs from the test output directory, starts
-// a GameViz window, and feeds frames from the trainer loop.
+// a GameViz window, and feeds game state from the trainer loop.
 //
 // When BOT_VIEWER is unset or not "1": all functions are no-ops. Viewer failures
 // never crash the trainer (R6, FR-013).
 //
-// CRITICAL DESIGN NOTE:
-// GameViz.attachToClient does heavy callback reads (MapGrid.loadFromEngine,
-// getMetalSpots, getMyTeam) that consume frames from the proxy socket. These
-// reads MUST happen inside a WaitFrames callback where replayBufferEnabled
-// handles frame interleaving. Therefore attachToClient is deferred to the
-// first viewerOnFrame call (inside the trainer loop), NOT called at startup.
+// Uses the socket-free state-based path (GameViz.attachWithState +
+// GameViz.onFrameWithState) to eliminate socket contention between the
+// viewer and the trainer bot. The bot passes its pre-built GameState and
+// MapGrid directly — zero socket reads in the visualization path.
 //
 // Must be #loaded AFTER helpers/prelude.fsx (for FSBar.Client types).
 
@@ -73,13 +71,11 @@ open FSBar.Client
 open FSBar.Viz
 
 let mutable private viewerStarted = false
-let mutable private clientAttached = false
-let mutable private pendingClient : BarClient option = None
 
-/// Start the viewer window. Does NOT call attachToClient — that is deferred
-/// to the first viewerOnFrame call inside the trainer loop where socket
-/// interleaving is safe.
-let startViewer (client: BarClient) : unit =
+/// Start the viewer window. When mapGrid is Some, uses the socket-free
+/// state-based path (attachWithState). When None, attempts MapCacheFile
+/// fallback or constructs a flat MapGrid from map dimensions.
+let startViewer (mapGrid: MapGrid option) (metalSpots: (float32 * float32 * float32 * float32) array) (teamId: int) : unit =
     if not viewerEnabled then ()
     elif not displayAvailable then
         printfn "[viewer] skipped — no DISPLAY"
@@ -95,50 +91,37 @@ let startViewer (client: BarClient) : unit =
                               OverlayKind.MetalSpots
                               OverlayKind.EconomyHud ] }
             GameViz.start (Some vizCfg)
-            pendingClient <- Some client
+            match mapGrid with
+            | Some grid ->
+                GameViz.attachWithState grid metalSpots teamId
+                printfn "[viewer] attached via state, map %dx%d" grid.WidthHeightmap grid.HeightHeightmap
+            | None ->
+                // Fallback: try MapCacheFile, or construct a flat grid
+                let flatGrid (widthElmos: int) (heightElmos: int) =
+                    let w = max 1 (widthElmos / 64 + 1)
+                    let h = max 1 (heightElmos / 64 + 1)
+                    { WidthElmos = widthElmos; HeightElmos = heightElmos
+                      WidthHeightmap = w; HeightHeightmap = h
+                      HeightMap = Array2D.zeroCreate w h
+                      SlopeMap = Array2D.zeroCreate w h
+                      ResourceMap = Array2D.zeroCreate w h
+                      LosMap = Array2D.zeroCreate w h
+                      RadarMap = Array2D.zeroCreate w h }
+                let grid = flatGrid 8192 8192
+                GameViz.attachWithState grid metalSpots teamId
+                printfn "[viewer] attached via state with flat map (no MapGrid provided)"
             viewerStarted <- true
-            printfn "[viewer] viewer window opened (attachToClient deferred to first frame)"
         with ex ->
             printfn "[viewer] ERROR starting viewer (continuing without): %s" ex.Message
             viewerStarted <- false
 
-/// Feed a frame to the viewer. Call from inside the trainer's WaitFrames
-/// callback so all socket reads are serialized. On first call, attaches
-/// the client (heavy socket reads for map data) and seeds existing units.
-let viewerOnFrame (client: BarClient) (frame: GameFrame) : unit =
+/// Feed a frame to the viewer using the state-based path.
+/// No socket reads are performed.
+let viewerOnFrame (gameState: GameState) (mapGrid: MapGrid) : unit =
     if not viewerStarted then ()
     else
         try
-            // Deferred attach: runs inside WaitFrames where replayBufferEnabled
-            // handles frame interleaving from callback reads.
-            if not clientAttached then
-                match pendingClient with
-                | Some c ->
-                    GameViz.attachToClient c
-                    let existingUnits =
-                        [ for (KeyValue(uid, u)) in c.GameState.Units do
-                            let (px, py, pz) = u.Position
-                            yield { UnitId = uid
-                                    PositionX = px; PositionY = py; PositionZ = pz
-                                    TeamId = 0; DefId = u.DefId
-                                    Health = u.Health; MaxHealth = u.MaxHealth
-                                    IsEnemy = false }
-                          for (KeyValue(eid, e)) in c.GameState.Enemies do
-                            let (px, py, pz) = e.Position
-                            yield { UnitId = eid
-                                    PositionX = px; PositionY = py; PositionZ = pz
-                                    TeamId = 1
-                                    DefId = (e.DefId |> Option.defaultValue 0)
-                                    Health = (e.Health |> Option.defaultValue 100.0f)
-                                    MaxHealth = 100.0f
-                                    IsEnemy = true } ]
-                    if not (List.isEmpty existingUnits) then
-                        GameViz.seedUnits existingUnits
-                    printfn "[viewer] attached + seeded %d units (deferred)" existingUnits.Length
-                    clientAttached <- true
-                    pendingClient <- None
-                | None -> ()
-            GameViz.onFrame frame
+            GameViz.onFrameWithState gameState mapGrid
         with ex ->
             printfn "[viewer] onFrame error (non-fatal): %s" ex.Message
 

@@ -1217,14 +1217,14 @@ try
         FSBar.Client.Protocol.replayBufferEnabled <- true
         printfn "[tactical] Protocol.replayBufferEnabled = true (entering main loop)"
 
-        // Start viewer AFTER warmup — attachToClient reads map data from
-        // the socket, so it must not overlap with other socket reads.
-        startViewer client
-        // Wrap tacticsFn to feed each frame to the viewer. viewerOnFrame
-        // runs inside WaitFrames so all socket reads are serialized.
+        // Start viewer AFTER warmup — uses state-based path (no socket reads).
+        startViewer mapGrid allSpots client.GameState.TeamId
+        // Wrap tacticsFn to feed each frame to the viewer.
         let wrappedTactics : TrainerTacticsFn =
             fun client frame cmdOpt ->
-                viewerOnFrame frame
+                match mapGrid with
+                | Some grid -> viewerOnFrame client.GameState grid
+                | None -> ()
                 tacticsFn client frame cmdOpt
 
         let result = trainerLoopRun client logger maxFrames wrappedTactics

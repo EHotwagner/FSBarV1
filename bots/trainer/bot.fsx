@@ -286,14 +286,21 @@ try
         client.Start()
         printfn "[trainer] BarClient connected"
         if probeEnabled then runAttackProbe client
-        // Start viewer AFTER warmup/probe — attachToClient reads map data
-        // from the socket, so it must not overlap with other socket reads.
-        startViewer client
-        // Wrap tacticsFn to feed each frame to the viewer. viewerOnFrame
-        // runs inside WaitFrames so all socket reads are serialized.
+        // Start viewer AFTER warmup/probe — uses state-based path (no socket reads).
+        startViewer None [||] client.GameState.TeamId
+        // Wrap tacticsFn to feed each frame to the viewer.
+        // Simple bot has no pre-computed MapGrid — viewer uses flat fallback
+        let viewerGrid =
+            { WidthElmos = 8192; HeightElmos = 8192
+              WidthHeightmap = 129; HeightHeightmap = 129
+              HeightMap = Array2D.zeroCreate 129 129
+              SlopeMap = Array2D.zeroCreate 129 129
+              ResourceMap = Array2D.zeroCreate 129 129
+              LosMap = Array2D.zeroCreate 129 129
+              RadarMap = Array2D.zeroCreate 129 129 }
         let wrappedTactics : TrainerTacticsFn =
             fun client frame cmdOpt ->
-                viewerOnFrame frame
+                viewerOnFrame client.GameState viewerGrid
                 tacticsFn client frame cmdOpt
         let result = trainerLoopRun client logger maxFrames wrappedTactics
         writeResult

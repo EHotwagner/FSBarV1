@@ -52,6 +52,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-16
 - Filesystem. One build-time artifact committed to the repo: `src/FSBar.Viz/UnitLabels.generated.fs` — byte-stable mapping from `BarData` unit internal name to 2- or 3-char code. No runtime storage. (028-unit-viz-language)
 - Bash (run.sh CLI) + F# 9 on .NET 10.0 (bot scripts, helpers) + FSBar.Client (BarClient, EngineConfig), FSBar.Viz (GameViz, SceneBuilder, UnitGlyph), SkiaViewer (window management), SkiaSharp 2.88.6 (029-trainer-viewer-options)
 - Filesystem only — run artifacts under `bots/runs/` (gitignored) (029-trainer-viewer-options)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Viz` (`GameViz`, `SceneBuilder`, `VizTypes`, `UnitGlyph`, `UnitLabels`), `FSBar.Client` (`GameState`, `MapGrid`, `UnitDefCache`, `MapCacheFile`, `BarClient`), `SkiaViewer` 1.1.3-dev, `SkiaSharp` 2.88.6, `BarData` (NuGet from local store), `xUnit 2.9.x`. **No new NuGet dependencies.** (030-gameviz-state-api)
+- N/A (in-memory only, no persistence changes) (030-gameviz-state-api)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -118,9 +120,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 030-gameviz-state-api: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Viz` (`GameViz`, `SceneBuilder`, `VizTypes`, `UnitGlyph`, `UnitLabels`), `FSBar.Client` (`GameState`, `MapGrid`, `UnitDefCache`, `MapCacheFile`, `BarClient`), `SkiaViewer` 1.1.3-dev, `SkiaSharp` 2.88.6, `BarData` (NuGet from local store), `xUnit 2.9.x`. **No new NuGet dependencies.**
 - 029-trainer-viewer-options: Added Bash (run.sh CLI) + F# 9 on .NET 10.0 (bot scripts, helpers) + FSBar.Client (BarClient, EngineConfig), FSBar.Viz (GameViz, SceneBuilder, UnitGlyph), SkiaViewer (window management), SkiaSharp 2.88.6
 - 028-unit-viz-language: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo — `FSBar.Viz` (`SceneBuilder`, `VizTypes`, `ColorMaps`), `FSBar.Client` (`GameState`, `UnitDefCache`), `FSBar.SyntheticData` (`Scenes`, `SceneTypes`), `SkiaViewer` 1.1.3-dev (declarative `Scene`), `SkiaSharp` 2.88.6, `BarData` (local nupkg feed), `xUnit 2.9.x`. **No new NuGet dependencies.**
-- 027-map-terrain-viz: Added F# on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Client` (`MapCacheFile`, `MapGrid`, `MapQuery`), `FSBar.Viz` (`LayerRenderer`, `SceneBuilder`, `PreviewSession`, `GameViz`, `ColorMaps`, `VizTypes`), `SkiaViewer` 1.1.3-dev (`InputEvent.FrameTick`, `Scene`, `Shader.Image`), `SkiaSharp` 2.88.6, `xUnit 2.9.x`. **No new NuGet dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

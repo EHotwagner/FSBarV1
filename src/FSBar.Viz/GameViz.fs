@@ -136,6 +136,30 @@ module GameViz =
             let name = try Callbacks.getUnitDefName stream defId with _ -> sprintf "def%d" defId
             defPropsCache <- Map.add defId (resolveDefPropsFromBarData name) defPropsCache
 
+    let private ensureDefPropsFromCache (unitDefs: UnitDefCache) (defId: int) =
+        match Map.tryFind defId defPropsCache with
+        | Some _ -> ()
+        | None ->
+            let name =
+                match UnitDefCache.tryFindById unitDefs defId with
+                | Some info -> info.Name
+                | None -> sprintf "def%d" defId
+            defPropsCache <- Map.add defId (resolveDefPropsFromBarData name) defPropsCache
+
+    let private trackedUnitToUnitState (teamId: int) (uid: int) (u: TrackedUnit) : UnitState =
+        let (px, py, pz) = u.Position
+        { UnitId = uid; PositionX = px; PositionY = py; PositionZ = pz
+          TeamId = teamId; DefId = u.DefId; Health = u.Health; MaxHealth = u.MaxHealth; IsEnemy = false }
+
+    let private trackedEnemyToUnitState (eid: int) (e: TrackedEnemy) : UnitState =
+        let (px, py, pz) = e.Position
+        { UnitId = eid; PositionX = px; PositionY = py; PositionZ = pz
+          TeamId = 1; DefId = (e.DefId |> Option.defaultValue 0)
+          Health = (e.Health |> Option.defaultValue 100.0f); MaxHealth = 100.0f; IsEnemy = true }
+
+    let private economyFromSnapshot (snap: FSBar.Client.EconomySnapshot) : EconomyData =
+        { Current = snap.Current; Income = snap.Income; Usage = snap.Usage; Storage = snap.Storage }
+
     let private buildDisplayUnits () =
         units |> Map.map (fun unitId u ->
             let props =
@@ -319,6 +343,84 @@ module GameViz =
                 for u in unitStates do
                     try ensureDefProps c.Stream u.DefId with _ -> ()
             | None -> ())
+
+    let attachWithState (mapGrid: MapGrid) (spots: (float32 * float32 * float32 * float32) array) (teamId: int) =
+        lock stateLock (fun () ->
+            mapGridRef <- Some mapGrid
+            metalSpots <- spots
+            myTeamId <- teamId
+            computeAutoFit mapGrid
+            eprintfn "[GameViz] Attached via state, map %dx%d" mapGrid.WidthHeightmap mapGrid.HeightHeightmap)
+
+    let onFrameWithState (gameState: GameState) (mapGrid: MapGrid) =
+        lock stateLock (fun () ->
+            let frameNum = int gameState.FrameNumber
+
+            // Process events for indicators (before rebuilding units so destruction
+            // can read previous frame's positions from the existing units map)
+            for evt in gameState.Events do
+                match evt with
+                | GameEvent.UnitCreated(unitId, _) ->
+                    match Map.tryFind unitId gameState.Units with
+                    | Some u ->
+                        let (px, py, pz) = u.Position
+                        indicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.UnitCreated; FrameCreated = frameNum; DurationFrames = 30 } :: indicators
+                    | None -> ()
+                | GameEvent.UnitDestroyed(unitId, _) ->
+                    match Map.tryFind unitId units with
+                    | Some u ->
+                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = frameNum; DurationFrames = 45 } :: indicators
+                    | None -> ()
+                | GameEvent.UnitDamaged(unitId, _, _, _, _) ->
+                    match Map.tryFind unitId units with
+                    | Some u ->
+                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.Combat; FrameCreated = frameNum; DurationFrames = 20 } :: indicators
+                    | None -> ()
+                | GameEvent.EnemyEnterLOS enemyId ->
+                    match Map.tryFind enemyId gameState.Enemies with
+                    | Some e ->
+                        let (px, py, pz) = e.Position
+                        indicators <- { PositionX = px; PositionY = py; PositionZ = pz; Kind = EventKind.EnemySpotted; FrameCreated = frameNum; DurationFrames = 40 } :: indicators
+                    | None -> ()
+                | GameEvent.EnemyDestroyed(enemyId, _) ->
+                    match Map.tryFind enemyId units with
+                    | Some u ->
+                        indicators <- { PositionX = u.PositionX; PositionY = u.PositionY; PositionZ = u.PositionZ; Kind = EventKind.UnitDestroyed; FrameCreated = frameNum; DurationFrames = 45 } :: indicators
+                    | None -> ()
+                | _ -> ()
+
+            // Rebuild units from GameState
+            let mutable newUnits = Map.empty
+            for (KeyValue(uid, u)) in gameState.Units do
+                newUnits <- Map.add uid (trackedUnitToUnitState myTeamId uid u) newUnits
+            for (KeyValue(eid, e)) in gameState.Enemies do
+                if e.InLOS then
+                    newUnits <- Map.add eid (trackedEnemyToUnitState eid e) newUnits
+            units <- newUnits
+
+            // Ensure def props for all encountered DefIds
+            for (KeyValue(_, u)) in units do
+                ensureDefPropsFromCache gameState.UnitDefs u.DefId
+
+            // Track unfinished units
+            unfinishedUnits <-
+                gameState.Units
+                |> Map.toSeq
+                |> Seq.choose (fun (uid, u) -> if not u.IsFinished then Some uid else None)
+                |> Set.ofSeq
+
+            // Prune expired indicators
+            indicators <- indicators |> List.filter (fun ev ->
+                frameNum - ev.FrameCreated < ev.DurationFrames)
+
+            // Derive economy
+            let metalEcon = economyFromSnapshot gameState.Metal
+            let energyEcon = economyFromSnapshot gameState.Energy
+
+            // Update map grid
+            mapGridRef <- Some mapGrid
+
+            snapshot <- Some (buildSnapshot mapGrid frameNum true metalEcon energyEcon))
 
     let onFrame (frame: GameFrame) =
         lock stateLock (fun () ->
