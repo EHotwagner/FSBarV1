@@ -92,8 +92,14 @@ let private allDefs =
     BarData.AllUnitDefs.all |> List.map (fun (_, _, d) -> d)
 
 let private pickOne (faction: FactionId) (shape: MovementShape) : BarData.UnitDef option =
+    // Skip tiny-footprint cosmetic / prop defs like `cor_hat_fightnight`
+    // that get mis-classified as buildings. Real combat units have
+    // footprints ≥ 2×2.
     allDefs
-    |> List.filter (fun d -> factionOf d = faction && shapeOf d = shape)
+    |> List.filter (fun d ->
+        factionOf d = faction
+        && shapeOf d = shape
+        && d.footprintX >= 2.0 && d.footprintZ >= 2.0)
     |> List.sortBy (fun d ->
         let tierRank = match tierOf d with Tier.T1 -> 1 | Tier.T2 -> 2 | Tier.T3 -> 3
         tierRank, d.name)
