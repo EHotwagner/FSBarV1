@@ -40,6 +40,21 @@ open FSBar.Hub.App.Tabs
 
 [<EntryPoint>]
 let main _argv =
+    // --- Engine-launch wrapper ---------------------------------------------
+    // Route engine spawns through scripts/hub-spawn-engine.sh by default so
+    // the kernel kills child engines when the hub crashes (SIGKILL / OOM /
+    // SIGSEGV — anything that bypasses our SIGTERM handler). Users on
+    // non-Linux systems or with unusual setups can opt out by setting the
+    // env var to an empty string before launch.
+    if Environment.GetEnvironmentVariable("FSBAR_ENGINE_WRAPPER") = null then
+        let defaultWrapper =
+            System.IO.Path.GetFullPath(
+                System.IO.Path.Combine(
+                    AppContext.BaseDirectory,
+                    "..", "..", "..", "..", "..", "scripts", "hub-spawn-engine.sh"))
+        if System.IO.File.Exists(defaultWrapper) then
+            Environment.SetEnvironmentVariable("FSBAR_ENGINE_WRAPPER", defaultWrapper)
+
     // --- Load settings + environment detection -----------------------------
     let settings = HubSettings.load ()
     let bus = HubEvents.create ()
