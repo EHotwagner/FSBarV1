@@ -23,11 +23,13 @@
     <Compile Include="ProxyInstallerTests.fs" />
     <Compile Include="ProxyInstallerIdempotencyTests.fs" />
     <Compile Include="ScriptingHubTests.fs" />
+    <Compile Include="CloseWhileRunningTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../../src/FSBar.Hub/FSBar.Hub.fsproj" />
+    <ProjectReference Include="../../src/FSBar.Hub.App/FSBar.Hub.App.fsproj" />
   </ItemGroup>
 
   <ItemGroup>

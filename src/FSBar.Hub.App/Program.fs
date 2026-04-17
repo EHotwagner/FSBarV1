@@ -34,6 +34,7 @@ open SkiaSharp
 open SkiaViewer
 open Silk.NET.Input
 open FSBar.Hub
+open FSBar.Hub.App
 open FSBar.Hub.App.Chrome
 open FSBar.Hub.App.Tabs
 
@@ -526,6 +527,16 @@ let main _argv =
     // window shows something immediately on open.
     trigger ()
 
+    // Install POSIX signal handlers so Ctrl-C / SIGTERM / normal
+    // process exit run the session-teardown path before the process
+    // dies. Belt-and-braces for the hub-crash case is tracked as a
+    // follow-up (requires routing through scripts/hub-spawn-engine.sh).
+    ProcessLifetime.installSignalHandlers
+        (fun () ->
+            sessions |> Option.iter (fun sm ->
+                try sm.End() with _ -> ()))
+        None
+
     // --- Test hook: auto-launch + snapshot + exit -------------------------
     // FSBAR_HUB_AUTO_LAUNCH=1 triggers SetupTab.Launch programmatically
     // and waits for the session to reach Running before the screenshot
@@ -539,6 +550,21 @@ let main _argv =
     match Environment.GetEnvironmentVariable("FSBAR_HUB_SCREENSHOT_DIR") with
     | null | "" ->
         closedSignal.Wait()
+        // Window closed by the user. In the interactive path we
+        // honour `ProcessLifetime.requestClose` — if a session is
+        // running, sweep it down with SIGTERM via sweepChildEngines
+        // after SessionManager.End() (below) rather than letting the
+        // process exit with a dangling engine. The prompt-for-confirm
+        // branch is a modal dialog that Phase-4's wizard work will
+        // surface; for now we just do the safe cleanup.
+        let state =
+            sessions
+            |> Option.map (fun sm -> sm.State)
+            |> Option.defaultValue SessionManager.Idle
+        match ProcessLifetime.requestClose state with
+        | ProcessLifetime.CloseDecision.AllowClose -> ()
+        | ProcessLifetime.CloseDecision.RequireConfirm msg ->
+            eprintfn "[hub] %s (proceeding with teardown)" msg
     | dir ->
         Thread.Sleep(800)
         if autoLaunch then
