@@ -265,8 +265,28 @@ module EncyclopediaTab =
                     Scene.text line (x + 14.0f) baseY size paint)
             // Synthesise a UnitDisplay + render the glyph with UnitGlyph.buildUnit.
             // Place it in the bottom-right of the detail panel at a comfortable size.
-            let glyphCx = x + w - 120.0f
+            // In-game glyphs are sized to footprint (a few pixels), which is far
+            // too small here — scale the style + pin the footprint so every
+            // encyclopedia entry renders at a consistent, readable radius.
+            let targetRadius = 48.0f
+            let scale = targetRadius / style.MinPixelRadius
+            let encyclopediaStyle =
+                { style with
+                    MinPixelRadius = targetRadius
+                    T1StrokeWidth = style.T1StrokeWidth * scale
+                    T2StrokeWidth = style.T2StrokeWidth * scale
+                    T3StrokeWidth = style.T3StrokeWidth * scale
+                    // Pip is offset by `r + pipR*2` from centre — full scaling
+                    // would park it well outside the shape. Keep it modest.
+                    FacingPipRadius = style.FacingPipRadius * scale * 0.4f
+                    HpArcWidth = style.HpArcWidth * scale
+                    LabelFontSizePx = style.LabelFontSizePx * scale
+                    LabelLegibilityZoomThreshold = 0.0f }
+            let glyphCx = x + w - 160.0f
             let glyphCy = y + h - 120.0f
+            // Pin footprint to targetRadius (rawR = footprint/16) so large
+            // buildings don't blow past the panel edge.
+            let pinnedFootprint = targetRadius * 16.0f
             let unit =
                 { UnitId = 0
                   DefId = e.DefId
@@ -275,8 +295,8 @@ module EncyclopediaTab =
                   Faction = e.Faction
                   Tier = e.Tier
                   LabelCode = UnitLabels.lookupOrFallback e.InternalName
-                  FootprintWidthElmo = float32 e.FootprintX * 16.0f
-                  FootprintHeightElmo = float32 e.FootprintZ * 16.0f
+                  FootprintWidthElmo = pinnedFootprint
+                  FootprintHeightElmo = pinnedFootprint
                   TeamId = 0
                   PositionX = glyphCx * 8.0f
                   PositionY = 0.0f
@@ -295,10 +315,10 @@ module EncyclopediaTab =
                   SightRangeElmo = e.SightRangeElmo
                   BuildRangeElmo = None
                   CommandQueue = [] }
-            let glyphEls = UnitGlyph.buildUnit unit style []
+            let glyphEls = UnitGlyph.buildUnit unit encyclopediaStyle []
             let glyphHint =
-                Scene.text "↑ glyph (same renderer as Viewer tab)"
-                    (glyphCx - 40.0f) (glyphCy + 60.0f) 12.0f dimText
+                Scene.text "↑ same renderer as Viewer"
+                    (glyphCx - 80.0f) (glyphCy + 80.0f) 12.0f dimText
             header @ textEls @ glyphEls @ [ glyphHint ]
 
     let render
