@@ -9,7 +9,7 @@ open Silk.NET.Input
 
 module PreviewSession =
 
-    let private stateLock = obj ()
+    let stateLock = obj ()
     let mutable private config = VizDefaults.defaultConfig
     let mutable private viewState = VizDefaults.defaultViewState
     let mutable private currentSnapshot: GameSnapshot option = None
@@ -22,7 +22,7 @@ module PreviewSession =
     let mutable private dragStart: (float32 * float32) option = None
     let mutable private dragOrigin: (float32 * float32) option = None
 
-    type private CyclingState =
+    type CyclingState =
         { SupportedMaps: MapCacheFile.SupportedMap list
           mutable CurrentIndex: int
           RepoRoot: string }
@@ -30,7 +30,7 @@ module PreviewSession =
     let mutable private cyclingState: CyclingState option = None
     let mutable private errorBanner: string option = None
 
-    let private computeAutoFit (grid: MapGrid) =
+    let computeAutoFit (grid: MapGrid) =
         let mapW = float32 grid.WidthHeightmap
         let mapH = float32 grid.HeightHeightmap
         if mapW > 0.0f && mapH > 0.0f then
@@ -39,7 +39,7 @@ module PreviewSession =
             let scale = min scaleX scaleY
             viewState <- { viewState with Scale = scale; OriginX = 0.0f; OriginY = 0.0f }
 
-    let private getSnapshot () =
+    let getSnapshot () =
         if playbackFrames.Length > 0 then
             match playbackStopwatch with
             | Some sw ->
@@ -50,7 +50,7 @@ module PreviewSession =
         else
             currentSnapshot
 
-    let private bannerElements (msg: string) : Element list =
+    let bannerElements (msg: string) : Element list =
         let w = float32 viewState.WindowWidth
         let h = float32 viewState.WindowHeight
         // Dim backdrop so the banner reads clearly even over a fresh window.
@@ -69,7 +69,7 @@ module PreviewSession =
             |> Array.toList
         backdrop :: box :: title :: lines
 
-    let private emitScene () =
+    let emitScene () =
         match sceneEvent with
         | None -> ()
         | Some evt ->
@@ -102,7 +102,7 @@ module PreviewSession =
         if n <= 0 then 0
         else ((current + direction) % n + n) % n
 
-    let private findRepoRoot () =
+    let findRepoRoot () =
         let rec walk (dir: string) =
             if String.IsNullOrEmpty dir then None
             elif System.IO.Directory.Exists(System.IO.Path.Combine(dir, ".specify"))
@@ -118,7 +118,7 @@ module PreviewSession =
             eprintfn "[PreviewSession] Warning: could not find repo root, falling back to CWD"
             Environment.CurrentDirectory
 
-    let private snapshotOfGrid (grid: MapGrid) (metalSpots: (float32 * float32 * float32 * float32) array) : GameSnapshot =
+    let snapshotOfGrid (grid: MapGrid) (metalSpots: (float32 * float32 * float32 * float32) array) : GameSnapshot =
         { FrameNumber = 0
           MapGrid = grid
           Units = Map.empty
@@ -129,7 +129,7 @@ module PreviewSession =
           MetalSpots = metalSpots
           Connected = true }
 
-    let private loadAtIndex (state: CyclingState) (idx: int) : Result<GameSnapshot, string> =
+    let loadAtIndex (state: CyclingState) (idx: int) : Result<GameSnapshot, string> =
         let supported = state.SupportedMaps.[idx]
         let path = MapCacheFile.cachePathFor state.RepoRoot supported
         match MapCacheFile.read supported path with
@@ -138,7 +138,7 @@ module PreviewSession =
             Result.Ok (snapshotOfGrid loaded.Grid metalSpots)
         | Result.Error e -> Result.Error (MapCacheFile.formatLoadError e)
 
-    let private cycleTo (direction: int) =
+    let cycleTo (direction: int) =
         match cyclingState with
         | None -> ()
         | Some state ->
@@ -156,7 +156,7 @@ module PreviewSession =
                 errorBanner <- Some msg
                 eprintfn "[PreviewSession] Load failure: %s" msg
 
-    let private processKey (key: Key) =
+    let processKey (key: Key) =
         lock stateLock (fun () ->
             match key with
             | Key.B ->
@@ -196,7 +196,7 @@ module PreviewSession =
             | Key.LeftBracket  | Key.Comma  -> cycleTo -1
             | _ -> ())
 
-    let private handleInput (evt: InputEvent) =
+    let handleInput (evt: InputEvent) =
         match evt with
         | InputEvent.KeyDown key -> processKey key
         | InputEvent.MouseScroll(delta, x, y) ->
@@ -242,7 +242,7 @@ module PreviewSession =
                 emitScene ())
         | _ -> ()
 
-    let private doStart (initialSnapshot: GameSnapshot option) =
+    let doStart (initialSnapshot: GameSnapshot option) =
         lock stateLock (fun () ->
             config <- VizDefaults.defaultConfig
             viewState <- VizDefaults.defaultViewState

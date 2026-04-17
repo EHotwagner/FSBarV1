@@ -53,7 +53,7 @@ module MapCacheFile =
     let tryFindSupportedMap (mapName: string) : SupportedMap option =
         supportedMaps |> List.tryFind (fun m -> m.MapName = mapName)
 
-    let private sanitise (s: string) : string =
+    let sanitise (s: string) : string =
         String(
             s.ToLowerInvariant()
             |> Seq.map (fun c -> if Char.IsLetterOrDigit(c) || c = '.' then c else '_')
@@ -79,13 +79,13 @@ module MapCacheFile =
     // Serialization helpers
     // ---------------------------------------------------------------------
 
-    let private gzipBytes (bytes: byte[]) : string =
+    let gzipBytes (bytes: byte[]) : string =
         use ms = new MemoryStream()
         (use gz = new GZipStream(ms, CompressionLevel.Optimal)
          gz.Write(bytes, 0, bytes.Length))
         Convert.ToBase64String(ms.ToArray())
 
-    let private gunzipBytes (b64: string) : byte[] =
+    let gunzipBytes (b64: string) : byte[] =
         let compressed = Convert.FromBase64String b64
         use msIn = new MemoryStream(compressed)
         use gz = new GZipStream(msIn, CompressionMode.Decompress)
@@ -93,7 +93,7 @@ module MapCacheFile =
         gz.CopyTo msOut
         msOut.ToArray()
 
-    let private encodeFloat32Bytes (a: float32[,]) : int * int * byte[] =
+    let encodeFloat32Bytes (a: float32[,]) : int * int * byte[] =
         let rows = Array2D.length1 a
         let cols = Array2D.length2 a
         let bytes = Array.zeroCreate<byte> (rows * cols * 4)
@@ -105,7 +105,7 @@ module MapCacheFile =
                 k <- k + 4
         rows, cols, bytes
 
-    let private encodeInt32Bytes (a: int[,]) : int * int * byte[] =
+    let encodeInt32Bytes (a: int[,]) : int * int * byte[] =
         let rows = Array2D.length1 a
         let cols = Array2D.length2 a
         let bytes = Array.zeroCreate<byte> (rows * cols * 4)
@@ -117,14 +117,14 @@ module MapCacheFile =
                 k <- k + 4
         rows, cols, bytes
 
-    let private writeBlob (w: Utf8JsonWriter) (rows: int) (cols: int) (bytes: byte[]) =
+    let writeBlob (w: Utf8JsonWriter) (rows: int) (cols: int) (bytes: byte[]) =
         w.WriteStartObject()
         w.WriteNumber("rows", rows)
         w.WriteNumber("cols", cols)
         w.WriteString("gzipB64", gzipBytes bytes)
         w.WriteEndObject()
 
-    let private writeVec3 (w: Utf8JsonWriter) (propName: string) (x: float32) (y: float32) (z: float32) =
+    let writeVec3 (w: Utf8JsonWriter) (propName: string) (x: float32) (y: float32) (z: float32) =
         w.WritePropertyName propName
         w.WriteStartObject()
         w.WriteNumber("x", float x)
@@ -132,7 +132,7 @@ module MapCacheFile =
         w.WriteNumber("z", float z)
         w.WriteEndObject()
 
-    let private querySnapshotFields (q: ChokepointQuery) =
+    let querySnapshotFields (q: ChokepointQuery) =
         (string q.MoveType, q.MaxWidthElmos, q.SearchRadiusElmos)
 
     let write
@@ -203,14 +203,14 @@ module MapCacheFile =
     // Read helpers
     // ---------------------------------------------------------------------
 
-    let private tryGetProp (el: JsonElement) (name: string) : JsonElement option =
+    let tryGetProp (el: JsonElement) (name: string) : JsonElement option =
         let mutable v = Unchecked.defaultof<JsonElement>
         if el.TryGetProperty(name, &v) then Some v else None
 
-    let private getProp (el: JsonElement) (name: string) : JsonElement =
+    let getProp (el: JsonElement) (name: string) : JsonElement =
         el.GetProperty name
 
-    let private decodeBlobBytes (path: string) (field: string) (el: JsonElement) : Result<int * int * byte[], LoadError> =
+    let decodeBlobBytes (path: string) (field: string) (el: JsonElement) : Result<int * int * byte[], LoadError> =
         try
             let rows = (getProp el "rows").GetInt32()
             let cols = (getProp el "cols").GetInt32()
@@ -229,7 +229,7 @@ module MapCacheFile =
         with ex ->
             Result.Error (BlobCorrupted(path, field, "shape error: " + ex.Message))
 
-    let private bytesToFloat32Array2D (rows: int) (cols: int) (bytes: byte[]) : float32[,] =
+    let bytesToFloat32Array2D (rows: int) (cols: int) (bytes: byte[]) : float32[,] =
         let out = Array2D.zeroCreate rows cols
         let mutable k = 0
         for i in 0 .. rows - 1 do
@@ -238,7 +238,7 @@ module MapCacheFile =
                 k <- k + 4
         out
 
-    let private bytesToInt32Array2D (rows: int) (cols: int) (bytes: byte[]) : int[,] =
+    let bytesToInt32Array2D (rows: int) (cols: int) (bytes: byte[]) : int[,] =
         let out = Array2D.zeroCreate rows cols
         let mutable k = 0
         for i in 0 .. rows - 1 do

@@ -7,11 +7,11 @@ open System.Runtime.InteropServices
 
 module LayerRenderer =
 
-    let private cache = ConcurrentDictionary<string, SKBitmap>()
+    let cache = ConcurrentDictionary<string, SKBitmap>()
     let mutable private hits = 0
     let mutable private misses = 0
 
-    let private cacheKey (layer: LayerKind) =
+    let cacheKey (layer: LayerKind) =
         match layer with
         | LayerKind.BaseTerrain -> "base-terrain"
         | LayerKind.HeightMap -> "height"
@@ -27,17 +27,17 @@ module LayerRenderer =
             | MoveType.Hover -> "pass-hover"
             | MoveType.Ship -> "pass-ship"
 
-    let private isDynamic (layer: LayerKind) =
+    let isDynamic (layer: LayerKind) =
         match layer with
         | LayerKind.LosMap | LayerKind.RadarMap -> true
         | _ -> false
 
-    let private copyPixelsToBitmap (pixels: byte[]) (bmp: SKBitmap) =
+    let copyPixelsToBitmap (pixels: byte[]) (bmp: SKBitmap) =
         let ptr = bmp.GetPixels()
         if ptr <> 0n then
             Marshal.Copy(pixels, 0, ptr, pixels.Length)
 
-    let private renderFloatArray (data: float32[,]) (scheme: ColorScheme) =
+    let renderFloatArray (data: float32[,]) (scheme: ColorScheme) =
         let h = Array2D.length1 data
         let w = Array2D.length2 data
         if h = 0 || w = 0 then
@@ -65,7 +65,7 @@ module LayerRenderer =
         copyPixelsToBitmap pixels bmp
         bmp
 
-    let private renderIntArray (data: int[,]) (scheme: ColorScheme) =
+    let renderIntArray (data: int[,]) (scheme: ColorScheme) =
         let h = Array2D.length1 data
         let w = Array2D.length2 data
         if h = 0 || w = 0 then
@@ -90,7 +90,7 @@ module LayerRenderer =
         copyPixelsToBitmap pixels bmp
         bmp
 
-    let private renderBoolArray (data: bool[,]) (scheme: ColorScheme) =
+    let renderBoolArray (data: bool[,]) (scheme: ColorScheme) =
         let h = Array2D.length1 data
         let w = Array2D.length2 data
         if h = 0 || w = 0 then
@@ -110,19 +110,19 @@ module LayerRenderer =
         copyPixelsToBitmap pixels bmp
         bmp
 
-    let private clamp01 (v: float32) =
+    let clamp01 (v: float32) =
         if v < 0.0f then 0.0f
         elif v > 1.0f then 1.0f
         else v
 
-    let private brownLandRamp (t: float32) : struct (byte * byte * byte) =
+    let brownLandRamp (t: float32) : struct (byte * byte * byte) =
         let t = clamp01 t
         let r = byte (58.0f + (214.0f - 58.0f) * t)
         let g = byte (36.0f + (172.0f - 36.0f) * t)
         let b = byte (18.0f + (120.0f - 18.0f) * t)
         struct (r, g, b)
 
-    let private blueWaterRamp (t: float32) : struct (byte * byte * byte) =
+    let blueWaterRamp (t: float32) : struct (byte * byte * byte) =
         let t = clamp01 t
         let r = byte (10.0f + (120.0f - 10.0f) * t)
         let g = byte (22.0f + (196.0f - 22.0f) * t)
@@ -132,9 +132,9 @@ module LayerRenderer =
     // Maximum fraction by which slope may lift a base cell toward white.
     // 1.0f would blow out fully to white on the steepest cell; 0.65f keeps
     // the underlying brown/blue tint readable even on sheer cliffs.
-    let private slopeLiftCeiling = 0.65f
+    let slopeLiftCeiling = 0.65f
 
-    let private renderBaseTerrain (grid: MapGrid) : SKBitmap =
+    let renderBaseTerrain (grid: MapGrid) : SKBitmap =
         let data = grid.HeightMap
         let slope = grid.SlopeMap
         let h = Array2D.length1 data
@@ -204,7 +204,7 @@ module LayerRenderer =
         copyPixelsToBitmap pixels bmp
         bmp
 
-    let private renderTerrainClassification (grid: MapGrid) (scheme: ColorScheme) =
+    let renderTerrainClassification (grid: MapGrid) (scheme: ColorScheme) =
         let h = grid.HeightHeightmap
         let w = grid.WidthHeightmap
         if h = 0 || w = 0 then

@@ -19,13 +19,13 @@ type ConfigPanelInputResult =
 module ConfigPanel =
 
     let panelWidth : float32 = 280.0f
-    let private rowHeight : float32 = 22.0f
-    let private headerHeight : float32 = 24.0f
-    let private padX : float32 = 8.0f
-    let private labelWidth : float32 = 140.0f
+    let rowHeight : float32 = 22.0f
+    let headerHeight : float32 = 24.0f
+    let padX : float32 = 8.0f
+    let labelWidth : float32 = 140.0f
 
     // --- Palette of preset colors for ColorPicker cycling ---
-    let private colorPalette : SKColor array =
+    let colorPalette : SKColor array =
         [|
             SKColor(255uy, 255uy, 255uy)
             SKColor(0uy,   0uy,   0uy)
@@ -42,7 +42,7 @@ module ConfigPanel =
             SKColor(200uy, 200uy, 200uy)
         |]
 
-    let private nextColorInPalette (cur: SKColor) : SKColor =
+    let nextColorInPalette (cur: SKColor) : SKColor =
         let idx =
             colorPalette
             |> Array.tryFindIndex (fun c ->
@@ -71,7 +71,7 @@ module ConfigPanel =
     // --- Virtual row layout ----------------------------------------------
 
     [<RequireQualifiedAccess>]
-    type private RowKind =
+    type RowKind =
         | Title
         | PresetHeader
         | SaveButton
@@ -81,9 +81,9 @@ module ConfigPanel =
         | AttrRow of AttributeDescriptor
         | Spacer
 
-    type private Row = { Y: float32; Height: float32; Kind: RowKind }
+    type Row = { Y: float32; Height: float32; Kind: RowKind }
 
-    let private buildRows
+    let buildRows
         (panelState: ConfigPanelState) (presetNames: string list) : Row list =
         let rows = ResizeArray()
         let mutable y = 0.0f
@@ -105,40 +105,40 @@ module ConfigPanel =
                 |> List.iter (fun d -> add (RowKind.AttrRow d) rowHeight)
         List.ofSeq rows
 
-    let private totalContentHeight (rows: Row list) : float32 =
+    let totalContentHeight (rows: Row list) : float32 =
         match rows with
         | [] -> 0.0f
         | _ ->
             let last = List.last rows
             last.Y + last.Height
 
-    let private clampScroll (offset: float32) (contentH: float32) (windowH: float32) : float32 =
+    let clampScroll (offset: float32) (contentH: float32) (windowH: float32) : float32 =
         let maxScroll = max 0.0f (contentH - windowH)
         max 0.0f (min maxScroll offset)
 
     // --- Paints -----------------------------------------------------------
 
-    let private panelBg = Scene.fill (SKColor(24uy, 24uy, 28uy, 235uy))
-    let private divider = Scene.fill (SKColor(64uy, 64uy, 72uy))
-    let private headerBg = Scene.fill (SKColor(40uy, 40uy, 48uy, 235uy))
-    let private buttonBg = Scene.fill (SKColor(60uy, 90uy, 140uy))
-    let private buttonResetBg = Scene.fill (SKColor(140uy, 60uy, 60uy))
-    let private presetActiveBg = Scene.fill (SKColor(80uy, 100uy, 140uy))
-    let private presetBg = Scene.fill (SKColor(48uy, 48uy, 56uy))
-    let private toggleOn = Scene.fill (SKColor(80uy, 200uy, 120uy))
-    let private toggleOff = Scene.fill (SKColor(70uy, 70uy, 80uy))
-    let private sliderTrack = Scene.fill (SKColor(70uy, 70uy, 80uy))
-    let private sliderThumb = Scene.fill (SKColor(180uy, 200uy, 230uy))
-    let private textPaint = Scene.fill (SKColor(230uy, 230uy, 230uy))
-    let private textDim = Scene.fill (SKColor(160uy, 160uy, 170uy))
-    let private dirtyPaint = Scene.fill (SKColor(240uy, 180uy, 80uy))
+    let panelBg = Scene.fill (SKColor(24uy, 24uy, 28uy, 235uy))
+    let divider = Scene.fill (SKColor(64uy, 64uy, 72uy))
+    let headerBg = Scene.fill (SKColor(40uy, 40uy, 48uy, 235uy))
+    let buttonBg = Scene.fill (SKColor(60uy, 90uy, 140uy))
+    let buttonResetBg = Scene.fill (SKColor(140uy, 60uy, 60uy))
+    let presetActiveBg = Scene.fill (SKColor(80uy, 100uy, 140uy))
+    let presetBg = Scene.fill (SKColor(48uy, 48uy, 56uy))
+    let toggleOn = Scene.fill (SKColor(80uy, 200uy, 120uy))
+    let toggleOff = Scene.fill (SKColor(70uy, 70uy, 80uy))
+    let sliderTrack = Scene.fill (SKColor(70uy, 70uy, 80uy))
+    let sliderThumb = Scene.fill (SKColor(180uy, 200uy, 230uy))
+    let textPaint = Scene.fill (SKColor(230uy, 230uy, 230uy))
+    let textDim = Scene.fill (SKColor(160uy, 160uy, 170uy))
+    let dirtyPaint = Scene.fill (SKColor(240uy, 180uy, 80uy))
 
     // --- Render helpers ---------------------------------------------------
 
-    let private renderText (s: string) (x: float32) (y: float32) (size: float32) (paint: Paint) : Element =
+    let renderText (s: string) (x: float32) (y: float32) (size: float32) (paint: Paint) : Element =
         Scene.text s x y size paint
 
-    let private renderRow
+    let renderRow
         (panelX: float32) (rowScreenY: float32)
         (row: Row) (config: VizConfig) (panelState: ConfigPanelState)
         (activePresetName: string option) : Element list =
@@ -242,7 +242,7 @@ module ConfigPanel =
 
     // --- Input handling --------------------------------------------------
 
-    let private pointRowAt
+    let pointRowAt
         (panelState: ConfigPanelState) (presetNames: string list)
         (windowHeight: float32) (localY: float32) : Row option =
         let rows = buildRows panelState presetNames
@@ -251,7 +251,7 @@ module ConfigPanel =
         let virtualY = localY + scroll
         rows |> List.tryFind (fun r -> virtualY >= r.Y && virtualY < r.Y + r.Height)
 
-    let private sliderValueAtX (d: AttributeDescriptor) (panelX: float32) (x: float32) (_config: VizConfig) =
+    let sliderValueAtX (d: AttributeDescriptor) (panelX: float32) (x: float32) (_config: VizConfig) =
         let controlX = panelX + padX + labelWidth
         let controlWidth = panelWidth - labelWidth - 2.0f * padX
         let trackW = controlWidth - 40.0f
@@ -266,7 +266,7 @@ module ConfigPanel =
             Some (box v)
         | _ -> None
 
-    let private nextEnum (labels: string list) (cur: string) : string =
+    let nextEnum (labels: string list) (cur: string) : string =
         match labels with
         | [] -> cur
         | _ ->

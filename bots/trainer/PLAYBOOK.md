@@ -83,7 +83,7 @@ Then classify the root cause:
   command rendering). Edit `src/FSBar.Client/*.fs`, then run:
   ```bash
   dotnet build src/FSBar.Client/FSBar.Client.fsproj -c Debug
-  dotnet test src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug
+  dotnet test tests/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug
   ```
   Add a regression test for the bug before fixing it (Constitution §III).
 - **`helper-extraction`** — the same perception/tactic code is in `bot.fsx`

@@ -6,9 +6,9 @@ open SkiaViewer
 open Silk.NET.Input
 open FSBar.Viz
 
-let private cfg = VizDefaults.defaultConfig
-let private windowW = 1280.0f
-let private windowH = 720.0f
+let cfg = VizDefaults.defaultConfig
+let windowW = 1280.0f
+let windowH = 720.0f
 
 [<Fact>]
 let ``initialState is closed`` () =
@@ -64,20 +64,20 @@ let ``mouse down on empty area produces no config change`` () =
 // Row layout pitches mirrored from ConfigPanel.fs — kept in sync so tests
 // can compute click-Y from the current preset count without relying on
 // hard-coded offsets.
-let private rowHeight = 22.0f
-let private headerHeight = 24.0f
-let private spacerHeight = rowHeight / 2.0f
+let rowHeight = 22.0f
+let headerHeight = 24.0f
+let spacerHeight = rowHeight / 2.0f
 
 /// Computed Y of the save button given the current preset file count.
-let private saveButtonY () =
+let saveButtonY () =
     let nPresets = FSBar.Viz.StylePreset.listNames().Length
     // Title + PresetHeader + N×preset-item
     headerHeight + headerHeight + float32 nPresets * rowHeight
 
-let private resetButtonY () = saveButtonY () + rowHeight
+let resetButtonY () = saveButtonY () + rowHeight
 
 /// Y of the Colors section header when all sections are collapsed.
-let private colorsHeaderY () = resetButtonY () + rowHeight + spacerHeight
+let colorsHeaderY () = resetButtonY () + rowHeight + spacerHeight
 
 [<Fact>]
 let ``section toggle changes expanded set`` () =

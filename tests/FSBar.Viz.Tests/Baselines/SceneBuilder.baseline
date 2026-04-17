@@ -10,5 +10,9 @@ module SceneBuilder =
     /// Computes a clamped pulse alpha byte in [60, 220] from elapsed seconds and period.
     val computePulseAlpha: elapsed: float -> periodSeconds: float -> byte
 
-    /// Updates the shared pulse phase used by metal-spot markers. Call once per FrameTick.
-    val updatePulsePhase: elapsed: float -> unit
+    /// Resets the pulse clock to zero. Call on session start/stop.
+    val resetPulsePhase: unit -> unit
+
+    /// Advances the pulse clock by one FrameTick's delta seconds and recomputes
+    /// the shared phase used by metal-spot markers. Call once per FrameTick.
+    val updatePulsePhase: deltaSeconds: float -> unit

@@ -342,7 +342,7 @@ type BarClient(config: EngineConfig) =
             this.CleanupResources()
             state <- Stopped
 
-    member private _.CleanupResources() =
+    member _.CleanupResources() =
         // Signal frame thread to stop
         match frameThread with
         | Some t when t.IsAlive ->

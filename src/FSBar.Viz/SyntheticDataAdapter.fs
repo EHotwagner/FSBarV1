@@ -8,7 +8,7 @@ module SyntheticDataAdapter =
     // Classification table for the known synthetic DefIds. Derived from the
     // hardcoded list in FSBar.SyntheticData.UnitDefs.
     //   (defId, shape, faction, tier, footprintElmo)
-    let private classTable : Map<int, MovementShape * FactionId * Tier * float32> =
+    let classTable : Map<int, MovementShape * FactionId * Tier * float32> =
         Map.ofList [
             // Armada (faction id 1)
             UnitDefs.ArmCommander, (MovementShape.Bot,      FactionId.Armada, Tier.T3, 48.0f)
@@ -37,14 +37,14 @@ module SyntheticDataAdapter =
             UnitDefs.CorGoliath,   (MovementShape.Vehicle,  FactionId.Cortex, Tier.T2, 64.0f)
         ]
 
-    let private defaultStatus : StatusFlags =
+    let defaultStatus : StatusFlags =
         { IsUnderConstruction = false
           IsStunned = false
           JustDamagedWithinMs = None
           JustCompletedWithinMs = None
           IsCloaked = false }
 
-    let private deriveHeading (unitId: int) (frame: int) : float32 =
+    let deriveHeading (unitId: int) (frame: int) : float32 =
         // Deterministic gentle rotation keyed on id+frame.
         let cycleLen = 300.0f
         let base' = float32 ((unitId * 37) % 360) * float32 (System.Math.PI) / 180.0f

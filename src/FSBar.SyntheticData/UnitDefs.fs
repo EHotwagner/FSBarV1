@@ -4,7 +4,7 @@ open FSBar.Client
 
 module UnitDefs =
 
-    let private mkDef defId name cost buildSpeed maxRange buildOptions =
+    let mkDef defId name cost buildSpeed maxRange buildOptions =
         { DefId = defId
           Name = name
           Cost = cost
@@ -41,7 +41,7 @@ module UnitDefs =
     let [<Literal>] CorStorage = 23
 
     // --- Max health table ---
-    let private healthTable =
+    let healthTable =
         Map.ofList [
             ArmCommander, 3000.0f
             ArmMex, 200.0f
@@ -69,7 +69,7 @@ module UnitDefs =
         ]
 
     // --- Speed table (elmos/frame) ---
-    let private speedTable =
+    let speedTable =
         Map.ofList [
             ArmCommander, 1.5f
             ArmMex, 0.0f       // building

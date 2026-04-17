@@ -4,19 +4,19 @@ open SkiaSharp
 
 module ColorMaps =
 
-    let private clamp01 (v: float32) =
+    let clamp01 (v: float32) =
         if v < 0.0f then 0.0f
         elif v > 1.0f then 1.0f
         else v
 
-    let private lerp (a: byte) (b: byte) (t: float32) : byte =
+    let lerp (a: byte) (b: byte) (t: float32) : byte =
         let result = float32 a + (float32 b - float32 a) * t
         byte (clamp01 (result / 255.0f) * 255.0f)
 
-    let private lerpColor (c1: SKColor) (c2: SKColor) (t: float32) : SKColor =
+    let lerpColor (c1: SKColor) (c2: SKColor) (t: float32) : SKColor =
         SKColor(lerp c1.Red c2.Red t, lerp c1.Green c2.Green t, lerp c1.Blue c2.Blue t, 255uy)
 
-    let private fromStops (stops: (float32 * SKColor) list) (v: float32) : SKColor =
+    let fromStops (stops: (float32 * SKColor) list) (v: float32) : SKColor =
         let v = clamp01 v
         match stops with
         | [] -> SKColors.Black
@@ -60,7 +60,7 @@ module ColorMaps =
         { Name = "Binary"
           MapValue = fun v -> if v > 0.5f then SKColors.Green else SKColors.Red }
 
-    let private identity: ColorScheme =
+    let identity: ColorScheme =
         { Name = "Identity"
           MapValue = fun _ -> SKColors.Black }
 

@@ -23,6 +23,8 @@
     <Compile Include="Validation.fs" />
     <Compile Include="Scenes.fsi" />
     <Compile Include="Scenes.fs" />
+    <Compile Include="SyntheticMapGrid.fsi" />
+    <Compile Include="SyntheticMapGrid.fs" />
   </ItemGroup>
 
   <ItemGroup>

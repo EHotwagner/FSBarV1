@@ -213,11 +213,24 @@ type GameSnapshot =
     { FrameNumber: int
       MapGrid: MapGrid
       Units: Map<int, UnitState>
+      /// BarData-enriched unit displays. When non-empty, SceneBuilder uses these
+      /// instead of the legacy UnitState→UnitDisplay adapter.
+      DisplayUnits: Map<int, UnitDisplay>
       EventIndicators: EventIndicator list
       EconomyMetal: EconomyData
       EconomyEnergy: EconomyData
       MetalSpots: (float32 * float32 * float32 * float32) array
       Connected: bool }
+
+/// State for the configurator side panel (feature 033-viz-style-configurator).
+/// ExpandedSections uses string names of AttributeCategory cases (kept as
+/// strings here so VizTypes remains independent of ConfigDescriptors).
+type ConfigPanelState =
+    { IsOpen: bool
+      ScrollOffset: float32
+      ExpandedSections: Set<string>
+      ActiveControl: string option
+      DirtyIndicator: bool }
 
 /// User interaction commands.
 [<RequireQualifiedAccess>]

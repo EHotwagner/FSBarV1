@@ -10,6 +10,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Common\SurfaceAreaHelper.fs" />
     <Compile Include="VizEngineFixture.fs" />
     <Compile Include="UnitGlyphTests.fs" />
     <Compile Include="UnitGlyphSceneTests.fs" />
@@ -35,7 +36,7 @@
     <Compile Include="ConfigDescriptorsTests.fs" />
     <Compile Include="ConfigPanelTests.fs" />
     <Compile Include="StylePresetTests.fs" />
-    <Compile Include="SurfaceBaselineTests.fs" />
+    <Compile Include="VizSurfaceAreaTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

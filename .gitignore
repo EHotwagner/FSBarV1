@@ -11,7 +11,7 @@ Thumbs.db
 .vscode/
 .idea/
 reports/testreports/
-src/FSBar.Client.Tests/TestResults/
+tests/FSBar.Client.Tests/TestResults/
 
 # FSharp.Formatting
 output/

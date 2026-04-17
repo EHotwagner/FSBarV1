@@ -21,20 +21,20 @@ module UnitGlyph =
 
     // --- Module-private mutable state ---------------------------------------
 
-    let private shapeMissCache = ConcurrentDictionary<string, unit>()
-    let private tierMissCache = ConcurrentDictionary<string, unit>()
-    let private factionMissCache = ConcurrentDictionary<string, unit>()
-    let private staticCache = ConcurrentDictionary<int, MovementShape * Tier * FactionId>()
+    let shapeMissCache = ConcurrentDictionary<string, unit>()
+    let tierMissCache = ConcurrentDictionary<string, unit>()
+    let factionMissCache = ConcurrentDictionary<string, unit>()
+    let staticCache = ConcurrentDictionary<int, MovementShape * Tier * FactionId>()
 
     // Event effects are mutable but scoped to a single renderer session.
-    let private eventEffects = ResizeArray<EventEffect>()
+    let eventEffects = ResizeArray<EventEffect>()
 
     // Previous-frame map shadow used by the test-accessible `advanceEffects`
     // to diff state. This lives outside the per-call API so effects can
     // accumulate across frames.
-    let private previousHpByUnit = ConcurrentDictionary<int, float32>()
+    let previousHpByUnit = ConcurrentDictionary<int, float32>()
 
-    let private reportMissOnce
+    let reportMissOnce
         (cache: ConcurrentDictionary<string, unit>)
         (key: string)
         (logMiss: string -> unit)
@@ -108,7 +108,7 @@ module UnitGlyph =
 
     // --- T022: classifyFaction (spec FR-004) --------------------------------
 
-    let private factionFromSegment (segment: string) : FactionId option =
+    let factionFromSegment (segment: string) : FactionId option =
         match segment.ToLowerInvariant() with
         | "armada" -> Some FactionId.Armada
         | "cortex" -> Some FactionId.Cortex
@@ -117,7 +117,7 @@ module UnitGlyph =
         | "scavengers" -> Some FactionId.Scavengers
         | _ -> None
 
-    let private factionFromNamePrefix (name: string) : FactionId option =
+    let factionFromNamePrefix (name: string) : FactionId option =
         let lower = name.ToLowerInvariant()
         if lower.StartsWith "arm" then Some FactionId.Armada
         elif lower.StartsWith "cor" then Some FactionId.Cortex
@@ -149,18 +149,18 @@ module UnitGlyph =
 
     // --- T023: buildUnit ----------------------------------------------------
 
-    let private clamp01 (v: float32) =
+    let clamp01 (v: float32) =
         if v < 0.0f then 0.0f
         elif v > 1.0f then 1.0f
         else v
 
-    let private strokeWidthForTier (style: UnitGlyphStyle) (tier: Tier) : float32 =
+    let strokeWidthForTier (style: UnitGlyphStyle) (tier: Tier) : float32 =
         match tier with
         | Tier.T1 -> style.T1StrokeWidth
         | Tier.T2 -> style.T2StrokeWidth
         | Tier.T3 -> style.T3StrokeWidth
 
-    let private factionStrokeColor (style: UnitGlyphStyle) (faction: FactionId) : SKColor =
+    let factionStrokeColor (style: UnitGlyphStyle) (faction: FactionId) : SKColor =
         let fp = style.FactionPalette
         match faction with
         | FactionId.Armada -> fp.Armada
@@ -170,12 +170,12 @@ module UnitGlyph =
         | FactionId.Scavengers -> fp.Scavengers
         | FactionId.Neutral -> fp.Neutral
 
-    let private teamFillColor (style: UnitGlyphStyle) (teamId: int) : SKColor =
+    let teamFillColor (style: UnitGlyphStyle) (teamId: int) : SKColor =
         match Map.tryFind teamId style.TeamPalette.ByTeamId with
         | Some c -> c
         | None -> style.TeamPalette.Fallback
 
-    let private applyAlpha (color: SKColor) (alpha: float32) : SKColor =
+    let applyAlpha (color: SKColor) (alpha: float32) : SKColor =
         let a = clamp01 alpha |> (*) 255.0f |> byte
         SKColor(color.Red, color.Green, color.Blue, a)
 
@@ -189,7 +189,7 @@ module UnitGlyph =
     //   fraction 0.75 = north (-Z)
     // The whole shape is expected to be rotated by `heading` around (mx, mz)
     // so the rendered front always points along the unit's heading.
-    let private shapeOutlineCommands
+    let shapeOutlineCommands
         (shape: MovementShape)
         (mx: float32)
         (mz: float32)
@@ -254,7 +254,7 @@ module UnitGlyph =
 
     // Shape primitive — returns a single path/ellipse/rect element covering
     // the body of the unit. The element is placed at (mx, mz) in world space.
-    let private bodyPrimitive
+    let bodyPrimitive
         (shape: MovementShape)
         (mx: float32)
         (mz: float32)
@@ -301,8 +301,8 @@ module UnitGlyph =
 
     // Convert world coordinates (BarData elmos) to viz space. SceneBuilder
     // divides by 8 to map elmos to tile coordinates.
-    let private toVizX (x: float32) = x / 8.0f
-    let private toVizZ (z: float32) = z / 8.0f
+    let toVizX (x: float32) = x / 8.0f
+    let toVizZ (z: float32) = z / 8.0f
 
     let buildUnit
         (unit': UnitDisplay)
@@ -474,7 +474,7 @@ module UnitGlyph =
 
     // --- T044 (forward-declared for US2): overlay layer ---------------------
 
-    let private orderKindColor (k: OrderKind) : SKColor =
+    let orderKindColor (k: OrderKind) : SKColor =
         match k with
         | OrderKind.Move -> SKColor( 80uy, 220uy, 255uy)
         | OrderKind.Attack -> SKColor(255uy,  80uy,  80uy)
@@ -484,7 +484,7 @@ module UnitGlyph =
         | OrderKind.Reclaim -> SKColor(220uy,  80uy, 220uy)
         | OrderKind.Other -> SKColor(200uy, 200uy, 200uy)
 
-    let private weaponRangeElements (style: UnitGlyphStyle) (u: UnitDisplay) : Element list =
+    let weaponRangeElements (style: UnitGlyphStyle) (u: UnitDisplay) : Element list =
         if List.isEmpty u.WeaponRangesElmo then []
         else
             let mx = toVizX u.PositionX
@@ -494,7 +494,7 @@ module UnitGlyph =
             u.WeaponRangesElmo
             |> List.map (fun range -> Scene.ellipse mx mz (range / 8.0f) (range / 8.0f) paint)
 
-    let private sightRangeElements (style: UnitGlyphStyle) (u: UnitDisplay) : Element list =
+    let sightRangeElements (style: UnitGlyphStyle) (u: UnitDisplay) : Element list =
         if u.SightRangeElmo <= 0.0f then []
         else
             let mx = toVizX u.PositionX
@@ -510,7 +510,7 @@ module UnitGlyph =
               Scene.ellipse mx mz (u.SightRangeElmo / 8.0f - 1.5f) (u.SightRangeElmo / 8.0f - 1.5f)
                 (Scene.stroke inner 0.8f) ]
 
-    let private commandQueueElements (u: UnitDisplay) : Element list =
+    let commandQueueElements (u: UnitDisplay) : Element list =
         if List.isEmpty u.CommandQueue then []
         else
             let mx = toVizX u.PositionX
@@ -529,7 +529,7 @@ module UnitGlyph =
                 prevZ <- wz
                 el)
 
-    let private fullNameElements (style: UnitGlyphStyle) (u: UnitDisplay) : Element list =
+    let fullNameElements (style: UnitGlyphStyle) (u: UnitDisplay) : Element list =
         let mx = toVizX u.PositionX
         let mz = toVizZ u.PositionZ
         let paint = Scene.fill (applyAlpha (SKColor(240uy, 240uy, 255uy)) 1.0f)
@@ -567,7 +567,7 @@ module UnitGlyph =
 
     // --- T025: advanceEffects + resetSession --------------------------------
 
-    let private isExpired (nowMs: int) (e: EventEffect) =
+    let isExpired (nowMs: int) (e: EventEffect) =
         (nowMs - e.StartedAtMs) >= e.DurationMs
 
     let advanceEffects

@@ -11,7 +11,7 @@ module GameViz =
 
     // --- BarData-backed unit enrichment ---
 
-    type private DefProps =
+    type DefProps =
         { InternalName: string
           Shape: MovementShape
           Faction: FactionId
@@ -22,18 +22,18 @@ module GameViz =
           WeaponRanges: float32 list
           SightRange: float32 }
 
-    let private barDataByName =
+    let barDataByName =
         lazy (
             BarData.AllUnitDefs.all
             |> List.map (fun (_, _, d: BarData.UnitDef) -> d.name, d)
             |> Map.ofList)
 
-    let private concreteOrDefault (v: BarData.ValueOrExpr<float>) (fallback: float) : float =
+    let concreteOrDefault (v: BarData.ValueOrExpr<float>) (fallback: float) : float =
         match v with
         | BarData.ValueOrExpr.Concrete x -> x
         | _ -> fallback
 
-    let private resolveDefPropsFromBarData (name: string) : DefProps =
+    let resolveDefPropsFromBarData (name: string) : DefProps =
         match Map.tryFind name barDataByName.Value with
         | Some d ->
             let canMove = match d.movement with Some m -> m.canMove | None -> false
@@ -68,14 +68,14 @@ module GameViz =
               WeaponRanges = []
               SightRange = 0.0f }
 
-    let private defaultStatus : StatusFlags =
+    let defaultStatus : StatusFlags =
         { IsUnderConstruction = false
           IsStunned = false
           JustDamagedWithinMs = None
           JustCompletedWithinMs = None
           IsCloaked = false }
 
-    let private toUnitDisplay (u: UnitState) (props: DefProps) (isUnfinished: bool) : UnitDisplay =
+    let toUnitDisplay (u: UnitState) (props: DefProps) (isUnfinished: bool) : UnitDisplay =
         { UnitId = u.UnitId
           DefId = u.DefId
           InternalName = props.InternalName
@@ -104,7 +104,7 @@ module GameViz =
     // --- Lock-free dataflow types ---
 
     /// Raw inputs from the bot thread, atomically published for the render thread.
-    type private RawFrame =
+    type RawFrame =
         { GameState: GameState
           MapGrid: MapGrid
           MyTeamId: int
@@ -113,9 +113,9 @@ module GameViz =
 
     // --- Locks ---
     /// Protects config, viewState, dragStart, dragOrigin. Adequate for <10 ops/sec.
-    let private configLock = obj ()
+    let configLock = obj ()
     /// Protects lifecycle state and socket-path publisher state.
-    let private lifecycleLock = obj ()
+    let lifecycleLock = obj ()
 
     // --- Atomic shared state (bot thread -> render thread) ---
     /// Atomically swapped by onFrameWithState; sampled by render thread.
@@ -166,7 +166,7 @@ module GameViz =
     let mutable private lastProcessedDirectCounter = -1
 
     // Performance counter state (render-thread-local)
-    let private perfStopwatch = System.Diagnostics.Stopwatch.StartNew()
+    let perfStopwatch = System.Diagnostics.Stopwatch.StartNew()
     let mutable private renderFrameCount = 0
     let mutable private stateUpdateCount = 0
     let mutable private perfLastSampleMs = 0.0
@@ -177,12 +177,12 @@ module GameViz =
 
     // Interpolation state (render-thread-local)
     let mutable private interpT = 1.0f  // 0..1 progress toward current snapshot
-    let private interpStopwatch = System.Diagnostics.Stopwatch()
+    let interpStopwatch = System.Diagnostics.Stopwatch()
     let mutable private interpDurationMs = 200.0  // estimated ms between state updates
 
     // --- Helpers ---
 
-    let private computeAutoFit (grid: MapGrid) =
+    let computeAutoFit (grid: MapGrid) =
         // Caller must hold configLock
         let mapW = float32 grid.WidthHeightmap
         let mapH = float32 grid.HeightHeightmap
@@ -192,28 +192,28 @@ module GameViz =
             let scale = min scaleX scaleY
             viewState <- { viewState with Scale = scale; OriginX = 0.0f; OriginY = 0.0f }
 
-    let private ensureDefProps (stream: Net.Sockets.NetworkStream) (defId: int) =
+    let ensureDefProps (stream: Net.Sockets.NetworkStream) (defId: int) =
         match Map.tryFind defId defPropsCache with
         | Some _ -> ()
         | None ->
             let name = try Callbacks.getUnitDefName stream defId with _ -> sprintf "def%d" defId
             defPropsCache <- Map.add defId (resolveDefPropsFromBarData name) defPropsCache
 
-    let private trackedUnitToUnitState (teamId: int) (uid: int) (u: TrackedUnit) : UnitState =
+    let trackedUnitToUnitState (teamId: int) (uid: int) (u: TrackedUnit) : UnitState =
         let (px, py, pz) = u.Position
         { UnitId = uid; PositionX = px; PositionY = py; PositionZ = pz
           TeamId = teamId; DefId = u.DefId; Health = u.Health; MaxHealth = u.MaxHealth; IsEnemy = false }
 
-    let private trackedEnemyToUnitState (eid: int) (e: TrackedEnemy) : UnitState =
+    let trackedEnemyToUnitState (eid: int) (e: TrackedEnemy) : UnitState =
         let (px, py, pz) = e.Position
         { UnitId = eid; PositionX = px; PositionY = py; PositionZ = pz
           TeamId = 1; DefId = (e.DefId |> Option.defaultValue 0)
           Health = (e.Health |> Option.defaultValue 100.0f); MaxHealth = 100.0f; IsEnemy = true }
 
-    let private economyFromSnapshot (snap: FSBar.Client.EconomySnapshot) : EconomyData =
+    let economyFromSnapshot (snap: FSBar.Client.EconomySnapshot) : EconomyData =
         { Current = snap.Current; Income = snap.Income; Usage = snap.Usage; Storage = snap.Storage }
 
-    let private buildDisplayUnits () =
+    let buildDisplayUnits () =
         // Uses publisher state — socket path only
         units |> Map.map (fun unitId u ->
             let props =
@@ -222,7 +222,7 @@ module GameViz =
                 | None -> resolveDefPropsFromBarData (sprintf "def%d" u.DefId)
             toUnitDisplay u props (Set.contains unitId unfinishedUnits))
 
-    let private buildSnapshot (grid: MapGrid) (frameNum: int) (connected: bool) (metalEcon: EconomyData) (energyEcon: EconomyData) =
+    let buildSnapshot (grid: MapGrid) (frameNum: int) (connected: bool) (metalEcon: EconomyData) (energyEcon: EconomyData) =
         { FrameNumber = frameNum
           MapGrid = grid
           Units = units
@@ -233,7 +233,7 @@ module GameViz =
           MetalSpots = metalSpots
           Connected = connected }
 
-    let private lerpUnit (prev: UnitState) (cur: UnitState) (t: float32) : UnitState =
+    let lerpUnit (prev: UnitState) (cur: UnitState) (t: float32) : UnitState =
         let t = min 1.0f (max 0.0f t)
         { cur with
             PositionX = prev.PositionX + (cur.PositionX - prev.PositionX) * t
@@ -242,7 +242,7 @@ module GameViz =
 
     // --- Render thread: process new RawFrame from state-based path ---
 
-    let private processRawFrame (frame: RawFrame) =
+    let processRawFrame (frame: RawFrame) =
         let gs = frame.GameState
         let frameNum = int gs.FrameNumber
 
@@ -353,7 +353,7 @@ module GameViz =
 
     // --- Render thread: process direct snapshot from socket path ---
 
-    let private processDirectSnapshot (snap: GameSnapshot) (counter: int) =
+    let processDirectSnapshot (snap: GameSnapshot) (counter: int) =
         stateUpdateCount <- stateUpdateCount + 1
         stateFrameDelta <- snap.FrameNumber - lastStateFrame
         lastStateFrame <- snap.FrameNumber
@@ -370,7 +370,7 @@ module GameViz =
 
     // --- Render thread: emit scene ---
 
-    let private emitScene () =
+    let emitScene () =
         match sceneEvent with
         | None -> ()
         | Some evt ->
@@ -447,7 +447,7 @@ module GameViz =
     // --- Input handling ---
 
     // --- Panel action application (caller must hold configLock) ---
-    let private applyPanelAction (action: ConfigPanelAction) =
+    let applyPanelAction (action: ConfigPanelAction) =
         match action with
         | ConfigPanelAction.SavePreset name ->
             let preset = StylePreset.fromConfig name config
@@ -476,7 +476,7 @@ module GameViz =
             activePresetName <- None
             referenceConfig <- VizDefaults.defaultConfig
 
-    let private processKey (key: Key) =
+    let processKey (key: Key) =
         lock configLock (fun () ->
             match key with
             | Key.P ->
@@ -537,7 +537,7 @@ module GameViz =
     // Try to route a mouse event to the panel. Returns true if the panel
     // consumed the event (and the default pan/zoom/drag handlers should
     // be skipped). Caller must NOT hold configLock.
-    let private routeToPanelIfOpen (evt: InputEvent) (x: float32) (y: float32) : bool =
+    let routeToPanelIfOpen (evt: InputEvent) (x: float32) (y: float32) : bool =
         // Snapshot panel state for a cheap bounds check outside the lock.
         let ps = panelState
         if not ps.IsOpen then false
@@ -564,7 +564,7 @@ module GameViz =
                     | None -> ())
                 true
 
-    let private handleInput (evt: InputEvent) =
+    let handleInput (evt: InputEvent) =
         match evt with
         | InputEvent.KeyDown key -> processKey key
         | InputEvent.MouseScroll(delta, x, y) ->

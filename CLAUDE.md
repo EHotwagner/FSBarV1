@@ -1,6 +1,6 @@
 # FSBarV1 Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-16
+Auto-generated from all feature plans. Last updated: 2026-04-17
 
 ## Active Technologies
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (unit definitions), xUnit 2.9.x (002-test-suite-report)
@@ -58,6 +58,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-16
 - F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6 (032-lockfree-viewer-dataflow)
 - F# 9 on .NET 10.0 + FSBar.Viz (in-repo), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6, System.Text.Json (BCL) (033-viz-style-configurator)
 - JSON files on disk (`viz-presets/` directory) for presets (033-viz-style-configurator)
+- F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced. (034-repo-cleanup)
+- Filesystem only — committed `.baseline` text files, `viz-presets/*.json`, `bots/trainer/map-cache/*.json`. No persistence format changes. (034-repo-cleanup)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -65,8 +67,29 @@ Auto-generated from all feature plans. Last updated: 2026-04-16
 
 ```text
 src/
+├── FSBar.Proto/            # generated protobuf types
+├── FSBar.Client/           # core client (connection, protocol, game state, map analysis)
+├── FSBar.SyntheticData/    # scene + economy + SyntheticMapGrid builders
+└── FSBar.Viz/              # visualization (GameViz, SceneBuilder, LayerRenderer, configurator)
+
 tests/
+├── Common/                          # shared compile-included helpers (SurfaceAreaHelper.fs)
+├── FSBar.Client.Tests/              # unit tests for FSBar.Client (+ Baselines/)
+├── FSBar.SyntheticData.Tests/       # unit tests for FSBar.SyntheticData (+ Baselines/)
+├── FSBar.Viz.Tests/                 # unit tests for FSBar.Viz (+ Baselines/)
+├── FSBar.LiveTests/                 # integration tests against a real BAR engine (Live* prefix)
+├── engine-version.json / ENGINE-VERSION.md
+├── run-all.sh                       # engine-aware wrapper around `dotnet test`
+└── README.md                        # test taxonomy + ownership table
 ```
+
+`FSBarV1.slnx` lists all 8 projects. Top-level commands: `dotnet build FSBarV1.slnx`
+and `dotnet test FSBarV1.slnx`. Surface-area checks are a thin per-project wrapper
+over `tests/Common/SurfaceAreaHelper.fs` — set `SURFACE_AREA_UPDATE=1` to regenerate
+baselines after an intentional `.fsi` change.
+
+F# style: no `private` / `internal` modifiers in non-generated source. Public
+surface is gated exclusively by `.fsi` signature files per constitution §II.
 
 ## Map analysis caching
 
@@ -147,9 +170,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 034-repo-cleanup: Added F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced.
 - 033-viz-style-configurator: Added F# 9 on .NET 10.0 + FSBar.Viz (in-repo), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6, System.Text.Json (BCL)
 - 032-lockfree-viewer-dataflow: Added F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6
-- 031-full-trainer-viz-run: Added Bash (run.sh) + F# 9 on .NET 10.0 (bot scripts) + FSBar.Client (BarClient, GameState), FSBar.Viz (GameViz, VizConfig, OverlayKind, LayerKind, VizDefaults)
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -73,15 +73,15 @@ module Protocol =
 
     /// A frame decoded while sendCallback was waiting for a CallbackResponse.
     /// Stashed verbatim and replayed by the next receiveFrame on the same stream.
-    type internal PendingFrame = {
+    type PendingFrame = {
         FrameNumber: uint32
         Events: GameEvent list
     }
 
     /// Per-stream replay buffer. Lives as long as the stream object is reachable.
-    let private replayBuffers = ConditionalWeakTable<NetworkStream, Queue<PendingFrame>>()
+    let replayBuffers = ConditionalWeakTable<NetworkStream, Queue<PendingFrame>>()
 
-    let private bufferFor (stream: NetworkStream) : Queue<PendingFrame> =
+    let bufferFor (stream: NetworkStream) : Queue<PendingFrame> =
         let mutable existing = Unchecked.defaultof<Queue<PendingFrame>>
         if replayBuffers.TryGetValue(stream, &existing) then existing
         else
@@ -89,7 +89,7 @@ module Protocol =
             replayBuffers.Add(stream, q)
             q
 
-    let private tryDequeueReplay (stream: NetworkStream) : GameFrame option =
+    let tryDequeueReplay (stream: NetworkStream) : GameFrame option =
         let buf = bufferFor stream
         if buf.Count = 0 then None
         else

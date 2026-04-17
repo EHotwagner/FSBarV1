@@ -39,12 +39,12 @@ module Pathing =
     // ---------------------------------------------------------------------
 
     /// Heightmap cell size in elmos (matches Spring engine: 8 elmos per square).
-    let private cellSize = 8.0f
+    let cellSize = 8.0f
 
-    let private worldToCell (worldX: float32) (worldZ: float32) : int * int =
+    let worldToCell (worldX: float32) (worldZ: float32) : int * int =
         int (worldX / cellSize), int (worldZ / cellSize)
 
-    let private cellToWorldCentre (cellX: int) (cellZ: int) : float32 * float32 =
+    let cellToWorldCentre (cellX: int) (cellZ: int) : float32 * float32 =
         float32 cellX * cellSize + cellSize * 0.5f,
         float32 cellZ * cellSize + cellSize * 0.5f
 
@@ -78,24 +78,24 @@ module Pathing =
     // A* core
     // ---------------------------------------------------------------------
 
-    let private neighbourOffsets = [|
+    let neighbourOffsets = [|
         struct (-1, -1); struct (0, -1); struct (1, -1)
         struct (-1,  0);                  struct (1,  0)
         struct (-1,  1); struct (0,  1); struct (1,  1)
     |]
 
-    let private isCardinal (dx: int) (dz: int) = abs dx + abs dz = 1
-    let private sqrt2 = 1.4142135f
+    let isCardinal (dx: int) (dz: int) = abs dx + abs dz = 1
+    let sqrt2 = 1.4142135f
 
     /// Octile distance heuristic scaled by the minimum edge cost (= 1.0f for flat).
-    let private octileHeuristic (ax: int) (az: int) (bx: int) (bz: int) : float32 =
+    let octileHeuristic (ax: int) (az: int) (bx: int) (bz: int) : float32 =
         let dx = float32 (abs (ax - bx))
         let dz = float32 (abs (az - bz))
         if dx > dz then dx + (sqrt2 - 1.0f) * dz
         else dz + (sqrt2 - 1.0f) * dx
 
     /// Slope lookup that matches MapGrid.passability: clamps `x/2, z/2` into the slope map.
-    let private slopeAtCell (grid: MapGrid) (x: int) (z: int) : float32 =
+    let slopeAtCell (grid: MapGrid) (x: int) (z: int) : float32 =
         let sw = Array2D.length1 grid.SlopeMap
         let sh = Array2D.length2 grid.SlopeMap
         if sw = 0 || sh = 0 then 0.0f
@@ -106,7 +106,7 @@ module Pathing =
 
     /// Straight-line walkability test between two cells (inclusive). Uses Bresenham's
     /// line algorithm and verifies every cell on the line is passable.
-    let private lineIsWalkable (passable: bool[,]) (x0: int) (z0: int) (x1: int) (z1: int) : bool =
+    let lineIsWalkable (passable: bool[,]) (x0: int) (z0: int) (x1: int) (z1: int) : bool =
         let w = Array2D.length1 passable
         let h = Array2D.length2 passable
         let mutable x = x0
@@ -136,7 +136,7 @@ module Pathing =
     /// Collapse a raw cell path into waypoints by greedy line-of-sight coalescing.
     /// Walks forward from `start` and keeps the farthest reachable raw-path cell,
     /// guaranteeing that every consecutive pair of waypoints is line-walkable.
-    let private collapseToWaypoints (passable: bool[,]) (cells: (int * int) array) : (int * int) array =
+    let collapseToWaypoints (passable: bool[,]) (cells: (int * int) array) : (int * int) array =
         if cells.Length <= 1 then cells
         else
             let result = ResizeArray<int * int>()
@@ -158,7 +158,7 @@ module Pathing =
             result.ToArray()
 
     /// Recover the full cell-by-cell path from start to `endIdx` using the parent array.
-    let private recoverCellPath (parent: int[]) (startIdx: int) (endIdx: int) (width: int) : (int * int) array =
+    let recoverCellPath (parent: int[]) (startIdx: int) (endIdx: int) (width: int) : (int * int) array =
         let cells = ResizeArray<int * int>()
         let mutable cur = endIdx
         let mutable ok = true

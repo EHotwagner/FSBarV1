@@ -5,9 +5,9 @@ open FSBar.Viz
 
 // --- classifyShape (T014) ---------------------------------------------------
 
-let private noLog (_: string) = ()
+let noLog (_: string) = ()
 
-let private capture () =
+let capture () =
     let misses = ResizeArray<string>()
     let log (m: string) = misses.Add m
     misses, log

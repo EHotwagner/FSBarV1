@@ -3,11 +3,12 @@ module FSBar.Viz.Tests.MockSnapshotTests
 open Xunit
 open FSBar.Client
 open FSBar.Viz
+open FSBar.SyntheticData
 open FSBar.Viz.Tests.VizEngineFixture
 
 [<Fact>]
 let ``emptySnapshot has empty units and events`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap = MockSnapshot.emptySnapshot grid
     Assert.True(Map.isEmpty snap.Units, "Units should be empty")
     Assert.True(List.isEmpty snap.EventIndicators, "Events should be empty")
@@ -16,7 +17,7 @@ let ``emptySnapshot has empty units and events`` () =
 
 [<Fact>]
 let ``withFriendlyAt adds a unit with IsEnemy false`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withFriendlyAt (100.0f, 50.0f, 200.0f)
@@ -29,7 +30,7 @@ let ``withFriendlyAt adds a unit with IsEnemy false`` () =
 
 [<Fact>]
 let ``withEnemyAt adds a unit with IsEnemy true`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEnemyAt (300.0f, 0.0f, 400.0f)
@@ -40,7 +41,7 @@ let ``withEnemyAt adds a unit with IsEnemy true`` () =
 
 [<Fact>]
 let ``withEvent adds an EventIndicator`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEvent EventKind.UnitCreated (100.0f, 0.0f, 200.0f) 10
@@ -52,7 +53,7 @@ let ``withEvent adds an EventIndicator`` () =
 
 [<Fact>]
 let ``withEconomy sets metal economy`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEconomy 500.0f 10.0f 5.0f 1000.0f
@@ -63,7 +64,7 @@ let ``withEconomy sets metal economy`` () =
 
 [<Fact>]
 let ``withEnergyEconomy sets energy economy`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEnergyEconomy 800.0f 20.0f 15.0f 2000.0f
@@ -72,7 +73,7 @@ let ``withEnergyEconomy sets energy economy`` () =
 
 [<Fact>]
 let ``pipeline composition works with chaining`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withFriendlyAt (100.0f, 0.0f, 100.0f)
@@ -88,7 +89,7 @@ let ``pipeline composition works with chaining`` () =
 
 [<Fact>]
 let ``auto-generated UnitIds are unique`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withFriendlyAt (100.0f, 0.0f, 100.0f)
@@ -100,7 +101,7 @@ let ``auto-generated UnitIds are unique`` () =
 
 [<Fact>]
 let ``withMetalSpots sets spots`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let spots = [| (100.0f, 0.0f, 200.0f, 1.0f); (300.0f, 0.0f, 400.0f, 2.0f) |]
     let snap =
         MockSnapshot.emptySnapshot grid
@@ -109,7 +110,7 @@ let ``withMetalSpots sets spots`` () =
 
 [<Fact>]
 let ``withFrame sets frame number`` () =
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withFrame 99

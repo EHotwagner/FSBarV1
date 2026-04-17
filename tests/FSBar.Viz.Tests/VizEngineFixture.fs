@@ -10,38 +10,18 @@ open SkiaViewer
 [<DllImport("libdl.so.2")>]
 extern nativeint dlopen(string filename, int flags)
 
-let private nativePath =
+let nativePath =
     System.IO.Path.Combine(
         System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location),
         "runtimes/linux-x64/native")
 
-let private _skiaLoaded = dlopen(nativePath + "/libSkiaSharp.so", 0x2 ||| 0x100)
-
-/// Create a test MapGrid with the given heightmap dimensions.
-/// All arrays are initialized with simple test data.
-let testMapGrid (w: int) (h: int) : MapGrid =
-    let heightMap = Array2D.init (w + 1) (h + 1) (fun x z ->
-        float32 x * 0.1f + float32 z * 0.05f)
-    let slopeMap = Array2D.init (w / 2) (h / 2) (fun x z ->
-        float32 x * 0.01f + float32 z * 0.02f)
-    let resourceMap = Array2D.init w h (fun x z -> (x + z) % 10)
-    let losMap = Array2D.init w h (fun x z -> if (x + z) % 3 = 0 then 1 else 0)
-    let radarMap = Array2D.init w h (fun x z -> if (x + z) % 5 = 0 then 1 else 0)
-    { WidthElmos = w * 8
-      HeightElmos = h * 8
-      WidthHeightmap = w
-      HeightHeightmap = h
-      HeightMap = heightMap
-      SlopeMap = slopeMap
-      ResourceMap = resourceMap
-      LosMap = losMap
-      RadarMap = radarMap }
+let _skiaLoaded = dlopen(nativePath + "/libSkiaSharp.so", 0x2 ||| 0x100)
 
 /// Convert a FSBar.Client.GameState to a FSBar.Viz.GameSnapshot using scene metadata.
 let convertToSnapshot (scene: FSBar.SyntheticData.Scene) (gs: GameState) : GameSnapshot =
     let mapW = int scene.MapWidth / 8
     let mapH = int scene.MapHeight / 8
-    let grid = testMapGrid mapW mapH
+    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
 
     let units =
         let friendlyUnits =

@@ -5,7 +5,7 @@ open Xunit
 open SkiaSharp
 open FSBar.Viz
 
-let private cfg = VizDefaults.defaultConfig
+let cfg = VizDefaults.defaultConfig
 
 [<Fact>]
 let ``all returns a non-empty descriptor list`` () =

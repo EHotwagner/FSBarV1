@@ -9,9 +9,9 @@ module SceneBuilder =
     // --- Economy HUD interpolation state ---
     let mutable private prevMetalDisplay = 0.0f
     let mutable private prevEnergyDisplay = 0.0f
-    let private smoothFactor = 0.15f
+    let smoothFactor = 0.15f
 
-    let private lerpF (a: float32) (b: float32) (t: float32) = a + (b - a) * t
+    let lerpF (a: float32) (b: float32) (t: float32) = a + (b - a) * t
 
     // --- Metal-spot pulse state ---
     let mutable private pulsePhase = 0.0f
@@ -20,7 +20,7 @@ module SceneBuilder =
     // total, so we accumulate it ourselves.
     let mutable private pulseElapsedSeconds = 0.0
 
-    let private twoPi = 2.0 * System.Math.PI
+    let twoPi = 2.0 * System.Math.PI
 
     let computePulseAlpha (elapsed: float) (periodSeconds: float) : byte =
         let phase = 0.5 + 0.5 * sin (twoPi * elapsed / periodSeconds)
@@ -48,14 +48,14 @@ module SceneBuilder =
     let inline private mapX (posX: float32) = posX / 8.0f
     let inline private mapZ (posZ: float32) = posZ / 8.0f
 
-    let private viewportTransform (vs: ViewState) =
+    let viewportTransform (vs: ViewState) =
         Transform.Compose [
             Transform.Translate(-vs.OriginX * vs.Scale, -vs.OriginY * vs.Scale)
             Transform.Scale(vs.Scale, vs.Scale, 0.0f, 0.0f)
         ]
 
     // --- Base Layer ---
-    let private buildBaseLayer (snap: GameSnapshot) (config: VizConfig) (vs: ViewState) =
+    let buildBaseLayer (snap: GameSnapshot) (config: VizConfig) (vs: ViewState) =
         let grid = snap.MapGrid
         let w = grid.WidthHeightmap
         let h = grid.HeightHeightmap
@@ -74,7 +74,7 @@ module SceneBuilder =
             [ Scene.rect 0.0f 0.0f (float32 bmp.Width) (float32 bmp.Height) paint ]
 
     // --- Grid Overlay ---
-    let private buildGrid (snap: GameSnapshot) (config: VizConfig) =
+    let buildGrid (snap: GameSnapshot) (config: VizConfig) =
         if not (Set.contains OverlayKind.Grid config.ActiveOverlays) || not config.ShowGridLines then []
         else
             let w = snap.MapGrid.WidthHeightmap
@@ -95,7 +95,7 @@ module SceneBuilder =
             lines |> Seq.toList
 
     // --- Metal Spots Overlay ---
-    let private buildMetalSpots (snap: GameSnapshot) (config: VizConfig) (vs: ViewState) =
+    let buildMetalSpots (snap: GameSnapshot) (config: VizConfig) (vs: ViewState) =
         if not (Set.contains OverlayKind.MetalSpots config.ActiveOverlays) then []
         else
             let phase = pulsePhase
@@ -125,14 +125,14 @@ module SceneBuilder =
                   Scene.ellipse mx mz dotR dotR dotPaint ])
 
     // --- Unit Overlay ---
-    let private defaultStatus : StatusFlags =
+    let defaultStatus : StatusFlags =
         { IsUnderConstruction = false
           IsStunned = false
           JustDamagedWithinMs = None
           JustCompletedWithinMs = None
           IsCloaked = false }
 
-    let private legacyToUnitDisplay (u: UnitState) : UnitDisplay =
+    let legacyToUnitDisplay (u: UnitState) : UnitDisplay =
         { UnitId = u.UnitId
           DefId = u.DefId
           InternalName = sprintf "def%d" u.DefId
@@ -156,13 +156,13 @@ module SceneBuilder =
           BuildRangeElmo = None
           CommandQueue = [] }
 
-    let private resolveDisplayUnits (snap: GameSnapshot) =
+    let resolveDisplayUnits (snap: GameSnapshot) =
         if not (Map.isEmpty snap.DisplayUnits) then
             snap.DisplayUnits |> Map.toSeq |> Seq.map snd
         else
             snap.Units |> Map.toSeq |> Seq.map (fun (_, u) -> legacyToUnitDisplay u)
 
-    let private buildUnits (snap: GameSnapshot) (config: VizConfig) =
+    let buildUnits (snap: GameSnapshot) (config: VizConfig) =
         if not (Set.contains OverlayKind.Units config.ActiveOverlays) then []
         elif config.UseGlyphRenderer then
             let displays = resolveDisplayUnits snap
@@ -213,7 +213,7 @@ module SceneBuilder =
                 [ marker; bg; fg ])
 
     // --- Event Overlay ---
-    let private buildEvents (snap: GameSnapshot) (config: VizConfig) =
+    let buildEvents (snap: GameSnapshot) (config: VizConfig) =
         if not (Set.contains OverlayKind.Events config.ActiveOverlays) then []
         else
             snap.EventIndicators |> List.choose (fun ev ->
@@ -269,7 +269,7 @@ module SceneBuilder =
                     Some elem)
 
     // --- Economy HUD ---
-    let private buildEconomyHud (snap: GameSnapshot) (config: VizConfig) (vs: ViewState) =
+    let buildEconomyHud (snap: GameSnapshot) (config: VizConfig) (vs: ViewState) =
         if not (Set.contains OverlayKind.EconomyHud config.ActiveOverlays) then []
         else
             let ww = float32 vs.WindowWidth
@@ -359,7 +359,7 @@ module SceneBuilder =
               energyBarBg; energyBarFg; energyLabel; energyValues; frameText ]
 
     // --- Disconnected Overlay ---
-    let private buildDisconnected (snap: GameSnapshot) (vs: ViewState) =
+    let buildDisconnected (snap: GameSnapshot) (vs: ViewState) =
         if snap.Connected then []
         else
             let w = float32 vs.WindowWidth

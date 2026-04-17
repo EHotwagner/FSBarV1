@@ -5,15 +5,15 @@
 // carries FSBar.Client.dll + FSBar.Proto.dll). This is the same pattern the FSI MCP server
 // uses and is documented in CLAUDE.md → "Loading FSBar assemblies in FSI".
 //
-// Rebuild with `dotnet build src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug`
+// Rebuild with `dotnet build tests/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug`
 // before running the bot after any `src/FSBar.Client/*.fs` change.
 
-#r "../../../src/FSBar.Client.Tests/bin/Debug/net10.0/Google.Protobuf.dll"
-#r "../../../src/FSBar.Client.Tests/bin/Debug/net10.0/FsGrpc.dll"
-#r "../../../src/FSBar.Client.Tests/bin/Debug/net10.0/NodaTime.dll"
-#r "../../../src/FSBar.Client.Tests/bin/Debug/net10.0/BarData.dll"
-#r "../../../src/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Proto.dll"
-#r "../../../src/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Client.dll"
+#r "../../../tests/FSBar.Client.Tests/bin/Debug/net10.0/Google.Protobuf.dll"
+#r "../../../tests/FSBar.Client.Tests/bin/Debug/net10.0/FsGrpc.dll"
+#r "../../../tests/FSBar.Client.Tests/bin/Debug/net10.0/NodaTime.dll"
+#r "../../../tests/FSBar.Client.Tests/bin/Debug/net10.0/BarData.dll"
+#r "../../../tests/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Proto.dll"
+#r "../../../tests/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Client.dll"
 
 open FSBar.Client
 open FSBar.Client.Commands

@@ -8,7 +8,7 @@ open System
 /// Provides typed commands, event handling, map analysis, and session management over Unix domain sockets.
 /// </summary>
 /// </namespacedoc>
-module internal NamespaceDoc = ()
+module NamespaceDoc = ()
 
 /// <summary>Specifies whether the BAR engine runs headless (no GUI) or with a graphical window.</summary>
 type EngineMode =

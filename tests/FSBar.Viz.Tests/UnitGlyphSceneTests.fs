@@ -6,16 +6,16 @@ open SkiaViewer
 
 // Helpers ------------------------------------------------------------------
 
-let private style : UnitGlyphStyle = UnitGlyphPalettes.defaults
+let style : UnitGlyphStyle = UnitGlyphPalettes.defaults
 
-let private defaultStatus : StatusFlags =
+let defaultStatus : StatusFlags =
     { IsUnderConstruction = false
       IsStunned = false
       JustDamagedWithinMs = None
       JustCompletedWithinMs = None
       IsCloaked = false }
 
-let private mkUnit
+let mkUnit
     (id: int)
     (defId: int)
     (shape: MovementShape)
@@ -50,7 +50,7 @@ let private mkUnit
       BuildRangeElmo = None
       CommandQueue = [] }
 
-let private sixShapeScene () : UnitDisplay list =
+let sixShapeScene () : UnitDisplay list =
     [ mkUnit 1 101 MovementShape.Bot      FactionId.Armada     Tier.T1 "Pw" 1.0f 1.0f 0.0f defaultStatus
       mkUnit 2 102 MovementShape.Vehicle  FactionId.Cortex     Tier.T2 "Tk" 1.0f 1.0f 0.0f defaultStatus
       mkUnit 3 103 MovementShape.Hover    FactionId.Legion     Tier.T3 "Hv" 1.0f 1.0f 0.0f defaultStatus
@@ -143,11 +143,11 @@ let ``advanceEffects: retires expired effects`` () =
 
 // T038 — weapon-range overlay independence ---------------------------------
 
-let private armedUnit id : UnitDisplay =
+let armedUnit id : UnitDisplay =
     let u = mkUnit id 1 MovementShape.Vehicle FactionId.Armada Tier.T2 "Tk" 1.0f 1.0f 0.0f defaultStatus
     { u with WeaponRangesElmo = [ 250.0f; 400.0f ] }
 
-let private unarmedUnit id : UnitDisplay =
+let unarmedUnit id : UnitDisplay =
     let u = mkUnit id 2 MovementShape.Building FactionId.Armada Tier.T1 "Sl" 1.0f 1.0f 0.0f defaultStatus
     { u with WeaponRangesElmo = [] }
 
@@ -175,7 +175,7 @@ let ``buildOverlayLayer: W+L composes both layers`` () =
 
 // T040 — command-queue overlay ----------------------------------------------
 
-let private unitWithQueue id : UnitDisplay =
+let unitWithQueue id : UnitDisplay =
     let u = mkUnit id 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 1.0f 1.0f 0.0f defaultStatus
     { u with
         CommandQueue =

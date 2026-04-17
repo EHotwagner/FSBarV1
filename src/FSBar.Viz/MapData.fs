@@ -5,8 +5,8 @@ open FSBar.Client
 
 module MapData =
 
-    let private magic = "FSMG"B
-    let private version = 1
+    let magic = "FSMG"B
+    let version = 1
 
     let save (path: string) (grid: MapGrid) (metalSpots: (float32 * float32 * float32 * float32) array) : unit =
         use stream = new FileStream(path, FileMode.Create, FileAccess.Write)

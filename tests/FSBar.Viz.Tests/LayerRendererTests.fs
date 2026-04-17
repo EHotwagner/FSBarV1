@@ -4,6 +4,7 @@ open Xunit
 open SkiaSharp
 open FSBar.Client
 open FSBar.Viz
+open FSBar.SyntheticData
 open FSBar.Viz.Tests.VizEngineFixture
 
 // NOTE: LayerRenderer uses a static cache with InstallPixels/GCHandle.
@@ -15,7 +16,7 @@ open FSBar.Viz.Tests.VizEngineFixture
 [<Fact>]
 let ``renderLayer with HeightMap produces non-null bitmap with correct dimensions`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 32 32
+    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
     let bmp = LayerRenderer.renderLayer grid LayerKind.HeightMap ColorMaps.terrain
     Assert.NotNull(bmp)
     Assert.True(bmp.Width > 0, "Bitmap width should be > 0")
@@ -24,7 +25,7 @@ let ``renderLayer with HeightMap produces non-null bitmap with correct dimension
 [<Fact>]
 let ``renderLayer with SlopeMap produces bitmap`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 32 32
+    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
     let bmp = LayerRenderer.renderLayer grid LayerKind.SlopeMap ColorMaps.heatMap
     Assert.NotNull(bmp)
     Assert.True(bmp.Width > 0)
@@ -33,7 +34,7 @@ let ``renderLayer with SlopeMap produces bitmap`` () =
 [<Fact>]
 let ``renderLayer with ResourceMap produces bitmap`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 32 32
+    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
     let bmp = LayerRenderer.renderLayer grid LayerKind.ResourceMap ColorMaps.heatMap
     Assert.NotNull(bmp)
     Assert.True(bmp.Width > 0)
@@ -42,7 +43,7 @@ let ``renderLayer with ResourceMap produces bitmap`` () =
 [<Fact>]
 let ``renderLayer with Passability produces bitmap`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 32 32
+    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
     let bmp = LayerRenderer.renderLayer grid (LayerKind.Passability MoveType.Kbot) ColorMaps.binary
     Assert.NotNull(bmp)
     Assert.True(bmp.Width > 0)
@@ -51,7 +52,7 @@ let ``renderLayer with Passability produces bitmap`` () =
 [<Fact>]
 let ``different color schemes produce bitmaps`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let bmp1 = LayerRenderer.renderLayer grid LayerKind.HeightMap ColorMaps.terrain
     Assert.NotNull(bmp1)
     // Invalidate and render with different scheme
@@ -65,7 +66,7 @@ let ``different color schemes produce bitmaps`` () =
 [<Fact>]
 let ``cache hit and miss counting works`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let _bmp1 = LayerRenderer.renderLayer grid LayerKind.HeightMap ColorMaps.terrain
     let (h1, m1) = LayerRenderer.cacheStats ()
     Assert.Equal(0, h1)
@@ -79,7 +80,7 @@ let ``cache hit and miss counting works`` () =
 [<Fact>]
 let ``invalidateAll clears cache and resets counters`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let _bmp = LayerRenderer.renderLayer grid LayerKind.HeightMap ColorMaps.terrain
     LayerRenderer.invalidateAll ()
     let (h, m) = LayerRenderer.cacheStats ()
@@ -89,7 +90,7 @@ let ``invalidateAll clears cache and resets counters`` () =
 [<Fact>]
 let ``LosMap is always a cache miss (dynamic layer)`` () =
     LayerRenderer.invalidateAll ()
-    let grid = testMapGrid 16 16
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let _bmp1 = LayerRenderer.renderLayer grid LayerKind.LosMap ColorMaps.binary
     let _bmp2 = LayerRenderer.renderLayer grid LayerKind.LosMap ColorMaps.binary
     let (h, m) = LayerRenderer.cacheStats ()

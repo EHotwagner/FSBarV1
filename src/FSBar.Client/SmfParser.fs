@@ -27,28 +27,28 @@ type SmfParseError =
 module SmfParser =
 
     // "spring map file\0" = 16 bytes
-    let private smfMagic =
+    let smfMagic =
         [| byte 's'; byte 'p'; byte 'r'; byte 'i'; byte 'n'; byte 'g'
            byte ' '; byte 'm'; byte 'a'; byte 'p'; byte ' '; byte 'f'
            byte 'i'; byte 'l'; byte 'e'; 0uy |]
 
-    let private bytesToHex (bytes: byte[]) =
+    let bytesToHex (bytes: byte[]) =
         bytes |> Array.map (sprintf "%02x") |> String.concat ""
 
-    let private readInt32LE (buf: byte[]) (offset: int) : int =
+    let readInt32LE (buf: byte[]) (offset: int) : int =
         int buf.[offset]
         ||| (int buf.[offset + 1] <<< 8)
         ||| (int buf.[offset + 2] <<< 16)
         ||| (int buf.[offset + 3] <<< 24)
 
-    let private readFloat32LE (buf: byte[]) (offset: int) : float32 =
+    let readFloat32LE (buf: byte[]) (offset: int) : float32 =
         BitConverter.ToSingle(buf, offset)
 
-    let private readUInt16LE (buf: byte[]) (offset: int) : uint16 =
+    let readUInt16LE (buf: byte[]) (offset: int) : uint16 =
         uint16 buf.[offset] ||| (uint16 buf.[offset + 1] <<< 8)
 
     /// Spring 2×2-corner slope kernel. Output shape (mapx/2) × (mapy/2).
-    let private computeSlopeMap
+    let computeSlopeMap
         (heightMap: float32[,])
         (mapx: int)
         (mapy: int)
@@ -73,7 +73,7 @@ module SmfParser =
     /// When present, overrides the values baked into the SMF header — matching the
     /// behaviour of the live engine, which applies the mapinfo override before
     /// computing real-world heights from the raw uint16 heightmap values.
-    let private parseBytesCore
+    let parseBytesCore
         (sourceName: string)
         (bytes: byte[])
         (heightOverride: (float32 * float32) option)
@@ -167,7 +167,7 @@ module SmfParser =
     /// Returns `Some (min, max)` only when both fields are present; otherwise `None`.
     /// Deliberately regex-based (no Lua interpreter) — the relevant fields are simple
     /// numeric assignments and we do not need to evaluate the whole file.
-    let private parseMapinfoHeightOverride (luaText: string) : (float32 * float32) option =
+    let parseMapinfoHeightOverride (luaText: string) : (float32 * float32) option =
         let rxMin = Regex(@"minheight\s*=\s*(-?\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)
         let rxMax = Regex(@"maxheight\s*=\s*(-?\d+(?:\.\d+)?)", RegexOptions.IgnoreCase)
         let mMin = rxMin.Match(luaText)
@@ -179,7 +179,7 @@ module SmfParser =
         else
             None
 
-    let private extractSmfToTemp (sd7Path: string) : Result<string * string, SmfParseError> =
+    let extractSmfToTemp (sd7Path: string) : Result<string * string, SmfParseError> =
         let tempDir =
             Path.Combine(Path.GetTempPath(), "fsbar-smf-" + Path.GetRandomFileName())
         Directory.CreateDirectory(tempDir) |> ignore

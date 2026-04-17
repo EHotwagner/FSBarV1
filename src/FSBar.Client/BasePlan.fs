@@ -58,7 +58,7 @@ module BasePlan =
     /// existing `UnitDefCache.UnitDefInfo` record has `MaxWeaponRange` but not
     /// footprint size, so we table-lookup the handful of defs the opening plan uses.
     /// Unknown defs default to 24 elmos (a conservative medium structure).
-    let private fallbackFootprintRadius (defName: string) : float32 =
+    let fallbackFootprintRadius (defName: string) : float32 =
         match defName.ToLowerInvariant() with
         | "armmex" | "cormex" -> 16.0f
         | "armsolar" | "corsolar" -> 16.0f
@@ -72,7 +72,7 @@ module BasePlan =
 
     /// Builder reach (elmos) fallback table. Commander reach is typically ~128;
     /// other builders ~90. Real deployments should override via `UnitDefCache`.
-    let private fallbackBuilderReach (unitDefs: UnitDefCache) (defName: string) : float32 =
+    let fallbackBuilderReach (unitDefs: UnitDefCache) (defName: string) : float32 =
         match UnitDefCache.tryFindByName unitDefs defName with
         | Some info when info.MaxWeaponRange > 0.0f -> info.MaxWeaponRange
         | _ ->
@@ -81,7 +81,7 @@ module BasePlan =
             | "armck" | "corck" -> 90.0f
             | _ -> 96.0f
 
-    let private distance2D (a: float32 * float32 * float32) (b: float32 * float32 * float32) : float32 =
+    let distance2D (a: float32 * float32 * float32) (b: float32 * float32 * float32) : float32 =
         let (ax, _, az) = a
         let (bx, _, bz) = b
         let dx = ax - bx
@@ -146,7 +146,7 @@ module BasePlan =
             InFlight = Set.remove slotName progress.InFlight }
 
     /// Dispatch a PositionChooser to a concrete position or an unresolved-dependency failure.
-    let private resolveChooser
+    let resolveChooser
         (chooser: PositionChooser)
         (context: ResolveContext)
         : Result<float32 * float32 * float32, SlotFailure> =

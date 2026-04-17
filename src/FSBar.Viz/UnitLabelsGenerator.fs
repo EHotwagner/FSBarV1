@@ -4,10 +4,10 @@ open System
 
 module UnitLabelsGenerator =
 
-    let private factionPrefixes = [ "armada"; "cortex"; "legion"; "scavengers"; "raptors"
-                                    "arm"; "cor"; "leg"; "scav"; "rap" ]
+    let factionPrefixes = [ "armada"; "cortex"; "legion"; "scavengers"; "raptors"
+                            "arm"; "cor"; "leg"; "scav"; "rap" ]
 
-    let private stripPrefix (name: string) : string =
+    let stripPrefix (name: string) : string =
         let lower = name.ToLowerInvariant()
         let m =
             factionPrefixes
@@ -16,7 +16,7 @@ module UnitLabelsGenerator =
         | Some p -> name.Substring(p.Length)
         | None -> name
 
-    let private isConsonant (c: char) =
+    let isConsonant (c: char) =
         let cl = Char.ToLowerInvariant c
         Char.IsLetter cl
         && not (cl = 'a' || cl = 'e' || cl = 'i' || cl = 'o' || cl = 'u')
@@ -27,7 +27,7 @@ module UnitLabelsGenerator =
     // derivation fails. Letters before digits, upper before lower, Latin
     // before Greek. Greek entries are visually distinct from Latin so
     // there is no confusion at a glance.
-    let private oneCharPool : string list =
+    let oneCharPool : string list =
         [ yield! [ for c in 'A' .. 'Z' -> string c ]
           yield! [ for c in 'a' .. 'z' -> string c ]
           yield! [ for c in '0' .. '9' -> string c ]
@@ -40,7 +40,7 @@ module UnitLabelsGenerator =
     //   3. First letter of any kind
     //   4. Any letter in position order
     //   5. Any digit from the name
-    let private oneCharCandidatesFromName (rest: string) : string seq =
+    let oneCharCandidatesFromName (rest: string) : string seq =
         seq {
             let letters = rest |> Seq.filter Char.IsLetter |> Seq.toList
             let consonants = letters |> List.filter isConsonant
@@ -58,12 +58,12 @@ module UnitLabelsGenerator =
 
     // --- two-character fallback pool ------------------------------------------
 
-    let private titleCase2 (a: char) (b: char) =
+    let titleCase2 (a: char) (b: char) =
         let up = Char.ToUpperInvariant a
         let lo = Char.ToLowerInvariant b
         String([| up; lo |])
 
-    let private twoCharCandidates (rest: string) : string seq =
+    let twoCharCandidates (rest: string) : string seq =
         seq {
             let n = rest.Length
             if n = 0 then ()
@@ -103,10 +103,10 @@ module UnitLabelsGenerator =
                         yield titleCase2 a b
         }
 
-    let private firstUnused (candidates: string seq) (used: Set<string>) : string option =
+    let firstUnused (candidates: string seq) (used: Set<string>) : string option =
         candidates |> Seq.tryFind (fun c -> not (Set.contains c used))
 
-    let private pickLabel (name: string) (used: Set<string>) : string =
+    let pickLabel (name: string) (used: Set<string>) : string =
         let rest = stripPrefix name
         match firstUnused (oneCharCandidatesFromName rest) used with
         | Some c -> c

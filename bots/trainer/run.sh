@@ -226,8 +226,8 @@ fi
 echo "[run.sh] ladder: map=$map_name opponent=$opponent options=$opponent_options max_frames=$max_frames"
 
 # Build FSBar.Client so bot.fsx's #r directives find fresh DLLs (tests bin picks them up)
-echo "[run.sh] dotnet build src/FSBar.Client.Tests ..."
-dotnet build src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug --nologo --verbosity quiet >/dev/null
+echo "[run.sh] dotnet build tests/FSBar.Client.Tests ..."
+dotnet build tests/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug --nologo --verbosity quiet >/dev/null
 
 # When viewer is active, also build FSBar.Viz.Tests so viewer.fsx can #r the viz DLLs
 if [[ "${BOT_VIEWER:-}" == "1" ]]; then

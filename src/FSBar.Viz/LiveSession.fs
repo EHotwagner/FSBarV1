@@ -14,13 +14,13 @@ type LiveSessionHandle private (client: BarClient option, ownsClient: bool) =
     member _.IsRunning = isRunning
     member _.LastError = lastError
 
-    member internal _.SetSubscription(sub: IDisposable) =
+    member _.SetSubscription(sub: IDisposable) =
         subscription <- Some sub
 
-    member internal _.IncrementFrame() =
+    member _.IncrementFrame() =
         frameCount <- frameCount + 1
 
-    member internal _.SetStopped(?error: string) =
+    member _.SetStopped(?error: string) =
         isRunning <- false
         lastError <- error
         eprintfn "[LiveSession] Stopped%s" (error |> Option.map (sprintf ": %s") |> Option.defaultValue "")

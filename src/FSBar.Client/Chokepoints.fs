@@ -18,8 +18,8 @@ type ChokepointQuery =
 
 module Chokepoints =
 
-    let private cellSize = 8.0f
-    let private sqrt2 = 1.4142135f
+    let cellSize = 8.0f
+    let sqrt2 = 1.4142135f
 
     let defaultChokepointQuery (moveType: MoveType) : ChokepointQuery =
         { MaxWidthElmos = 40.0f

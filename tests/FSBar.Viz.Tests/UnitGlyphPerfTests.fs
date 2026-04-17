@@ -10,16 +10,16 @@ open FSBar.Viz
 //
 // Tagged `Perf` so fast CI can skip it via `--filter "Category!=Perf"`.
 
-let private style = UnitGlyphPalettes.defaults
+let style = UnitGlyphPalettes.defaults
 
-let private defaultStatus : StatusFlags =
+let defaultStatus : StatusFlags =
     { IsUnderConstruction = false
       IsStunned = false
       JustDamagedWithinMs = None
       JustCompletedWithinMs = None
       IsCloaked = false }
 
-let private build200Units () : UnitDisplay list =
+let build200Units () : UnitDisplay list =
     [ for i in 1 .. 200 ->
         let shape =
             match i % 6 with

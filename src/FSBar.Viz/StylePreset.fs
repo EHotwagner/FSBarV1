@@ -40,21 +40,21 @@ module StylePreset =
         | Some p -> p
         | None -> Path.Combine(Environment.CurrentDirectory, "viz-presets")
 
-    let private nameRegex = Regex(@"^[A-Za-z0-9 _\-]+$", RegexOptions.Compiled)
+    let nameRegex = Regex(@"^[A-Za-z0-9 _\-]+$", RegexOptions.Compiled)
 
     let isValidName (name: string) : bool =
         not (String.IsNullOrWhiteSpace name) && nameRegex.IsMatch name
 
-    let private ensureDir () =
+    let ensureDir () =
         if not (Directory.Exists presetDirectory) then
             Directory.CreateDirectory presetDirectory |> ignore
 
-    let private filePath (name: string) =
+    let filePath (name: string) =
         Path.Combine(presetDirectory, name + ".json")
 
     // --- Value ↔ PresetValue --------------------------------------------
 
-    let private presetOfObj (o: obj) : PresetValue option =
+    let presetOfObj (o: obj) : PresetValue option =
         match o with
         | :? SKColor as c ->
             let a = uint32 c.Alpha
@@ -69,7 +69,7 @@ module StylePreset =
         | :? Set<string> as s -> Some (PresetValue.StringSetVal s)
         | _ -> None
 
-    let private objOfPreset (p: PresetValue) : obj =
+    let objOfPreset (p: PresetValue) : obj =
         match p with
         | PresetValue.ColorVal argb ->
             let a = byte ((argb >>> 24) &&& 0xFFu)
@@ -85,10 +85,10 @@ module StylePreset =
 
     // --- JSON serialization ---------------------------------------------
 
-    let private colorToHex (argb: uint32) : string =
+    let colorToHex (argb: uint32) : string =
         sprintf "#%08X" argb
 
-    let private colorFromHex (s: string) : uint32 option =
+    let colorFromHex (s: string) : uint32 option =
         let s = s.Trim().TrimStart('#')
         match s.Length with
         | 8 ->
@@ -101,7 +101,7 @@ module StylePreset =
             | _ -> None
         | _ -> None
 
-    let private serializeValue (writer: Utf8JsonWriter) (key: string) (v: PresetValue) =
+    let serializeValue (writer: Utf8JsonWriter) (key: string) (v: PresetValue) =
         match v with
         | PresetValue.ColorVal argb -> writer.WriteString(key, colorToHex argb)
         | PresetValue.FloatVal f ->
@@ -121,7 +121,7 @@ module StylePreset =
             for s in vs do writer.WriteStringValue(s)
             writer.WriteEndArray()
 
-    let private deserializeValue (el: JsonElement) : PresetValue option =
+    let deserializeValue (el: JsonElement) : PresetValue option =
         match el.ValueKind with
         | JsonValueKind.String ->
             let s = el.GetString()
@@ -158,7 +158,7 @@ module StylePreset =
             Some (PresetValue.StringSetVal items)
         | _ -> None
 
-    let private writePreset (preset: StylePreset) : string =
+    let writePreset (preset: StylePreset) : string =
         use ms = new MemoryStream()
         let opts = JsonWriterOptions(Indented = true)
         do
@@ -173,7 +173,7 @@ module StylePreset =
             writer.WriteEndObject()
         Encoding.UTF8.GetString(ms.ToArray())
 
-    let private readPreset (json: string) : Result<StylePreset, string> =
+    let readPreset (json: string) : Result<StylePreset, string> =
         try
             use doc = JsonDocument.Parse(json)
             let root = doc.RootElement

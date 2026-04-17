@@ -5,9 +5,9 @@ open FSBar.Client
 
 module MockSnapshot =
 
-    let private nextId = ref 0
+    let nextId = ref 0
 
-    let private generateId () =
+    let generateId () =
         Interlocked.Increment(nextId)
 
     let emptySnapshot (grid: MapGrid) : GameSnapshot =

@@ -10,7 +10,7 @@ open FSBar.Viz.Tests.VizEngineFixture
 
 /// Convert a single frame from a synthetic scene to a GameSnapshot,
 /// reusing a shared MapGrid to avoid excessive allocation.
-let private convertFrame (scene: FSBar.SyntheticData.Scene) (sharedGrid: MapGrid) (gs: GameState) : GameSnapshot =
+let convertFrame (scene: FSBar.SyntheticData.Scene) (sharedGrid: MapGrid) (gs: GameState) : GameSnapshot =
     let units =
         let friendlyUnits =
             gs.Units |> Map.toList |> List.map (fun (uid, u: TrackedUnit) ->
@@ -58,7 +58,7 @@ let ``generate scene and build frames 0 150 299 without exceptions`` (sceneIdStr
     Assert.Equal(300, synScene.Frames.Length)
     let mapW = int synScene.MapWidth / 8
     let mapH = int synScene.MapHeight / 8
-    let grid = testMapGrid mapW mapH
+    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
     let config =
         { VizDefaults.defaultConfig with
             ActiveOverlays = Set.ofList [ OverlayKind.Units; OverlayKind.Events; OverlayKind.EconomyHud ] }
@@ -85,7 +85,7 @@ let ``element counts differ between frame 0 and frame 150`` (sceneIdStr: string)
     let synScene = Scenes.generate sceneId
     let mapW = int synScene.MapWidth / 8
     let mapH = int synScene.MapHeight / 8
-    let grid = testMapGrid mapW mapH
+    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
     let config =
         { VizDefaults.defaultConfig with
             ActiveOverlays = Set.ofList [ OverlayKind.Units; OverlayKind.Events; OverlayKind.EconomyHud ] }
@@ -106,7 +106,7 @@ let ``render SceneA frame 0 with each LayerKind produces non-empty scenes`` () =
     let synScene = Scenes.generate SceneId.SceneA
     let mapW = int synScene.MapWidth / 8
     let mapH = int synScene.MapHeight / 8
-    let grid = testMapGrid mapW mapH
+    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
     let snap = convertFrame synScene grid synScene.Frames.[0]
     let vs = VizDefaults.defaultViewState
     let layers = [
@@ -134,7 +134,7 @@ let ``render SceneB frames 100-105 with Events overlay`` () =
     let synScene = Scenes.generate SceneId.SceneB
     let mapW = int synScene.MapWidth / 8
     let mapH = int synScene.MapHeight / 8
-    let grid = testMapGrid mapW mapH
+    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
     let config =
         { VizDefaults.defaultConfig with
             ActiveOverlays = Set.ofList [ OverlayKind.Events ] }
@@ -160,7 +160,7 @@ let ``render SceneA frame 0 and 200 with EconomyHud produces HUD elements`` () =
     let synScene = Scenes.generate SceneId.SceneA
     let mapW = int synScene.MapWidth / 8
     let mapH = int synScene.MapHeight / 8
-    let grid = testMapGrid mapW mapH
+    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
     let config =
         { VizDefaults.defaultConfig with
             ActiveOverlays = Set.ofList [ OverlayKind.EconomyHud ] }

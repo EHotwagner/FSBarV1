@@ -253,10 +253,10 @@ main() {
     # ── Unit tests ──
 
     if should_run "unit"; then
-        if [ -f "${REPO_ROOT}/src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj" ]; then
-            run_tier "unit" "F# Unit Tests" dotnet test "${REPO_ROOT}/src/FSBar.Client.Tests/" --verbosity quiet
+        if [ -f "${REPO_ROOT}/tests/FSBar.Client.Tests/FSBar.Client.Tests.fsproj" ]; then
+            run_tier "unit" "F# Unit Tests" dotnet test "${REPO_ROOT}/tests/FSBar.Client.Tests/" --verbosity quiet
         else
-            skip_tier "unit" "F# Unit Tests" "src/FSBar.Client.Tests/ not found"
+            skip_tier "unit" "F# Unit Tests" "tests/FSBar.Client.Tests/ not found"
         fi
     fi
 

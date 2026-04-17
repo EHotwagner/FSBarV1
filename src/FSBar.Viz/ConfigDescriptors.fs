@@ -50,7 +50,7 @@ module ConfigDescriptors =
 
     // --- Construction helpers --------------------------------------------
 
-    let private colorDesc
+    let colorDesc
         (key: string) (label: string) (cat: AttributeCategory)
         (get: VizConfig -> SKColor) (set: SKColor -> VizConfig -> VizConfig)
         (dflt: SKColor) =
@@ -63,7 +63,7 @@ module ConfigDescriptors =
           Default = box dflt
           Range = None }
 
-    let private floatDesc
+    let floatDesc
         (key: string) (label: string) (cat: AttributeCategory)
         (minV: float32) (maxV: float32)
         (get: VizConfig -> float32) (set: float32 -> VizConfig -> VizConfig)
@@ -80,7 +80,7 @@ module ConfigDescriptors =
           Default = box dflt
           Range = Some (minV, maxV) }
 
-    let private intDesc
+    let intDesc
         (key: string) (label: string) (cat: AttributeCategory)
         (minV: int) (maxV: int)
         (get: VizConfig -> int) (set: int -> VizConfig -> VizConfig)
@@ -97,7 +97,7 @@ module ConfigDescriptors =
           Default = box dflt
           Range = Some (float32 minV, float32 maxV) }
 
-    let private boolDesc
+    let boolDesc
         (key: string) (label: string) (cat: AttributeCategory)
         (get: VizConfig -> bool) (set: bool -> VizConfig -> VizConfig)
         (dflt: bool) =
@@ -110,7 +110,7 @@ module ConfigDescriptors =
           Default = box dflt
           Range = None }
 
-    let private enumDesc
+    let enumDesc
         (key: string) (label: string) (cat: AttributeCategory) (labels: string list)
         (get: VizConfig -> string) (set: string -> VizConfig -> VizConfig)
         (dflt: string) =
@@ -125,16 +125,16 @@ module ConfigDescriptors =
 
     // --- Nested update helpers -------------------------------------------
 
-    let private updateGlyph (f: UnitGlyphStyle -> UnitGlyphStyle) (cfg: VizConfig) =
+    let updateGlyph (f: UnitGlyphStyle -> UnitGlyphStyle) (cfg: VizConfig) =
         { cfg with GlyphStyle = f cfg.GlyphStyle }
 
-    let private updateFaction (f: FactionPalette -> FactionPalette) (cfg: VizConfig) =
+    let updateFaction (f: FactionPalette -> FactionPalette) (cfg: VizConfig) =
         updateGlyph (fun g -> { g with FactionPalette = f g.FactionPalette }) cfg
 
-    let private updateTeam (f: TeamPalette -> TeamPalette) (cfg: VizConfig) =
+    let updateTeam (f: TeamPalette -> TeamPalette) (cfg: VizConfig) =
         updateGlyph (fun g -> { g with TeamPalette = f g.TeamPalette }) cfg
 
-    let private toggleOverlay (kind: OverlayKind) (on: bool) (cfg: VizConfig) =
+    let toggleOverlay (kind: OverlayKind) (on: bool) (cfg: VizConfig) =
         let next =
             if on then Set.add kind cfg.ActiveOverlays
             else Set.remove kind cfg.ActiveOverlays
@@ -142,11 +142,11 @@ module ConfigDescriptors =
 
     // --- Base layer enum --------------------------------------------------
 
-    let private baseLayerLabels =
+    let baseLayerLabels =
         [ "BaseTerrain"; "HeightMap"; "SlopeMap"; "ResourceMap"
           "LosMap"; "RadarMap"; "TerrainClassification" ]
 
-    let private layerOfLabel (s: string) : LayerKind =
+    let layerOfLabel (s: string) : LayerKind =
         match s with
         | "BaseTerrain" -> LayerKind.BaseTerrain
         | "HeightMap" -> LayerKind.HeightMap
@@ -157,7 +157,7 @@ module ConfigDescriptors =
         | "TerrainClassification" -> LayerKind.TerrainClassification
         | _ -> LayerKind.HeightMap
 
-    let private labelOfLayer (l: LayerKind) : string =
+    let labelOfLayer (l: LayerKind) : string =
         match l with
         | LayerKind.BaseTerrain -> "BaseTerrain"
         | LayerKind.HeightMap -> "HeightMap"
@@ -170,7 +170,7 @@ module ConfigDescriptors =
 
     // --- Descriptor list --------------------------------------------------
 
-    let private defaults = VizDefaults.defaultConfig
+    let defaults = VizDefaults.defaultConfig
 
     let all : AttributeDescriptor list =
         [
@@ -327,7 +327,7 @@ module ConfigDescriptors =
               defaults.GlyphStyle.JustBuiltRingDurationMs
         ]
 
-    let private byKey : Map<string, AttributeDescriptor> =
+    let byKey : Map<string, AttributeDescriptor> =
         all |> List.map (fun d -> d.Key, d) |> Map.ofList
 
     let tryFind (key: string) : AttributeDescriptor option =

@@ -23,9 +23,9 @@
 // dependencies flattened (FsGrpc, FSBar.Proto, FSBar.Client) in the
 // same folder — avoids having to list every dependency manually and
 // avoids NuGet-cache staleness on the local dev-pack feed.
-#r "../../src/FSBar.Client.Tests/bin/Debug/net10.0/FsGrpc.dll"
-#r "../../src/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Proto.dll"
-#r "../../src/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Client.dll"
+#r "../../tests/FSBar.Client.Tests/bin/Debug/net10.0/FsGrpc.dll"
+#r "../../tests/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Proto.dll"
+#r "../../tests/FSBar.Client.Tests/bin/Debug/net10.0/FSBar.Client.dll"
 
 open FSBar.Client
 open FSBar.Client.Commands

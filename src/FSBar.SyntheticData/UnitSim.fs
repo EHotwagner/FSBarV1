@@ -11,7 +11,7 @@ module UnitSim =
         Speed: float32
     }
 
-    let private pseudoRandom (seed: int) (range: float32) : float32 =
+    let pseudoRandom (seed: int) (range: float32) : float32 =
         let s = abs ((seed * 1103515245 + 12345) % 2147483647)
         (float32 s / 2147483647.0f) * range
 

@@ -6,7 +6,7 @@ open FSBar.Client
 open FSBar.Viz
 open FSBar.Viz.Tests.VizEngineFixture
 
-let private makeGrid (heights: float32[,]) : MapGrid =
+let makeGrid (heights: float32[,]) : MapGrid =
     let h = Array2D.length1 heights
     let w = Array2D.length2 heights
     let slopeW = max 1 (w / 2)
@@ -21,14 +21,14 @@ let private makeGrid (heights: float32[,]) : MapGrid =
       LosMap = Array2D.init h w (fun _ _ -> 0)
       RadarMap = Array2D.init h w (fun _ _ -> 0) }
 
-let private pixelAt (bmp: SKBitmap) (x: int) (z: int) : byte * byte * byte * byte =
+let pixelAt (bmp: SKBitmap) (x: int) (z: int) : byte * byte * byte * byte =
     let c = bmp.GetPixel(x, z)
     c.Red, c.Green, c.Blue, c.Alpha
 
-let private luminance (r: byte) (g: byte) (b: byte) : float =
+let luminance (r: byte) (g: byte) (b: byte) : float =
     0.2126 * float r + 0.7152 * float g + 0.0722 * float b
 
-let private scheme = ColorMaps.colorSchemeFor LayerKind.BaseTerrain
+let scheme = ColorMaps.colorSchemeFor LayerKind.BaseTerrain
 
 [<Fact>]
 let ``renders land cells on brown ramp and water cells on blue ramp`` () =

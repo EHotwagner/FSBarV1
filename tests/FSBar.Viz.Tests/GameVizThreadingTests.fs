@@ -6,16 +6,16 @@ open Xunit
 open FSBar.Client
 open FSBar.Viz
 
-let private minimalMapGrid =
+let minimalMapGrid =
     { WidthElmos = 8192; HeightElmos = 8192; WidthHeightmap = 129; HeightHeightmap = 129
       HeightMap = Array2D.zeroCreate 129 129; SlopeMap = Array2D.zeroCreate 129 129
       ResourceMap = Array2D.zeroCreate 129 129; LosMap = Array2D.zeroCreate 129 129
       RadarMap = Array2D.zeroCreate 129 129 }
 
-let private defaultEcon : EconomySnapshot =
+let defaultEcon : EconomySnapshot =
     { Current = 0.0f; Income = 0.0f; Usage = 0.0f; Storage = 0.0f }
 
-let private makeGameState frameNum =
+let makeGameState frameNum =
     let unit1 : TrackedUnit =
         { UnitId = 1; DefId = 100; Position = (float32 frameNum, 50.0f, 200.0f)
           Health = 1000.0f; MaxHealth = 1000.0f; IsFinished = true; IsIdle = false }

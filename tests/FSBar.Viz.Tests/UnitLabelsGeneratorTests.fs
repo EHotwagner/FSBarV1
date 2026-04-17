@@ -6,7 +6,7 @@ open FSBar.Viz
 // Sample input — a mix of Armada and Cortex units across two shapes so
 // the generator actually exercises per-bucket allocation. All entries
 // fit comfortably inside the single-char pool.
-let private sampleItems : (string * MovementShape * FactionId) list =
+let sampleItems : (string * MovementShape * FactionId) list =
     [ "armpw",    MovementShape.Bot,      FactionId.Armada
       "armck",    MovementShape.Bot,      FactionId.Armada
       "armflash", MovementShape.Vehicle,  FactionId.Armada
@@ -24,7 +24,7 @@ let private sampleItems : (string * MovementShape * FactionId) list =
       "legkeres", MovementShape.Vehicle,  FactionId.Legion
       "legraptor",MovementShape.Bot,      FactionId.Legion ]
 
-let private sampleNames = sampleItems |> List.map (fun (n, _, _) -> n)
+let sampleNames = sampleItems |> List.map (fun (n, _, _) -> n)
 
 // T028 — determinism ---------------------------------------------------------
 

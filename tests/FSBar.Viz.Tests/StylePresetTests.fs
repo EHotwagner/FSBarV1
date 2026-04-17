@@ -6,13 +6,13 @@ open Xunit
 open SkiaSharp
 open FSBar.Viz
 
-let private cfg = VizDefaults.defaultConfig
+let cfg = VizDefaults.defaultConfig
 
 // Use a unique subdirectory of the project's preset directory for isolation.
-let private testPresetName (suffix: string) =
+let testPresetName (suffix: string) =
     sprintf "unit-test-%s-%s" suffix (Guid.NewGuid().ToString("N").Substring(0, 8))
 
-let private cleanup (names: string list) =
+let cleanup (names: string list) =
     for n in names do
         StylePreset.delete n |> ignore
 

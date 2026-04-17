@@ -5,13 +5,13 @@ open Xunit
 open FSBar.Client
 open FSBar.Viz
 
-let private minimalMapGrid =
+let minimalMapGrid =
     { WidthElmos = 8192; HeightElmos = 8192; WidthHeightmap = 129; HeightHeightmap = 129
       HeightMap = Array2D.zeroCreate 129 129; SlopeMap = Array2D.zeroCreate 129 129
       ResourceMap = Array2D.zeroCreate 129 129; LosMap = Array2D.zeroCreate 129 129
       RadarMap = Array2D.zeroCreate 129 129 }
 
-let private makeGameState (units: (int * TrackedUnit) list) (enemies: (int * TrackedEnemy) list) (events: GameEvent list) (metal: EconomySnapshot) (energy: EconomySnapshot) frameNum teamId =
+let makeGameState (units: (int * TrackedUnit) list) (enemies: (int * TrackedEnemy) list) (events: GameEvent list) (metal: EconomySnapshot) (energy: EconomySnapshot) frameNum teamId =
     { FrameNumber = frameNum
       TeamId = teamId
       Units = units |> Map.ofList
@@ -21,7 +21,7 @@ let private makeGameState (units: (int * TrackedUnit) list) (enemies: (int * Tra
       UnitDefs = UnitDefCache.empty
       Events = events }
 
-let private defaultEcon : EconomySnapshot =
+let defaultEcon : EconomySnapshot =
     { Current = 0.0f; Income = 0.0f; Usage = 0.0f; Storage = 0.0f }
 
 [<Fact>]

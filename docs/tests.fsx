@@ -15,10 +15,10 @@ update as the codebase evolves — run `dotnet test` for authoritative numbers.
 
 | Project | Location | Approx. count | What it covers |
 |---------|----------|---------------|----------------|
-| `FSBar.Client.Tests` | `src/FSBar.Client.Tests/` | ~158 | Unit tests for every `FSBar.Client` module. Some use real Unix sockets (`Connection`, `Protocol`); none use mocks. |
+| `FSBar.Client.Tests` | `tests/FSBar.Client.Tests/` | ~158 | Unit tests for every `FSBar.Client` module. Some use real Unix sockets (`Connection`, `Protocol`); none use mocks. |
 | `FSBar.LiveTests` | `tests/FSBar.LiveTests/` | ~29 | Integration tests against a live headless BAR engine (commander reaches enemy base, build flow, event delivery). |
 | `FSBar.Viz.Tests` | `tests/FSBar.Viz.Tests/` | ~104 | Visualization library — color maps, layer renderer, scene builder, live + preview sessions, surface baselines. |
-| `FSBar.SyntheticData.Tests` | `src/FSBar.SyntheticData.Tests/` | ~40 | Synthetic scene generation, structural validation, continuity checks, surface baselines. |
+| `FSBar.SyntheticData.Tests` | `tests/FSBar.SyntheticData.Tests/` | ~40 | Synthetic scene generation, structural validation, continuity checks, surface baselines. |
 
 All tests use xUnit 2.9.x. **No mocks or fakes are used anywhere** — every test exercises
 real code against real sockets, real file I/O, or a real engine. Tests that cannot pass in
@@ -2501,7 +2501,7 @@ They skip cleanly when run headless without `XDG_RUNTIME_DIR` / `DISPLAY`.
 
 ## `FSBar.SyntheticData.Tests` — Scene Generator
 
-Approximately 40 tests in `src/FSBar.SyntheticData.Tests/`. These validate the three
+Approximately 40 tests in `tests/FSBar.SyntheticData.Tests/`. These validate the three
 pre-built scenes and the individual simulation modules.
 
 | Test file | Approx. count | What it covers |

@@ -39,7 +39,7 @@ Short version:
 
 ```bash
 bash bots/trainer/engine-patches/install-barb-profiles.sh
-dotnet build src/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug
+dotnet build tests/FSBar.Client.Tests/FSBar.Client.Tests.fsproj -c Debug
 # rush bot (default, omits BOT_SCRIPT):
 bash bots/trainer/run.sh NullAI smoke
 # macro bot (023 archetype):

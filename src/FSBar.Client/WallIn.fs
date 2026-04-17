@@ -16,7 +16,7 @@ type WallInQuery =
 
 module WallIn =
 
-    let private cellSize = 8.0f
+    let cellSize = 8.0f
 
     let defaultWallInQuery : WallInQuery =
         { MoveType = MoveType.Kbot
@@ -25,7 +25,7 @@ module WallIn =
     /// Combined "base passability + ownStructures footprint mask" used by both
     /// `reachableCells` and `Pathing.findPath` so a placement rejected by one is
     /// consistent with the other (FR-020).
-    let private buildPassable
+    let buildPassable
         (grid: MapGrid)
         (moveType: MoveType)
         (ownStructures: OwnStructureFootprint seq)
@@ -77,7 +77,7 @@ module WallIn =
             visited
 
     /// True when the reachable set contains at least one map-edge cell.
-    let private hasMapEdgeExit (reachable: bool[,]) : bool =
+    let hasMapEdgeExit (reachable: bool[,]) : bool =
         let w = Array2D.length1 reachable
         let h = Array2D.length2 reachable
         let mutable found = false
@@ -96,7 +96,7 @@ module WallIn =
     /// Structure footprints make their own centre impassable, so the literal
     /// centre cell is not a reliable indicator — callers care whether a builder
     /// can approach the structure from any adjacent passable cell.
-    let private structureReachable
+    let structureReachable
         (reach: bool[,])
         (cellX: int)
         (cellZ: int)

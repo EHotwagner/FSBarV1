@@ -5,7 +5,7 @@ open FSBar.Client
 module Scenes =
 
     // --- Scheduled action types ---
-    type private ScheduledAction =
+    type ScheduledAction =
         | SpawnUnit of unitId: int * defId: int * position: (float32 * float32 * float32) * builderId: int
         | FinishUnit of unitId: int
         | SpawnEnemy of enemyId: int * defId: int * position: (float32 * float32 * float32)
@@ -17,7 +17,7 @@ module Scenes =
         | AddIncome of metalIncome: float32 * energyIncome: float32
         | AddUsage of metalUsage: float32 * energyUsage: float32
 
-    let private generateScene
+    let generateScene
         (sceneId: SceneId)
         (name: string)
         (mapWidth: float32)
@@ -217,7 +217,7 @@ module Scenes =
     // ============================================================
     // Scene A: Small Map - Early Game Buildup (4096x4096)
     // ============================================================
-    let private generateSceneA () =
+    let generateSceneA () =
         let unitDefs = UnitDefs.sceneA
         let initialUnits = [
             (1, UnitDefs.ArmCommander, (2048.0f, 100.0f, 2048.0f))
@@ -290,7 +290,7 @@ module Scenes =
     // ============================================================
     // Scene B: Medium Map - Mid-Game Skirmish (8192x8192)
     // ============================================================
-    let private generateSceneB () =
+    let generateSceneB () =
         let unitDefs = UnitDefs.sceneB
         // 20 friendly units: commander + 4 mex + 3 solar + 1 lab + 4 peewee + 3 flash + 2 rockko + 2 samson
         let initialUnits = [
@@ -447,7 +447,7 @@ module Scenes =
     // ============================================================
     // Scene C: Large Map - Late-Game Siege (16384x16384)
     // ============================================================
-    let private generateSceneC () =
+    let generateSceneC () =
         let unitDefs = UnitDefs.sceneC
         // 50 friendly units in 3 clusters
         let cluster1Base = (4000.0f, 100.0f, 4000.0f) // Defense base

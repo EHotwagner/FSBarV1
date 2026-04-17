@@ -53,13 +53,13 @@ module GameState =
           UnitDefs = UnitDefCache.empty
           Events = [] }
 
-    let private refreshEconomy (stream: NetworkStream) (resourceId: int) : EconomySnapshot =
+    let refreshEconomy (stream: NetworkStream) (resourceId: int) : EconomySnapshot =
         { Current = Callbacks.getEconomyCurrent stream resourceId
           Income = Callbacks.getEconomyIncome stream resourceId
           Usage = Callbacks.getEconomyUsage stream resourceId
           Storage = Callbacks.getEconomyStorage stream resourceId }
 
-    let private refreshUnit (stream: NetworkStream) (unit: TrackedUnit) : TrackedUnit =
+    let refreshUnit (stream: NetworkStream) (unit: TrackedUnit) : TrackedUnit =
         let pos = Callbacks.getUnitPos stream unit.UnitId
         let health = Callbacks.getUnitHealth stream unit.UnitId
         let posChanged = pos <> unit.Position
@@ -68,7 +68,7 @@ module GameState =
             Health = health
             IsIdle = if posChanged then false else unit.IsIdle }
 
-    let private processEvent (state: GameState) (stream: NetworkStream) (evt: GameEvent) : GameState =
+    let processEvent (state: GameState) (stream: NetworkStream) (evt: GameEvent) : GameState =
         match evt with
         | GameEvent.Init teamId ->
             { state with TeamId = teamId }
