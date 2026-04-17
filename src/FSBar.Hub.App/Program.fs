@@ -49,7 +49,18 @@ let main _argv =
         | None -> None
 
     // --- Render state (mutable; updated by input handler) ------------------
-    let mutable activeTab = HubTab.Setup
+    let mutable activeTab =
+        // FSBAR_HUB_INITIAL_TAB lets CI screenshots skip past Setup
+        // without driving a simulated tab click through the input
+        // pipeline.
+        match Environment.GetEnvironmentVariable("FSBAR_HUB_INITIAL_TAB") with
+        | null | "" -> HubTab.Setup
+        | "Viewer" -> HubTab.Viewer
+        | "Configurator" -> HubTab.Configurator
+        | "Encyclopedia" -> HubTab.Encyclopedia
+        | "Settings" -> HubTab.Settings
+        | "Grpc" -> HubTab.Grpc
+        | _ -> HubTab.Setup
     let mutable windowWidth = 1280
     let mutable windowHeight = 800
     let mutable currentSpeed = settings.LaunchGraphicalViewerDefault |> ignore; 1.0f
@@ -61,6 +72,12 @@ let main _argv =
     // diagnostic block.
     let mutable setupState : SetupTab.SetupTabState option =
         barInstall |> Option.map SetupTab.init
+
+    // Live VizConfig shared by ViewerTab + ConfiguratorTab. Starts
+    // from VizDefaults.defaultConfig and mutates as the user edits
+    // swatches / sliders / toggles in the Configurator tab.
+    let mutable vizConfig = FSBar.Viz.VizDefaults.defaultConfig
+    let mutable configuratorState = ConfiguratorTab.init ()
 
     // --- Paints ------------------------------------------------------------
     let contentBgColor = SKColor(0x0cuy, 0x10uy, 0x18uy, 0xffuy)
@@ -113,11 +130,11 @@ let main _argv =
                     "Setup — configure your next session"
                     "BAR install not detected — no lobby builder surface."
         | HubTab.Viewer ->
-            ViewerTab.render sessState FSBar.Viz.VizDefaults.defaultConfig cx cy cw ch
+            ViewerTab.render sessState vizConfig cx cy cw ch
+        | HubTab.Configurator ->
+            ConfiguratorTab.render configuratorState vizConfig cx cy cw ch
         | HubTab.Encyclopedia ->
             placeholderBlock "Units — BarData encyclopedia" "Unit catalog renderer lands in T056."
-        | HubTab.Configurator ->
-            placeholderBlock "Style — visualisation configurator" "ConfigPanel embed lands in T058."
         | HubTab.Settings ->
             placeholderBlock "Settings — BAR install, proxy, ports" "Settings rows land in T040."
         | HubTab.Grpc ->
@@ -189,9 +206,9 @@ let main _argv =
                         sessions |> Option.iter (fun sm -> sm.End())
                     | None ->
                         // Route to the active tab.
+                        let (cx, cy, cw, ch) = contentRect ()
                         match activeTab, setupState, barInstall with
                         | HubTab.Setup, Some st, Some install ->
-                            let (cx, cy, cw, ch) = contentRect ()
                             match SetupTab.handleMouse st x y cx cy cw ch with
                             | Some (SetupTab.SetupTabAction.SelectMap name) ->
                                 let lobby = { st.Lobby with MapName = name }
@@ -211,16 +228,77 @@ let main _argv =
                                     | Result.Error msg ->
                                         setupState <- Some { st with LastLaunchError = Some msg }
                             | None -> ()
+                        | HubTab.Configurator, _, _ ->
+                            let (ns, action) =
+                                ConfiguratorTab.handleInput
+                                    configuratorState vizConfig evt cx cy cw ch
+                            configuratorState <- ns
+                            // Apply ConfigChanged: the panel's handleInput
+                            // returns an UpdatedConfig on every slider
+                            // drag / color cycle. Here we re-dispatch
+                            // the event locally so the panel sees the
+                            // updated config on the next frame.
+                            match action with
+                            | Some (ConfiguratorTab.ConfiguratorTabAction.ConfigChanged nc) ->
+                                vizConfig <- nc
+                            | Some (ConfiguratorTab.ConfiguratorTabAction.SavePreset name) ->
+                                let preset = FSBar.Viz.StylePreset.fromConfig name vizConfig
+                                match FSBar.Viz.StylePreset.save preset with
+                                | Ok path ->
+                                    configuratorState <-
+                                        { configuratorState with
+                                            PresetNames = FSBar.Viz.StylePreset.listNames ()
+                                            ActivePreset = Some name
+                                            LastPresetResult = Some (Ok (sprintf "saved %s" path)) }
+                                | Result.Error msg ->
+                                    configuratorState <-
+                                        { configuratorState with LastPresetResult = Some (Result.Error msg) }
+                            | Some (ConfiguratorTab.ConfiguratorTabAction.LoadPreset name) ->
+                                match FSBar.Viz.StylePreset.load name with
+                                | Ok preset ->
+                                    vizConfig <- FSBar.Viz.StylePreset.applyToConfig preset vizConfig
+                                    configuratorState <-
+                                        { configuratorState with
+                                            ActivePreset = Some name
+                                            LastPresetResult = Some (Ok (sprintf "loaded %s" name)) }
+                                | Result.Error msg ->
+                                    configuratorState <-
+                                        { configuratorState with LastPresetResult = Some (Result.Error msg) }
+                            | Some (ConfiguratorTab.ConfiguratorTabAction.DeletePreset name) ->
+                                match FSBar.Viz.StylePreset.delete name with
+                                | Ok () ->
+                                    configuratorState <-
+                                        { configuratorState with
+                                            PresetNames = FSBar.Viz.StylePreset.listNames ()
+                                            ActivePreset =
+                                                if configuratorState.ActivePreset = Some name then None
+                                                else configuratorState.ActivePreset
+                                            LastPresetResult = Some (Ok (sprintf "deleted %s" name)) }
+                                | Result.Error msg ->
+                                    configuratorState <-
+                                        { configuratorState with LastPresetResult = Some (Result.Error msg) }
+                            | Some ConfiguratorTab.ConfiguratorTabAction.ResetDefaults ->
+                                vizConfig <- FSBar.Viz.VizDefaults.defaultConfig
+                                configuratorState <-
+                                    { configuratorState with
+                                        ActivePreset = None
+                                        LastPresetResult = Some (Ok "defaults restored") }
+                            | None -> ()
                         | _ -> ()
             trigger ()
         | InputEvent.MouseScroll(delta, x, y) ->
+            let (cx, cy, cw, ch) = contentRect ()
             match activeTab, setupState with
             | HubTab.Setup, Some st ->
-                let (cx, cy, cw, ch) = contentRect ()
                 match SetupTab.handleScroll st delta x y cx cy cw ch with
                 | Some (SetupTab.SetupTabAction.ScrollMapList off) ->
                     setupState <- Some { st with MapListScroll = off }
                 | _ -> ()
+            | HubTab.Configurator, _ ->
+                let (ns, _action) =
+                    ConfiguratorTab.handleInput
+                        configuratorState vizConfig evt cx cy cw ch
+                configuratorState <- ns
             | _ -> ()
             trigger ()
         | _ -> ()
