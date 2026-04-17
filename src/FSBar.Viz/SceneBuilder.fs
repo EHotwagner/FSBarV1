@@ -482,6 +482,18 @@ module SceneBuilder =
         let snapshot = gameStateToSnapshot state mapGrid
         buildScene snapshot config VizDefaults.defaultViewState
 
+    let computeFitScale
+            (map: FSBar.Client.MapGrid option)
+            (viewportWidth: int)
+            (viewportHeight: int)
+            : float32 =
+        match map with
+        | Some g when g.WidthHeightmap > 0 && g.HeightHeightmap > 0 ->
+            let sx = float32 viewportWidth / float32 g.WidthHeightmap
+            let sy = float32 viewportHeight / float32 g.HeightHeightmap
+            min sx sy
+        | _ -> 1.0f
+
     let buildSceneHeadlessSized
             (state: FSBar.Client.GameState)
             (map: FSBar.Client.MapGrid option)
@@ -496,12 +508,7 @@ module SceneBuilder =
         // renders at 1 pixel per heightmap cell under Scale=1.0;
         // choose the smaller of the two axes' ratios so the whole map
         // fits with letterboxing rather than cropping.
-        let scale =
-            if mapGrid.WidthHeightmap = 0 || mapGrid.HeightHeightmap = 0 then 1.0f
-            else
-                let sx = float32 viewportWidth / float32 mapGrid.WidthHeightmap
-                let sy = float32 viewportHeight / float32 mapGrid.HeightHeightmap
-                min sx sy
+        let scale = computeFitScale map viewportWidth viewportHeight
         let vs =
             { VizDefaults.defaultViewState with
                 Scale = scale
@@ -509,3 +516,14 @@ module SceneBuilder =
                 WindowHeight = viewportHeight
                 AutoFit = true }
         buildScene snapshot config vs
+
+    let buildSceneHeadlessView
+            (state: FSBar.Client.GameState)
+            (map: FSBar.Client.MapGrid option)
+            (metalSpots: (float32 * float32 * float32 * float32) array)
+            (config: VizConfig)
+            (viewState: ViewState)
+            : Scene =
+        let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
+        let snapshot = gameStateToSnapshotWith state mapGrid metalSpots
+        buildScene snapshot config viewState

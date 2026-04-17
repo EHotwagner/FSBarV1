@@ -14,13 +14,14 @@ module ViewerTab =
     let render
             (sessionState: SessionManager.SessionState)
             (vizConfig: VizConfig)
+            (viewStateRef: ViewState ref)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : Element list =
         match sessionState with
         | SessionManager.Running rs ->
             // Pull live GameState + MapGrid off the active BarClient.
-            // buildSceneHeadless tolerates map=None for frames that
+            // buildSceneHeadlessView tolerates map=None for frames that
             // arrive before MapGrid is loaded.
             let state = rs.BarClient.GameState
             // Enable Units + MetalSpots overlays on top of the
@@ -32,9 +33,29 @@ module ViewerTab =
                         vizConfig.ActiveOverlays
                         |> Set.add OverlayKind.Units
                         |> Set.add OverlayKind.MetalSpots }
+            // Keep the ViewState's WindowWidth/Height in sync with the
+            // content rect so downstream math (fit, event indicators)
+            // is correct.
+            let vw, vh = int contentW, int contentH
+            let current = viewStateRef.Value
+            let resized =
+                if current.WindowWidth <> vw || current.WindowHeight <> vh then
+                    { current with WindowWidth = vw; WindowHeight = vh }
+                else current
+            // When AutoFit is on, re-letterbox to the content rect so
+            // the user sees the whole map before zooming in. Once the
+            // user scrolls or drags, the caller flips AutoFit off and
+            // the explicit Scale/Origin take over.
+            let effective =
+                if resized.AutoFit then
+                    let scale = SceneBuilder.computeFitScale rs.MapGrid vw vh
+                    { resized with Scale = scale; OriginX = 0.0f; OriginY = 0.0f }
+                else resized
+            if not (System.Object.ReferenceEquals(effective, current)) then
+                viewStateRef.Value <- effective
             let embedded =
-                SceneBuilder.buildSceneHeadlessSized
-                    state rs.MapGrid rs.MetalSpots cfg (int contentW) (int contentH)
+                SceneBuilder.buildSceneHeadlessView
+                    state rs.MapGrid rs.MetalSpots cfg effective
             // Scene elements are authored in viewport-relative space
             // with origin at (0,0); wrap in a translated group so they
             // land inside the Viewer tab's content rectangle.

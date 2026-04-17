@@ -38,6 +38,30 @@ module SceneBuilder =
         viewportHeight: int ->
             Scene
 
+    /// Variant of `buildSceneHeadlessSized` that composes with a caller-
+    /// supplied `ViewState` instead of auto-fitting. Used by embedders
+    /// that want user zoom/pan control (e.g. the hub's Viewer tab) —
+    /// they keep a mutable `ViewState`, adjust `Scale` / `OriginX/Y`
+    /// on scroll-wheel + drag events, and pass the current value each
+    /// frame.
+    val buildSceneHeadlessView:
+        state: GameState ->
+        map: MapGrid option ->
+        metalSpots: (float32 * float32 * float32 * float32) array ->
+        config: VizConfig ->
+        viewState: ViewState ->
+            Scene
+
+    /// Returns the `Scale` value that would letterbox `map` into a
+    /// viewport of the given dimensions. Callers use this to initialise
+    /// their `ViewState` or re-fit after a window resize when
+    /// `AutoFit = true`. Returns `1.0f` if the map is empty.
+    val computeFitScale:
+        map: MapGrid option ->
+        viewportWidth: int ->
+        viewportHeight: int ->
+            float32
+
     /// Computes a clamped pulse alpha byte in [60, 220] from elapsed seconds and period.
     val computePulseAlpha: elapsed: float -> periodSeconds: float -> byte
 

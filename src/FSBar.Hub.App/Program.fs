@@ -102,6 +102,15 @@ let main _argv =
     let mutable vizConfig = FSBar.Viz.VizDefaults.defaultConfig
     let mutable configuratorState = ConfiguratorTab.init ()
 
+    // Viewer-tab camera. `AutoFit = true` makes ViewerTab.render
+    // letterbox the map into the content rect each frame; scroll-
+    // wheel + left-drag flip it to manual (AutoFit=false) with the
+    // user's Scale/Origin preserved across frames. `R` resets.
+    let viewerViewState : FSBar.Viz.ViewState ref =
+        ref { FSBar.Viz.VizDefaults.defaultViewState with AutoFit = true }
+    let mutable viewerDragStart : (float32 * float32) option = None
+    let mutable viewerDragOrigin : (float32 * float32) option = None
+
     // Settings-tab state: eagerly evaluated when BAR + bundled proxy
     // are both resolvable. When either is missing the tab renders a
     // warning banner instead.
@@ -247,7 +256,7 @@ let main _argv =
                     "Setup — configure your next session"
                     "BAR install not detected — no lobby builder surface."
         | HubTab.Viewer ->
-            ViewerTab.render sessState vizConfig cx cy cw ch
+            ViewerTab.render sessState vizConfig viewerViewState cx cy cw ch
         | HubTab.Configurator ->
             ConfiguratorTab.render configuratorState vizConfig cx cy cw ch
         | HubTab.Encyclopedia ->
@@ -471,8 +480,31 @@ let main _argv =
                                     | _ -> ()
                                 | None -> ()
                             | None -> ()
+                        | HubTab.Viewer, _, _ ->
+                            // Left-click inside the Viewer content rect
+                            // starts a pan drag. Subsequent MouseMove
+                            // events update OriginX/Y; MouseUp ends it.
+                            if x >= cx && x < cx + cw && y >= cy && y < cy + ch then
+                                viewerDragStart <- Some (x, y)
+                                viewerDragOrigin <-
+                                    Some (viewerViewState.Value.OriginX, viewerViewState.Value.OriginY)
                         | _ -> ()
             trigger ()
+        | InputEvent.MouseMove(x, y) ->
+            match viewerDragStart, viewerDragOrigin with
+            | Some (sx, sy), Some (ox, oy) when activeTab = HubTab.Viewer ->
+                let vs = viewerViewState.Value
+                let scale = max 0.0001f vs.Scale
+                let dx = (x - sx) / scale
+                let dy = (y - sy) / scale
+                viewerViewState.Value <-
+                    { vs with OriginX = ox - dx; OriginY = oy - dy; AutoFit = false }
+                trigger ()
+            | _ -> ()
+        | InputEvent.MouseUp(_btn, _x, _y) ->
+            if viewerDragStart.IsSome then
+                viewerDragStart <- None
+                viewerDragOrigin <- None
         | InputEvent.KeyDown key ->
             // FR-017: W/L/C/N toggle the four unit-glyph overlays in
             // the Viewer tab. Keys are processed regardless of active
@@ -489,6 +521,11 @@ let main _argv =
             | Key.L -> toggle FSBar.Viz.OverlayKind.SightRanges
             | Key.C -> toggle FSBar.Viz.OverlayKind.CommandQueue
             | Key.N -> toggle FSBar.Viz.OverlayKind.FullNames
+            | Key.R when activeTab = HubTab.Viewer ->
+                // Reset the Viewer camera to auto-fit. ViewerTab.render
+                // recomputes Scale + zero Origin on the next frame.
+                viewerViewState.Value <-
+                    { viewerViewState.Value with AutoFit = true }
             | _ -> ()
             trigger ()
         | InputEvent.MouseScroll(delta, x, y) ->
@@ -509,6 +546,29 @@ let main _argv =
                 | Some (EncyclopediaTab.EncyclopediaTabAction.ScrollList off) ->
                     encyclopediaState <- { encyclopediaState with ListScroll = off }
                 | _ -> ()
+            | HubTab.Viewer, _ when x >= cx && x < cx + cw && y >= cy && y < cy + ch ->
+                // Cursor-anchored zoom — keep the map point under the
+                // cursor fixed while scaling. Mirrors the GameViz /
+                // PreviewSession convention (1.1× per tick).
+                let vs = viewerViewState.Value
+                let scale = max 0.0001f vs.Scale
+                let factor = if delta > 0.0f then 1.1f else 1.0f / 1.1f
+                // Mouse position in content-local coordinates — the
+                // ViewerTab wraps the scene in a Translate(cx,cy) group
+                // before handing it to Skia, so the map's (0,0) lives
+                // at (cx,cy). Undo that offset before converting to
+                // map space.
+                let lx = x - cx
+                let ly = y - cy
+                let mapX = lx / scale + vs.OriginX
+                let mapY = ly / scale + vs.OriginY
+                let newScale = scale * factor
+                viewerViewState.Value <-
+                    { vs with
+                        Scale = newScale
+                        OriginX = mapX - lx / newScale
+                        OriginY = mapY - ly / newScale
+                        AutoFit = false }
             | _ -> ()
             trigger ()
         | _ -> ()
