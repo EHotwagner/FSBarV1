@@ -3,6 +3,7 @@ namespace FSBar.Hub.App.Tabs
 open System.IO
 open SkiaSharp
 open SkiaViewer
+open FSBar.Client
 open FSBar.Hub
 
 module SetupTab =
@@ -13,9 +14,18 @@ module SetupTab =
         | ScrollMapList of offset: float32
         | Launch
 
+    /// One row in the map picker. `EngineName` is what the engine
+    /// registered for this archive (what the start script must use);
+    /// `FileStem` is the on-disk filename without extension and is
+    /// shown as a secondary label so users can correlate the two.
+    type MapRow = {
+        EngineName: string
+        FileStem: string
+    }
+
     type SetupTabState = {
         MapListScroll: float32
-        Maps: string list
+        Maps: MapRow list
         Lobby: LobbyConfig.LobbyConfig
         Errors: LobbyConfig.LobbyError list
         LastLaunchError: string option
@@ -40,24 +50,35 @@ module SetupTab =
     let private mapRowHeight : float32 = 24.0f
     let private launchButtonHeight : float32 = 32.0f
 
-    /// Archive stems like `avalanche_3.4` are what the engine indexes
-    /// in the maps directory. We surface the known-working display name
-    /// for the one map the live tests rely on; other maps show their
-    /// filename stem and Launch may still succeed if the engine's
-    /// archive scan resolves them.
-    let private archiveToDisplayName (archiveStem: string) : string =
-        match archiveStem with
-        | "avalanche_3.4" -> "Avalanche 3.4"
-        | s -> s
-
-    let private loadMaps (install: BarInstall.BarInstall) : string list =
+    /// Builds the map picker list by cross-referencing the on-disk
+    /// `.sd7` archives under `<dataDir>/maps/` with
+    /// `ArchiveCache20.lua` — the engine's own index of archive →
+    /// registered map name. Archives that the engine has not yet
+    /// scanned (i.e. that do not appear in the cache) are emitted
+    /// with their filename stem as the engine name; Launch may then
+    /// fail with a content_error until the user runs the engine
+    /// once to refresh the cache.
+    let private loadMaps (install: BarInstall.BarInstall) : MapRow list =
         let mapsDir = Path.Combine(install.DataDir, "maps")
         if not (Directory.Exists(mapsDir)) then []
         else
-            Directory.GetFiles(mapsDir, "*.sd7")
-            |> Array.map (fun p -> Path.GetFileNameWithoutExtension(p))
-            |> Array.sort
-            |> Array.toList
+            let stemsOnDisk =
+                Directory.GetFiles(mapsDir, "*.sd7")
+                |> Array.map (fun p -> Path.GetFileNameWithoutExtension(p))
+                |> Set.ofArray
+            let cacheLookup =
+                ArchiveCache.loadMapsForDataDir install.DataDir
+                |> List.map (fun e -> e.FileStem, e.EngineName)
+                |> Map.ofList
+            stemsOnDisk
+            |> Seq.map (fun stem ->
+                let engineName =
+                    match Map.tryFind stem cacheLookup with
+                    | Some n -> n
+                    | None -> stem
+                { EngineName = engineName; FileStem = stem })
+            |> Seq.sortBy (fun r -> r.EngineName.ToLowerInvariant())
+            |> List.ofSeq
 
     let validate (install: BarInstall.BarInstall) (state: SetupTabState) : SetupTabState =
         match LobbyConfig.validate install state.Lobby with
@@ -65,19 +86,19 @@ module SetupTab =
         | Result.Error errs -> { state with Errors = errs }
 
     let init (install: BarInstall.BarInstall) : SetupTabState =
-        let archiveStems = loadMaps install
-        // Seed the lobby's MapName with the first archive that resolves
-        // to a known-working display name, else the first stem.
+        let maps = loadMaps install
+        // Seed with the first map that has a real engine name (i.e.
+        // resolved via the archive cache, not just the raw stem).
         let seedMap =
-            archiveStems
-            |> List.tryFind (fun s -> archiveToDisplayName s <> s)
-            |> Option.map archiveToDisplayName
-            |> Option.orElseWith (fun () -> archiveStems |> List.tryHead)
+            maps
+            |> List.tryFind (fun m -> m.EngineName <> m.FileStem)
+            |> Option.orElseWith (fun () -> List.tryHead maps)
+            |> Option.map (fun m -> m.EngineName)
             |> Option.defaultValue ""
         let lobby = { LobbyConfig.defaults with MapName = seedMap }
         let initial =
             { MapListScroll = 0.0f
-              Maps = archiveStems
+              Maps = maps
               Lobby = lobby
               Errors = []
               LastLaunchError = None }
@@ -123,7 +144,7 @@ module SetupTab =
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32) =
         let x, y, w, h = mapPanelRect contentX contentY contentW contentH
-        let selectedDisplay = state.Lobby.MapName
+        let selectedEngineName = state.Lobby.MapName
         let rows : Element list =
             [ yield Scene.rect x y w h panelBg
               yield Scene.text "Map" (x + 8.0f) (y - 6.0f) 14.0f dimText
@@ -131,17 +152,18 @@ module SetupTab =
               let firstIdx = int (state.MapListScroll / mapRowHeight)
               let visibleRows = int (h / mapRowHeight) + 1
               for i in firstIdx .. min (state.Maps.Length - 1) (firstIdx + visibleRows) do
-                  let stem = state.Maps.[i]
-                  let display = archiveToDisplayName stem
+                  let row = state.Maps.[i]
                   let rowY = y + float32 (i - firstIdx) * mapRowHeight - (state.MapListScroll - float32 firstIdx * mapRowHeight)
                   if rowY + mapRowHeight < y || rowY > y + h then () else
-                  let isSelected = display = selectedDisplay
+                  let isSelected = row.EngineName = selectedEngineName
                   let bg = if isSelected then rowActiveBg else rowBg
                   yield Scene.rect (x + 4.0f) (rowY + 2.0f) (w - 8.0f) (mapRowHeight - 3.0f) bg
                   let textColor = if isSelected then headingText else bodyText
                   let label =
-                      if display <> stem then sprintf "%s  (%s)" display stem
-                      else stem
+                      if row.EngineName <> row.FileStem then
+                          sprintf "%s  (%s)" row.EngineName row.FileStem
+                      else
+                          sprintf "%s  (unresolved — engine hasn't scanned this archive)" row.FileStem
                   yield Scene.text label (x + 14.0f) (rowY + mapRowHeight - 8.0f) 14.0f textColor ]
         rows
 
@@ -235,8 +257,8 @@ module SetupTab =
             let rowIdx = firstIdx + int (localY / mapRowHeight)
             if rowIdx < 0 || rowIdx >= state.Maps.Length then None
             else
-                let stem = state.Maps.[rowIdx]
-                Some (SetupTabAction.SelectMap(archiveToDisplayName stem))
+                let row = state.Maps.[rowIdx]
+                Some (SetupTabAction.SelectMap row.EngineName)
         else None
 
     let handleScroll

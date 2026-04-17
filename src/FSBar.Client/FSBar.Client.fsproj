@@ -51,6 +51,8 @@
     <Compile Include="BasePlan.fs" />
     <Compile Include="MapCacheFile.fsi" />
     <Compile Include="MapCacheFile.fs" />
+    <Compile Include="ArchiveCache.fsi" />
+    <Compile Include="ArchiveCache.fs" />
   </ItemGroup>
 
   <ItemGroup>

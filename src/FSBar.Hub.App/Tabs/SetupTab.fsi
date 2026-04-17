@@ -20,9 +20,11 @@ module SetupTab =
     /// translates each into a hub-wide state mutation.
     [<RequireQualifiedAccess>]
     type SetupTabAction =
-        /// User clicked a map in the list. Payload is the map's
-        /// display name (archive stem for lossy maps; the known
-        /// `avalanche_3.4` archive is surfaced as "Avalanche 3.4").
+        /// User clicked a map in the list. Payload is the engine-
+        /// registered map name recovered from `ArchiveCache20.lua`
+        /// (the exact string a start script's `MapName=` must carry);
+        /// falls back to the archive filename stem when the cache
+        /// has no entry for this archive.
         | SelectMap of mapName: string
         /// User scrolled the map list. Payload is the new scroll
         /// offset clamped to `[0, maxScroll]`.
@@ -31,13 +33,25 @@ module SetupTab =
         /// `SessionManager.Launch`.
         | Launch
 
+    /// One row in the map picker — pairs an on-disk archive stem
+    /// with the engine-registered name from `ArchiveCache20.lua`.
+    type MapRow = {
+        /// Engine-registered map name (e.g. "Avalanche 3.4"). Falls
+        /// back to `FileStem` when the cache has no entry — the UI
+        /// flags those rows as unresolved.
+        EngineName: string
+        /// Filename without the `.sd7` extension, used for
+        /// disambiguation in the list and as the cache-miss fallback.
+        FileStem: string
+    }
+
     /// Internal render state.
     type SetupTabState = {
         /// Offset into the map list for scrolling.
         MapListScroll: float32
-        /// Full list of map-archive stems under the data dir, sorted
-        /// alphabetically. Computed once at tab construction.
-        Maps: string list
+        /// Full list of installed map archives, sorted by engine-
+        /// registered name. Computed once at tab construction.
+        Maps: MapRow list
         /// Current lobby (map name + teams + mode + speed).
         Lobby: LobbyConfig.LobbyConfig
         /// Validation result of `Lobby` against the active BarInstall.
