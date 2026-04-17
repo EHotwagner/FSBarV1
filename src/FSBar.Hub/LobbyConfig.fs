@@ -98,12 +98,26 @@ module LobbyConfig =
         | AiSeat(name, _) -> Some name
         | HumanSeat _ -> None
 
+    /// Matches a map display name (e.g. "Avalanche 3.4") against the
+    /// .sd7 archives in `<dataDir>/maps/`. BAR archives are typically
+    /// named with lowercase+underscore slugs (`avalanche_3.4.sd7`),
+    /// while the *engine-indexed* map name comes from mapinfo.lua
+    /// inside the archive and is the human-readable form the start
+    /// script must use. Parsing every archive is expensive; instead
+    /// we accept a slug match: "Avalanche 3.4" ↔ "avalanche_3.4.sd7".
     let private mapInstalled (install: BarInstall.BarInstall) (mapName: string) =
         if String.IsNullOrWhiteSpace(mapName) then false
         else
             let mapsDir = Path.Combine(install.DataDir, "maps")
-            let candidate = Path.Combine(mapsDir, mapName + ".sd7")
-            File.Exists(candidate)
+            if not (Directory.Exists(mapsDir)) then false
+            else
+                let slug (s: string) =
+                    s.ToLowerInvariant().Replace(' ', '_').Trim()
+                let target = slug mapName
+                Directory.GetFiles(mapsDir, "*.sd7")
+                |> Array.exists (fun path ->
+                    let stem = Path.GetFileNameWithoutExtension(path)
+                    slug stem = target || stem = mapName)
 
     let private installedAiSet (install: BarInstall.BarInstall) : Set<string> =
         BarInstall.listSkirmishAis install.ActiveEngine |> Set.ofList
@@ -203,11 +217,20 @@ module LobbyConfig =
                             Path.Combine(install.ActiveEngine.EngineDir, "spring-headless")
                         else
                             "spring-headless"
+                    // Resolve the current `byar:test` game archive name
+                    // (e.g. "Beyond All Reason test-29876-f8bb848") via
+                    // the rapid versions index the engine itself uses.
+                    // Falling back to a literal when rapid lookup fails
+                    // works for some installs but BAR rejects "$latest".
+                    let gameType =
+                        match FSBar.Client.EngineDiscovery.discoverGameVersion install.DataDir "byar:test" with
+                        | Some g -> g.Name
+                        | None -> "Beyond All Reason"
                     let ec: EngineConfig = {
                         Mode = EngineMode.Headless
                         SocketPath = generateSocketPath ()
                         MapName = config.MapName
-                        GameType = "Beyond All Reason $latest"
+                        GameType = gameType
                         OpponentAI = oppAi
                         OpponentSide = oppSide
                         OurSide = ourSide
