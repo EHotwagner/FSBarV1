@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="AssemblyInfo.fs" />
     <Compile Include="HubEvents.fsi" />
     <Compile Include="HubEvents.fs" />
     <Compile Include="HubSettings.fsi" />
@@ -24,6 +25,8 @@
     <Compile Include="SessionManager.fs" />
     <Compile Include="ProxyInstaller.fsi" />
     <Compile Include="ProxyInstaller.fs" />
+    <Compile Include="ScriptingHub.fsi" />
+    <Compile Include="ScriptingHub.fs" />
   </ItemGroup>
 
   <ItemGroup>

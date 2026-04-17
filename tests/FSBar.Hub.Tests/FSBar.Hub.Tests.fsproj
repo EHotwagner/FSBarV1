@@ -22,6 +22,7 @@
     <Compile Include="SessionManagerTests.fs" />
     <Compile Include="ProxyInstallerTests.fs" />
     <Compile Include="ProxyInstallerIdempotencyTests.fs" />
+    <Compile Include="ScriptingHubTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>
 
