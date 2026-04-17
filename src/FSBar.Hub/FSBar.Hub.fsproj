@@ -10,8 +10,14 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Include="Placeholder.fsi" />
-    <Compile Include="Placeholder.fs" />
+    <Compile Include="HubEvents.fsi" />
+    <Compile Include="HubEvents.fs" />
+    <Compile Include="HubSettings.fsi" />
+    <Compile Include="HubSettings.fs" />
+    <Compile Include="BundledProxy.fsi" />
+    <Compile Include="BundledProxy.fs" />
+    <Compile Include="BarInstall.fsi" />
+    <Compile Include="BarInstall.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -13,7 +13,11 @@
 
   <ItemGroup>
     <Compile Include="..\Common\SurfaceAreaHelper.fs" />
-    <Compile Include="PlaceholderTests.fs" />
+    <Compile Include="HubEventsTests.fs" />
+    <Compile Include="HubSettingsTests.fs" />
+    <Compile Include="BundledProxyTests.fs" />
+    <Compile Include="BarInstallTests.fs" />
+    <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>
 
   <ItemGroup>
