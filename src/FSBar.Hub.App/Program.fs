@@ -286,8 +286,19 @@ let main _argv =
                         | _ -> Thread.Sleep(200)
                     if reached then
                         eprintfn "[hub] auto-launch: Running reached in %dms" sw.ElapsedMilliseconds
-                        // Let a few frames flow so the viewer renders units.
-                        Thread.Sleep(2000)
+                        // Let HighBarV2 build some units before snapshot.
+                        // ~15s of game time at 1.0x speed gives the
+                        // commander + a metal extractor + a few solars,
+                        // plus BARb's opening — enough to show units
+                        // distributed across the map.
+                        let extraWaitMs =
+                            match Environment.GetEnvironmentVariable("FSBAR_HUB_SCREENSHOT_WAIT_MS") with
+                            | null | "" -> 2000
+                            | v ->
+                                match System.Int32.TryParse(v) with
+                                | true, n -> n
+                                | _ -> 2000
+                        Thread.Sleep(extraWaitMs)
                         trigger ()
                         Thread.Sleep(300)
                     else

@@ -24,12 +24,15 @@ module SceneBuilder =
     val buildSceneHeadless: state: GameState -> map: MapGrid option -> config: VizConfig -> Scene
 
     /// Variant of `buildSceneHeadless` that lets the embedder pin the
-    /// viewport window dimensions. The hub uses this so the scene
-    /// auto-fits to the Viewer tab's content rectangle instead of
-    /// `VizDefaults.defaultViewState`'s 1024x640 default.
+    /// viewport window dimensions AND supply the engine's metal-spot
+    /// list. The hub uses this so the scene auto-fits to the Viewer
+    /// tab's content rectangle instead of `VizDefaults.defaultViewState`'s
+    /// 1024x640 default, and so metal-spot markers render when
+    /// `OverlayKind.MetalSpots` is active.
     val buildSceneHeadlessSized:
         state: GameState ->
         map: MapGrid option ->
+        metalSpots: (float32 * float32 * float32 * float32) array ->
         config: VizConfig ->
         viewportWidth: int ->
         viewportHeight: int ->

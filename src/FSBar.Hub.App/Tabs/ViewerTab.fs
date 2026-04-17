@@ -23,9 +23,18 @@ module ViewerTab =
             // buildSceneHeadless tolerates map=None for frames that
             // arrive before MapGrid is loaded.
             let state = rs.BarClient.GameState
+            // Enable Units + MetalSpots overlays on top of the
+            // incoming config. The caller's config controls
+            // everything else (BaseLayer, palette, marker size, etc.).
+            let cfg =
+                { vizConfig with
+                    ActiveOverlays =
+                        vizConfig.ActiveOverlays
+                        |> Set.add OverlayKind.Units
+                        |> Set.add OverlayKind.MetalSpots }
             let embedded =
                 SceneBuilder.buildSceneHeadlessSized
-                    state rs.MapGrid vizConfig (int contentW) (int contentH)
+                    state rs.MapGrid rs.MetalSpots cfg (int contentW) (int contentH)
             // Scene elements are authored in viewport-relative space
             // with origin at (0,0); wrap in a translated group so they
             // land inside the Viewer tab's content rectangle.

@@ -15,6 +15,7 @@ module SessionManager =
         GraphicalEngineProcess: System.Diagnostics.Process option
         StartedAt: DateTimeOffset
         MapGrid: MapGrid option
+        MetalSpots: (float32 * float32 * float32 * float32) array
     }
 
     type SessionState =
@@ -132,6 +133,12 @@ module SessionManager =
                             publishDiagnostic HubEvents.Warning
                                 (sprintf "MapGrid load failed (viewer will use synthetic grid): %s" ex.Message)
                             None
+                    let metalSpots =
+                        try Callbacks.getMetalSpots client.Stream
+                        with ex ->
+                            publishDiagnostic HubEvents.Warning
+                                (sprintf "MetalSpots load failed (viewer omits metal markers): %s" ex.Message)
+                            [||]
                     attachFrames client
                     let rs: RunningSession = {
                         Id = Guid.NewGuid()
@@ -141,16 +148,18 @@ module SessionManager =
                         GraphicalEngineProcess = None
                         StartedAt = DateTimeOffset.UtcNow
                         MapGrid = mapGrid
+                        MetalSpots = metalSpots
                     }
                     transitionTo (Running rs)
                     publishDiagnostic HubEvents.Info
-                        (sprintf "session %s started — map=%s vs %s (MapGrid=%s)"
+                        (sprintf "session %s started — map=%s vs %s (MapGrid=%s, metalSpots=%d)"
                             (rs.Id.ToString("N").Substring(0, 8))
                             lobby.MapName
                             engineCfg.OpponentAI
                             (match mapGrid with
                              | Some g -> sprintf "%dx%d elmos" g.WidthElmos g.HeightElmos
-                             | None -> "synthetic"))
+                             | None -> "synthetic")
+                            metalSpots.Length)
                 with ex ->
                     publishDiagnostic HubEvents.Error
                         (sprintf "session launch failed: %s" ex.Message)

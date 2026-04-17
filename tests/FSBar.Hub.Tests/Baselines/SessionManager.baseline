@@ -24,6 +24,10 @@ module SessionManager =
         /// (e.g. `ViewerTab`) should fall back to a synthetic grid
         /// while this is `None`.
         MapGrid: MapGrid option
+        /// Static metal-spot positions (x, y, z, density) sampled from
+        /// the engine at session start. Empty when the engine-side
+        /// callback failed or returned zero spots.
+        MetalSpots: (float32 * float32 * float32 * float32) array
     }
 
     /// Full lifecycle state. `HubEvents.StateChanged` gets fired with a

@@ -424,7 +424,11 @@ module SceneBuilder =
           Usage = s.Usage
           Storage = s.Storage }
 
-    let private gameStateToSnapshot (state: FSBar.Client.GameState) (mapGrid: MapGrid) : GameSnapshot =
+    let private gameStateToSnapshotWith
+            (state: FSBar.Client.GameState)
+            (mapGrid: MapGrid)
+            (metalSpots: (float32 * float32 * float32 * float32) array)
+            : GameSnapshot =
         let friendlies =
             state.Units
             |> Map.toSeq
@@ -467,8 +471,11 @@ module SceneBuilder =
           EventIndicators = []
           EconomyMetal = economyFrom state.Metal
           EconomyEnergy = economyFrom state.Energy
-          MetalSpots = [||]
+          MetalSpots = metalSpots
           Connected = true }
+
+    let private gameStateToSnapshot (state: FSBar.Client.GameState) (mapGrid: MapGrid) : GameSnapshot =
+        gameStateToSnapshotWith state mapGrid [||]
 
     let buildSceneHeadless (state: FSBar.Client.GameState) (map: FSBar.Client.MapGrid option) (config: VizConfig) : Scene =
         let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
@@ -478,12 +485,13 @@ module SceneBuilder =
     let buildSceneHeadlessSized
             (state: FSBar.Client.GameState)
             (map: FSBar.Client.MapGrid option)
+            (metalSpots: (float32 * float32 * float32 * float32) array)
             (config: VizConfig)
             (viewportWidth: int)
             (viewportHeight: int)
             : Scene =
         let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
-        let snapshot = gameStateToSnapshot state mapGrid
+        let snapshot = gameStateToSnapshotWith state mapGrid metalSpots
         // Compute Scale so the map fits the viewport. The base-layer
         // renders at 1 pixel per heightmap cell under Scale=1.0;
         // choose the smaller of the two axes' ratios so the whole map
