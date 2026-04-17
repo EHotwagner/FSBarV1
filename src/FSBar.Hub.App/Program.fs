@@ -86,6 +86,23 @@ let main _argv =
     let mutable vizConfig = FSBar.Viz.VizDefaults.defaultConfig
     let mutable configuratorState = ConfiguratorTab.init ()
 
+    // Settings-tab state: eagerly evaluated when BAR + bundled proxy
+    // are both resolvable. When either is missing the tab renders a
+    // warning banner instead.
+    // Lock guarding mutable tab-state writes from background tasks
+    // (currently only the async proxy-install handler).
+    let renderSceneLock = obj ()
+
+    let mutable settingsTabState : SettingsTab.SettingsTabState option =
+        match barInstall, bundled with
+        | Some i, Some b -> Some (SettingsTab.init i b)
+        | _ ->
+            Some
+                { Status = None
+                  Health = None
+                  LastInstallResult = None
+                  InstallInFlight = false }
+
     // --- gRPC scripting service (T063/T064) -------------------------------
     // Registered only when we have a real BAR install + SessionManager.
     // Hosted on a background Kestrel task so it doesn't block the main
@@ -206,7 +223,12 @@ let main _argv =
         | HubTab.Encyclopedia ->
             placeholderBlock "Units — BarData encyclopedia" "Unit catalog renderer lands in T056."
         | HubTab.Settings ->
-            placeholderBlock "Settings — BAR install, proxy, ports" "Settings rows land in T040."
+            match settingsTabState with
+            | Some st -> SettingsTab.render st barInstall bundled settings cx cy cw ch
+            | None ->
+                placeholderBlock
+                    "Settings — BAR install, proxy, ports"
+                    "BAR install detection failed — no settings surface."
         | HubTab.Grpc ->
             GrpcTab.render grpcService grpcEndpointUrl cx cy cw ch
 
@@ -353,6 +375,52 @@ let main _argv =
                                     { configuratorState with
                                         ActivePreset = None
                                         LastPresetResult = Some (Ok "defaults restored") }
+                            | None -> ()
+                        | HubTab.Settings, _, _ ->
+                            match settingsTabState with
+                            | Some st ->
+                                match SettingsTab.handleMouse st x y cx cy cw ch with
+                                | Some SettingsTab.SettingsTabAction.RefreshStatus ->
+                                    match barInstall, bundled with
+                                    | Some i, Some b ->
+                                        let status = ProxyInstaller.checkStatus i b
+                                        settingsTabState <-
+                                            Some (SettingsTab.applyStatus st status)
+                                    | _ -> ()
+                                | Some SettingsTab.SettingsTabAction.InstallProxy
+                                | Some SettingsTab.SettingsTabAction.ForceReinstallProxy as action ->
+                                    match barInstall, bundled with
+                                    | Some i, Some b ->
+                                        let force =
+                                            action = Some SettingsTab.SettingsTabAction.ForceReinstallProxy
+                                        settingsTabState <-
+                                            Some { st with InstallInFlight = true }
+                                        // Run the install on a
+                                        // background task so the UI
+                                        // keeps painting during the
+                                        // potentially-slow file I/O +
+                                        // IGL_data.lua rewrite. Fold
+                                        // the result back on completion.
+                                        let runTask () =
+                                            try
+                                                let result =
+                                                    ProxyInstaller.install i b bus.Sink force
+                                                lock renderSceneLock (fun () ->
+                                                    settingsTabState <-
+                                                        settingsTabState
+                                                        |> Option.map (fun s -> SettingsTab.applyInstallResult s result))
+                                            with ex ->
+                                                lock renderSceneLock (fun () ->
+                                                    settingsTabState <-
+                                                        settingsTabState
+                                                        |> Option.map (fun s ->
+                                                            { s with
+                                                                InstallInFlight = false
+                                                                LastInstallResult =
+                                                                    Some (Result.Error ex.Message) }))
+                                        ignore (Task.Run(runTask))
+                                    | _ -> ()
+                                | None -> ()
                             | None -> ()
                         | _ -> ()
             trigger ()

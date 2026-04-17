@@ -22,6 +22,8 @@
     <Compile Include="Tabs/ConfiguratorTab.fs" />
     <Compile Include="Tabs/GrpcTab.fsi" />
     <Compile Include="Tabs/GrpcTab.fs" />
+    <Compile Include="Tabs/SettingsTab.fsi" />
+    <Compile Include="Tabs/SettingsTab.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
