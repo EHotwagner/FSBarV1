@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Hub.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="fixtures\IGL_data.lua" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Common\SurfaceAreaHelper.fs" />
+    <Compile Include="HubEventsTests.fs" />
+    <Compile Include="HubSettingsTests.fs" />
+    <Compile Include="BundledProxyTests.fs" />
+    <Compile Include="BarInstallTests.fs" />
+    <Compile Include="LobbyConfigTests.fs" />
+    <Compile Include="SessionManagerTests.fs" />
+    <Compile Include="ProxyInstallerTests.fs" />
+    <Compile Include="ProxyInstallerIdempotencyTests.fs" />
+    <Compile Include="ScriptingHubTests.fs" />
+    <Compile Include="SurfaceAreaTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/FSBar.Hub/FSBar.Hub.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+</Project>

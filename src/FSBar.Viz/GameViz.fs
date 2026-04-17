@@ -910,6 +910,13 @@ module GameViz =
         lock configLock (fun () ->
             config <- { config with ActiveOverlays = Set.remove overlay config.ActiveOverlays })
 
+    let getActiveOverlays () : Set<OverlayKind> =
+        lock configLock (fun () -> config.ActiveOverlays)
+
+    let setActiveOverlays (overlays: Set<OverlayKind>) : unit =
+        lock configLock (fun () ->
+            config <- { config with ActiveOverlays = overlays })
+
     let setConfig (cfg: VizConfig) =
         lock configLock (fun () -> config <- cfg)
 

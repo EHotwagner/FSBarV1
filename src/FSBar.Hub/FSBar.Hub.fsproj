@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Hub</RootNamespace>
+    <PackageId>FSBar.Hub</PackageId>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <IsPackable>true</IsPackable>
+    <Description>F# core library for the FSBar central GUI hub — BAR install detection, proxy installer, lobby + session management, hub event bus, and gRPC scripting service implementation</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="HubEvents.fsi" />
+    <Compile Include="HubEvents.fs" />
+    <Compile Include="HubSettings.fsi" />
+    <Compile Include="HubSettings.fs" />
+    <Compile Include="BundledProxy.fsi" />
+    <Compile Include="BundledProxy.fs" />
+    <Compile Include="BarInstall.fsi" />
+    <Compile Include="BarInstall.fs" />
+    <Compile Include="LobbyConfig.fsi" />
+    <Compile Include="LobbyConfig.fs" />
+    <Compile Include="SessionManager.fsi" />
+    <Compile Include="SessionManager.fs" />
+    <Compile Include="ProxyInstaller.fsi" />
+    <Compile Include="ProxyInstaller.fs" />
+    <Compile Include="ScriptingHub.fsi" />
+    <Compile Include="ScriptingHub.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FSBar.Proto/FSBar.Proto.fsproj" />
+    <ProjectReference Include="../FSBar.Client/FSBar.Client.fsproj" />
+  </ItemGroup>
+
+</Project>

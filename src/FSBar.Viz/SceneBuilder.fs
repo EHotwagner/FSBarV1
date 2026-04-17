@@ -395,3 +395,117 @@ module SceneBuilder =
             ]
 
         Scene.create config.BackgroundColor (worldGroup :: screenElements)
+
+    // --- Headless entry (feature 035-central-gui-hub T013) ---
+
+    /// Synthesises a minimal MapGrid for the None case so early-frame
+    /// scenes render an empty base layer instead of throwing. 16x16
+    /// heightmap cells = 128 elmos square, small enough to be cheap,
+    /// large enough that downstream dimension asserts pass.
+    let private emptyHeadlessMapGrid () : MapGrid =
+        let widthH = 16
+        let heightH = 16
+        { WidthElmos = widthH * 8
+          HeightElmos = heightH * 8
+          WidthHeightmap = widthH
+          HeightHeightmap = heightH
+          HeightMap = Array2D.create (widthH + 1) (heightH + 1) 0.0f
+          SlopeMap = Array2D.create (widthH / 2) (heightH / 2) 0.0f
+          ResourceMap = Array2D.zeroCreate widthH heightH
+          LosMap = Array2D.zeroCreate widthH heightH
+          RadarMap = Array2D.zeroCreate widthH heightH }
+
+    let private emptyEconomy : EconomyData =
+        { Current = 0.0f; Income = 0.0f; Usage = 0.0f; Storage = 0.0f }
+
+    let private economyFrom (s: FSBar.Client.EconomySnapshot) : EconomyData =
+        { Current = s.Current
+          Income = s.Income
+          Usage = s.Usage
+          Storage = s.Storage }
+
+    let private gameStateToSnapshotWith
+            (state: FSBar.Client.GameState)
+            (mapGrid: MapGrid)
+            (metalSpots: (float32 * float32 * float32 * float32) array)
+            : GameSnapshot =
+        let friendlies =
+            state.Units
+            |> Map.toSeq
+            |> Seq.map (fun (uid, u) ->
+                let (px, py, pz) = u.Position
+                uid, { UnitId = uid
+                       PositionX = px
+                       PositionY = py
+                       PositionZ = pz
+                       TeamId = state.TeamId
+                       DefId = u.DefId
+                       Health = u.Health
+                       MaxHealth = u.MaxHealth
+                       IsEnemy = false })
+            |> Map.ofSeq
+        let enemies =
+            state.Enemies
+            |> Map.toSeq
+            |> Seq.filter (fun (_, e) -> e.InLOS)
+            |> Seq.map (fun (eid, e) ->
+                let (px, py, pz) = e.Position
+                let defId = e.DefId |> Option.defaultValue 0
+                let hp = e.Health |> Option.defaultValue 0.0f
+                eid, { UnitId = eid
+                       PositionX = px
+                       PositionY = py
+                       PositionZ = pz
+                       TeamId = -1
+                       DefId = defId
+                       Health = hp
+                       MaxHealth = max hp 1.0f
+                       IsEnemy = true })
+            |> Map.ofSeq
+        let allUnits =
+            enemies |> Map.fold (fun acc k v -> Map.add k v acc) friendlies
+        { FrameNumber = int state.FrameNumber
+          MapGrid = mapGrid
+          Units = allUnits
+          DisplayUnits = Map.empty
+          EventIndicators = []
+          EconomyMetal = economyFrom state.Metal
+          EconomyEnergy = economyFrom state.Energy
+          MetalSpots = metalSpots
+          Connected = true }
+
+    let private gameStateToSnapshot (state: FSBar.Client.GameState) (mapGrid: MapGrid) : GameSnapshot =
+        gameStateToSnapshotWith state mapGrid [||]
+
+    let buildSceneHeadless (state: FSBar.Client.GameState) (map: FSBar.Client.MapGrid option) (config: VizConfig) : Scene =
+        let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
+        let snapshot = gameStateToSnapshot state mapGrid
+        buildScene snapshot config VizDefaults.defaultViewState
+
+    let buildSceneHeadlessSized
+            (state: FSBar.Client.GameState)
+            (map: FSBar.Client.MapGrid option)
+            (metalSpots: (float32 * float32 * float32 * float32) array)
+            (config: VizConfig)
+            (viewportWidth: int)
+            (viewportHeight: int)
+            : Scene =
+        let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
+        let snapshot = gameStateToSnapshotWith state mapGrid metalSpots
+        // Compute Scale so the map fits the viewport. The base-layer
+        // renders at 1 pixel per heightmap cell under Scale=1.0;
+        // choose the smaller of the two axes' ratios so the whole map
+        // fits with letterboxing rather than cropping.
+        let scale =
+            if mapGrid.WidthHeightmap = 0 || mapGrid.HeightHeightmap = 0 then 1.0f
+            else
+                let sx = float32 viewportWidth / float32 mapGrid.WidthHeightmap
+                let sy = float32 viewportHeight / float32 mapGrid.HeightHeightmap
+                min sx sy
+        let vs =
+            { VizDefaults.defaultViewState with
+                Scale = scale
+                WindowWidth = viewportWidth
+                WindowHeight = viewportHeight
+                AutoFit = true }
+        buildScene snapshot config vs

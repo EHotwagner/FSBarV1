@@ -43,6 +43,60 @@ For GPU passthrough, X11 display forwarding, and full setup instructions, see [c
 
 ## Quick Start
 
+### FSBar Hub (GUI)
+
+`FSBar.Hub.App` is the turn-key graphical cockpit that wraps every
+moving piece in the repo — BAR session launch, live Skia-rendered
+map + units, style configurator, unit encyclopedia, bundled-proxy
+installer, and a localhost gRPC scripting endpoint — behind a
+persistent six-tab side bar.
+
+```bash
+XDG_RUNTIME_DIR=/tmp/runtime-developer DISPLAY=:0 \
+  dotnet run --project src/FSBar.Hub.App
+```
+
+Tabs:
+- **Setup** — map picker + lobby summary + Launch button
+- **Viewer** — live terrain + metal spots + unit glyphs; W/L/C/N
+  hotkeys toggle weapon-range / sight / command-queue / full-name
+  overlays
+- **Units** — every unit in `BarData.AllUnitDefs` (~953), faction
+  filter, detail pane with a glyph preview byte-matching the Viewer
+- **Style** — live `VizConfig` editor (colors / sizes / strokes /
+  overlays); save + load presets under `viz-presets/`
+- **Cfg / BAR** — BAR install diagnostics, bundled-proxy health,
+  one-click Install / Upgrade / Force reinstall buttons
+- **gRPC / API** — scripting endpoint URL (default
+  `http://127.0.0.1:5021`) + live connected-client roster
+
+Status bar shows session state + engine-speed slider + pause + end.
+External scripting clients (F# `.fsx`, Python, any gRPC-capable
+language) can attach to the endpoint and stream live gameplay frames
+via the `ScriptingService` contract in
+`proto/hub/scripting.proto`.
+
+See [specs/035-central-gui-hub/](specs/035-central-gui-hub/) for the
+full spec, data model, and task breakdown.
+
+### Refreshing the bundled proxy (maintainers)
+
+```bash
+# After rebuilding HighBarV2 in a sibling checkout
+scripts/refresh-bundled-proxy.sh 0.1.17
+
+# Or point at an arbitrary source
+scripts/refresh-bundled-proxy.sh 0.1.17 --source /path/to/proxy/build
+
+# Overwrite an existing committed bundle
+scripts/refresh-bundled-proxy.sh 0.1.17 --force
+```
+
+The script copies `libSkirmishAI.so` + `AIInfo.lua` + `AIOptions.lua`
+into `proxy/bundled/<version>/` and atomically rewrites
+`proxy/BUNDLED_VERSION`. Users pulling the repo never need to run
+it — they pick up the committed bundle on clone.
+
 ### Interactive REPL
 
 The fastest way to get started is the interactive REPL script:

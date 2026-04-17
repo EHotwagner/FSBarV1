@@ -5,11 +5,12 @@
     <RootNamespace>FSBar.Proto</RootNamespace>
     <PackageId>FSBar.Proto</PackageId>
     <VersionPrefix>0.1.17</VersionPrefix>
-    <Description>F# protobuf bindings for HighBar V2 protocol</Description>
+    <Description>F# protobuf bindings for the HighBar V2 engine protocol and the FSBar hub scripting service</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="FsGrpc" Version="1.0.6" />
+    <PackageReference Include="Grpc.Core.Api" Version="2.67.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -18,6 +19,7 @@
     <Compile Include="Generated/highbar/events.proto.gen.fs" />
     <Compile Include="Generated/highbar/commands.proto.gen.fs" />
     <Compile Include="Generated/highbar/messages.proto.gen.fs" />
+    <Compile Include="Generated/hub/scripting.proto.gen.fs" />
   </ItemGroup>
 
 </Project>

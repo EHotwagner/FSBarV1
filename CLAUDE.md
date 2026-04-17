@@ -60,6 +60,7 @@ Auto-generated from all feature plans. Last updated: 2026-04-17
 - JSON files on disk (`viz-presets/` directory) for presets (033-viz-style-configurator)
 - F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced. (034-repo-cleanup)
 - Filesystem only — committed `.baseline` text files, `viz-presets/*.json`, `bots/trainer/map-cache/*.json`. No persistence format changes. (034-repo-cleanup)
+- F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FSBar.Client, FSBar.Viz, FSBar.SyntheticData (in-repo), FSBar.Proto (in-repo, extended with `proto/hub/scripting.proto`), SkiaViewer 1.1.3-dev, Grpc.AspNetCore 2.67.0, Grpc.Core.Api 2.67.0, FsGrpc 1.0.6, xUnit 2.9.x. Bundled HighBarV2 proxy under `proxy/bundled/<version>/`. (035-central-gui-hub)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -170,12 +171,72 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 035-central-gui-hub: Shipped the FSBar Hub (`FSBar.Hub` core library + `FSBar.Hub.App` SkiaViewer executable + `proto/hub/scripting.proto` gRPC contract). Six tabs — Setup / Viewer / Units / Style / Cfg / gRPC — share a live `VizConfig` and `SessionManager`, with a Kestrel-hosted `ScriptingService` on `127.0.0.1:5021` for external clients. Bundled HighBarV2 proxy committed at `proxy/bundled/0.1/`; `scripts/refresh-bundled-proxy.sh` bumps it. W/L/C/N hotkeys route through `GameViz` overlay accessors. 75 unit tests + 3 live integration tests green. `Grpc.AspNetCore 2.67.0` + `Grpc.Core.Api 2.67.0` added to the dependency graph; no other new packages.
 - 034-repo-cleanup: Added F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced.
 - 033-viz-style-configurator: Added F# 9 on .NET 10.0 + FSBar.Viz (in-repo), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6, System.Text.Json (BCL)
-- 032-lockfree-viewer-dataflow: Added F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6
 
 
 <!-- MANUAL ADDITIONS START -->
+
+## Central GUI hub (feature 035-central-gui-hub)
+
+`src/FSBar.Hub/` is the packable core library (`HubSettings`,
+`BarInstall`, `BundledProxy`, `ProxyInstaller`, `LobbyConfig`,
+`SessionManager`, `ScriptingHub`, `HubEvents`) and
+`src/FSBar.Hub.App/` is the GUI executable that binds those into a
+SkiaViewer window. The two projects keep GUI deps out of the
+packable lib so downstream scripting tooling can consume just
+`FSBar.Hub` (or even `FSBar.Proto` alone for the wire contract).
+
+Run with:
+
+```bash
+XDG_RUNTIME_DIR=/tmp/runtime-developer DISPLAY=:0 \
+  dotnet run --project src/FSBar.Hub.App
+```
+
+Environment variables useful for CI smoke tests:
+
+| Var | Effect |
+|-----|--------|
+| `FSBAR_HUB_SCREENSHOT_DIR` | Take a screenshot after a settle delay and exit cleanly |
+| `FSBAR_HUB_AUTO_LAUNCH=1` | Fire SetupTab.Launch immediately (needs `FSBAR_HUB_SCREENSHOT_DIR`) |
+| `FSBAR_HUB_SCREENSHOT_WAIT_MS=N` | Extra delay before the screenshot so more units are visible |
+| `FSBAR_HUB_INITIAL_TAB=Setup|Viewer|Units|Style|Settings|Grpc` | Land on a specific tab |
+| `FSBAR_HUB_ENCYCLOPEDIA_SELECT=<name>` | Pre-select a unit in the Units tab |
+| `FSBAR_HUB_BUNDLED_PROXY_DIR=/path/to/proxy` | Override bundled-proxy root for dev runs |
+
+Core library modules live under `src/FSBar.Hub/` with `.fsi`
+signatures and surface-area baselines in
+`tests/FSBar.Hub.Tests/Baselines/`. The app-layer tabs at
+`src/FSBar.Hub.App/Tabs/*.{fsi,fs}` compose `FSBar.Viz.ConfigPanel`
+/ `FSBar.Viz.SceneBuilder.buildSceneHeadlessSized` /
+`FSBar.Viz.UnitGlyph.buildUnit` directly — so Units-tab glyphs
+byte-match Viewer-tab glyphs (SC-003).
+
+## Hub scripting proto regeneration
+
+`FSBar.Proto` generates F# code from `proto/highbar/*.proto` and
+`proto/hub/scripting.proto` via `cd proto && buf generate`. Generated
+files are committed under `src/FSBar.Proto/Generated/` so a plain
+`dotnet build` works without the plugin installed.
+
+Regenerating requires the `protoc-gen-fsgrpc` plugin on PATH. **No
+prebuilt binary is distributed**, and `FsGrpc.Tools 1.0.6` is not on
+nuget.org. Install from source via the helper script in the sibling
+`fsGRPCSkills` repo:
+
+```bash
+~/tools/fsGRPCSkills/fsgrpc-setup/scripts/install-protoc-gen-fsgrpc.sh
+```
+
+The script clones `dmgtech/fsgrpc@a52b8a7`, patches it to skip optics
+emission (so generated code compiles against `FsGrpc 1.0.6`), publishes
+for the current TFM, and drops a wrapper at `~/.local/bin/protoc-gen-fsgrpc`.
+See the script's `--help` for why the patch is necessary.
+
+After regeneration, verify `dotnet build FSBarV1.slnx` succeeds and that
+the committed `highbar/*.gen.fs` files weren't gratuitously rewritten.
 
 ## FSI MCP Server
 

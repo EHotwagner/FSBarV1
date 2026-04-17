@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Hub.App</RootNamespace>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+    <Description>FSBar central GUI hub application — SkiaViewer-hosted tabbed shell + gRPC scripting server (feature 035-central-gui-hub)</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Chrome/TabBar.fsi" />
+    <Compile Include="Chrome/TabBar.fs" />
+    <Compile Include="Chrome/StatusBar.fsi" />
+    <Compile Include="Chrome/StatusBar.fs" />
+    <Compile Include="Chrome/TextStyle.fsi" />
+    <Compile Include="Chrome/TextStyle.fs" />
+    <Compile Include="Tabs/SetupTab.fsi" />
+    <Compile Include="Tabs/SetupTab.fs" />
+    <Compile Include="Tabs/ViewerTab.fsi" />
+    <Compile Include="Tabs/ViewerTab.fs" />
+    <Compile Include="Tabs/ConfiguratorTab.fsi" />
+    <Compile Include="Tabs/ConfiguratorTab.fs" />
+    <Compile Include="Tabs/GrpcTab.fsi" />
+    <Compile Include="Tabs/GrpcTab.fs" />
+    <Compile Include="Tabs/SettingsTab.fsi" />
+    <Compile Include="Tabs/SettingsTab.fs" />
+    <Compile Include="Tabs/EncyclopediaTab.fsi" />
+    <Compile Include="Tabs/EncyclopediaTab.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../FSBar.Hub/FSBar.Hub.fsproj" />
+    <ProjectReference Include="../FSBar.Client/FSBar.Client.fsproj" />
+    <ProjectReference Include="../FSBar.Viz/FSBar.Viz.fsproj" />
+    <ProjectReference Include="../FSBar.SyntheticData/FSBar.SyntheticData.fsproj" />
+    <ProjectReference Include="../FSBar.Proto/FSBar.Proto.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.67.0">
+      <ExcludeAssets>build;buildTransitive</ExcludeAssets>
+    </PackageReference>
+    <PackageReference Include="SkiaViewer" Version="*-*" />
+    <PackageReference Include="BarData" Version="*-*" />
+  </ItemGroup>
+
+</Project>

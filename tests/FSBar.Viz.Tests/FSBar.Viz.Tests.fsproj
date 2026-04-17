@@ -25,6 +25,7 @@
     <Compile Include="MapDataTests.fs" />
     <Compile Include="MockSnapshotTests.fs" />
     <Compile Include="SceneBuilderTests.fs" />
+    <Compile Include="SceneBuilderHeadlessTests.fs" />
     <Compile Include="PreviewSessionTests.fs" />
     <Compile Include="ViewerTests.fs" />
     <Compile Include="GameVizIntegrationTests.fs" />
