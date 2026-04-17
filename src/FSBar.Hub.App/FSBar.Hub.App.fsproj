@@ -16,6 +16,8 @@
     <Compile Include="Chrome/StatusBar.fs" />
     <Compile Include="Chrome/TextStyle.fsi" />
     <Compile Include="Chrome/TextStyle.fs" />
+    <Compile Include="ProcessLifetime.fsi" />
+    <Compile Include="ProcessLifetime.fs" />
     <Compile Include="Tabs/SetupTab.fsi" />
     <Compile Include="Tabs/SetupTab.fs" />
     <Compile Include="Tabs/ViewerTab.fsi" />
