@@ -23,6 +23,18 @@ module SceneBuilder =
     /// remains module-level). Cheap enough to call every frame.
     val buildSceneHeadless: state: GameState -> map: MapGrid option -> config: VizConfig -> Scene
 
+    /// Variant of `buildSceneHeadless` that lets the embedder pin the
+    /// viewport window dimensions. The hub uses this so the scene
+    /// auto-fits to the Viewer tab's content rectangle instead of
+    /// `VizDefaults.defaultViewState`'s 1024x640 default.
+    val buildSceneHeadlessSized:
+        state: GameState ->
+        map: MapGrid option ->
+        config: VizConfig ->
+        viewportWidth: int ->
+        viewportHeight: int ->
+            Scene
+
     /// Computes a clamped pulse alpha byte in [60, 220] from elapsed seconds and period.
     val computePulseAlpha: elapsed: float -> periodSeconds: float -> byte
 

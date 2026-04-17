@@ -474,3 +474,30 @@ module SceneBuilder =
         let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
         let snapshot = gameStateToSnapshot state mapGrid
         buildScene snapshot config VizDefaults.defaultViewState
+
+    let buildSceneHeadlessSized
+            (state: FSBar.Client.GameState)
+            (map: FSBar.Client.MapGrid option)
+            (config: VizConfig)
+            (viewportWidth: int)
+            (viewportHeight: int)
+            : Scene =
+        let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
+        let snapshot = gameStateToSnapshot state mapGrid
+        // Compute Scale so the map fits the viewport. The base-layer
+        // renders at 1 pixel per heightmap cell under Scale=1.0;
+        // choose the smaller of the two axes' ratios so the whole map
+        // fits with letterboxing rather than cropping.
+        let scale =
+            if mapGrid.WidthHeightmap = 0 || mapGrid.HeightHeightmap = 0 then 1.0f
+            else
+                let sx = float32 viewportWidth / float32 mapGrid.WidthHeightmap
+                let sy = float32 viewportHeight / float32 mapGrid.HeightHeightmap
+                min sx sy
+        let vs =
+            { VizDefaults.defaultViewState with
+                Scale = scale
+                WindowWidth = viewportWidth
+                WindowHeight = viewportHeight
+                AutoFit = true }
+        buildScene snapshot config vs

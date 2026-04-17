@@ -23,18 +23,16 @@ module ViewerTab =
             // buildSceneHeadless tolerates map=None for frames that
             // arrive before MapGrid is loaded.
             let state = rs.BarClient.GameState
-            let mapGrid =
-                // BarClient doesn't publicly expose MapGrid today; rely
-                // on GameState alone. Phase-9 follow-up: thread MapGrid
-                // through SessionManager so this branch renders base
-                // terrain as well. For now the scene still shows units
-                // + economy over the synthetic empty grid fallback.
-                None
-            let embedded = SceneBuilder.buildSceneHeadless state mapGrid vizConfig
-            // Clip the embedded scene to the content rectangle. Use a
-            // Group transform to offset the scene into the content area.
-            [ yield Scene.rect contentX contentY contentW contentH panelBg
-              yield! embedded.Elements ]
+            let embedded =
+                SceneBuilder.buildSceneHeadlessSized
+                    state rs.MapGrid vizConfig (int contentW) (int contentH)
+            // Scene elements are authored in viewport-relative space
+            // with origin at (0,0); wrap in a translated group so they
+            // land inside the Viewer tab's content rectangle.
+            let tx = Transform.Translate(contentX, contentY)
+            let content = Scene.group (Some tx) None embedded.Elements
+            [ Scene.rect contentX contentY contentW contentH panelBg
+              content ]
         | SessionManager.Starting _ ->
             [ Scene.rect contentX contentY contentW contentH panelBg
               Scene.text "Session starting…" (contentX + 16.0f) (contentY + 32.0f) 14.0f headingText

@@ -14,6 +14,7 @@ module SessionManager =
         BarClient: BarClient
         GraphicalEngineProcess: System.Diagnostics.Process option
         StartedAt: DateTimeOffset
+        MapGrid: MapGrid option
     }
 
     type SessionState =
@@ -113,6 +114,24 @@ module SessionManager =
                 try
                     let client = BarClient.create engineCfg
                     client.Start()
+                    // Load the MapGrid BEFORE subscribing to
+                    // `client.Frames`. BarClient.Frames.Subscribe spawns
+                    // the async pump thread that reads the stream, and
+                    // Callbacks.* requests done concurrently collide
+                    // with frame reads ("Protocol message contained an
+                    // invalid tag" — the callback response reads bytes
+                    // that are actually frame bytes). The stream is
+                    // quiescent between Start() and the first
+                    // Frames.Subscribe, so this is the safe window.
+                    // Failure here is non-fatal — we keep the session
+                    // Running with None and the viewer falls back to
+                    // its synthetic grid.
+                    let mapGrid =
+                        try Some (MapGrid.loadFromEngine client.Stream)
+                        with ex ->
+                            publishDiagnostic HubEvents.Warning
+                                (sprintf "MapGrid load failed (viewer will use synthetic grid): %s" ex.Message)
+                            None
                     attachFrames client
                     let rs: RunningSession = {
                         Id = Guid.NewGuid()
@@ -121,13 +140,17 @@ module SessionManager =
                         BarClient = client
                         GraphicalEngineProcess = None
                         StartedAt = DateTimeOffset.UtcNow
+                        MapGrid = mapGrid
                     }
                     transitionTo (Running rs)
                     publishDiagnostic HubEvents.Info
-                        (sprintf "session %s started — map=%s vs %s"
+                        (sprintf "session %s started — map=%s vs %s (MapGrid=%s)"
                             (rs.Id.ToString("N").Substring(0, 8))
                             lobby.MapName
-                            engineCfg.OpponentAI)
+                            engineCfg.OpponentAI
+                            (match mapGrid with
+                             | Some g -> sprintf "%dx%d elmos" g.WidthElmos g.HeightElmos
+                             | None -> "synthetic"))
                 with ex ->
                     publishDiagnostic HubEvents.Error
                         (sprintf "session launch failed: %s" ex.Message)

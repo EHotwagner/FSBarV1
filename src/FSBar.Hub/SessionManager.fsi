@@ -19,6 +19,11 @@ module SessionManager =
         BarClient: BarClient
         GraphicalEngineProcess: System.Diagnostics.Process option
         StartedAt: System.DateTimeOffset
+        /// MapGrid loaded from the engine when the session reaches
+        /// Running. `None` until the warm-up load completes; consumers
+        /// (e.g. `ViewerTab`) should fall back to a synthetic grid
+        /// while this is `None`.
+        MapGrid: MapGrid option
     }
 
     /// Full lifecycle state. `HubEvents.StateChanged` gets fired with a
