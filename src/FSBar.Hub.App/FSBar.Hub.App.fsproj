@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Chrome/TabBar.fsi" />
+    <Compile Include="Chrome/TabBar.fs" />
+    <Compile Include="Chrome/StatusBar.fsi" />
+    <Compile Include="Chrome/StatusBar.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
