@@ -93,6 +93,20 @@ let main _argv =
     // (currently only the async proxy-install handler).
     let renderSceneLock = obj ()
 
+    // Encyclopedia tab — eagerly computes the ~953 UnitEntry records
+    // at startup so tab-switch is instant. Lives independently of
+    // session state.
+    let mutable encyclopediaState : EncyclopediaTab.EncyclopediaTabState =
+        let base0 = EncyclopediaTab.init ()
+        // FSBAR_HUB_ENCYCLOPEDIA_SELECT lets CI screenshots land on a
+        // specific unit name without driving a simulated click.
+        match Environment.GetEnvironmentVariable("FSBAR_HUB_ENCYCLOPEDIA_SELECT") with
+        | null | "" -> base0
+        | name ->
+            match base0.Entries |> List.tryFind (fun e -> e.InternalName = name) with
+            | Some e -> { base0 with Selected = Some e.DefId }
+            | None -> base0
+
     let mutable settingsTabState : SettingsTab.SettingsTabState option =
         match barInstall, bundled with
         | Some i, Some b -> Some (SettingsTab.init i b)
@@ -221,7 +235,7 @@ let main _argv =
         | HubTab.Configurator ->
             ConfiguratorTab.render configuratorState vizConfig cx cy cw ch
         | HubTab.Encyclopedia ->
-            placeholderBlock "Units — BarData encyclopedia" "Unit catalog renderer lands in T056."
+            EncyclopediaTab.render encyclopediaState vizConfig.GlyphStyle cx cy cw ch
         | HubTab.Settings ->
             match settingsTabState with
             | Some st -> SettingsTab.render st barInstall bundled settings cx cy cw ch
@@ -376,6 +390,25 @@ let main _argv =
                                         ActivePreset = None
                                         LastPresetResult = Some (Ok "defaults restored") }
                             | None -> ()
+                        | HubTab.Encyclopedia, _, _ ->
+                            match EncyclopediaTab.handleMouse encyclopediaState x y cx cy cw ch with
+                            | Some (EncyclopediaTab.EncyclopediaTabAction.ToggleFaction f) ->
+                                let flt =
+                                    if encyclopediaState.FactionFilter.Contains f then
+                                        encyclopediaState.FactionFilter.Remove f
+                                    else
+                                        encyclopediaState.FactionFilter.Add f
+                                encyclopediaState <-
+                                    { encyclopediaState with
+                                        FactionFilter = flt
+                                        // Reset scroll so filter changes don't strand the
+                                        // view past the end of the (shorter) visible list.
+                                        ListScroll = 0.0f }
+                            | Some (EncyclopediaTab.EncyclopediaTabAction.SelectUnit defId) ->
+                                encyclopediaState <- { encyclopediaState with Selected = Some defId }
+                            | Some (EncyclopediaTab.EncyclopediaTabAction.ScrollList off) ->
+                                encyclopediaState <- { encyclopediaState with ListScroll = off }
+                            | None -> ()
                         | HubTab.Settings, _, _ ->
                             match settingsTabState with
                             | Some st ->
@@ -455,6 +488,11 @@ let main _argv =
                     ConfiguratorTab.handleInput
                         configuratorState vizConfig evt cx cy cw ch
                 configuratorState <- ns
+            | HubTab.Encyclopedia, _ ->
+                match EncyclopediaTab.handleScroll encyclopediaState delta x y cx cy cw ch with
+                | Some (EncyclopediaTab.EncyclopediaTabAction.ScrollList off) ->
+                    encyclopediaState <- { encyclopediaState with ListScroll = off }
+                | _ -> ()
             | _ -> ()
             trigger ()
         | _ -> ()
