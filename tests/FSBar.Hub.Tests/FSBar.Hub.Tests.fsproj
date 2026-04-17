@@ -17,6 +17,8 @@
     <Compile Include="HubSettingsTests.fs" />
     <Compile Include="BundledProxyTests.fs" />
     <Compile Include="BarInstallTests.fs" />
+    <Compile Include="LobbyConfigTests.fs" />
+    <Compile Include="SessionManagerTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>
 

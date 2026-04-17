@@ -18,6 +18,10 @@
     <Compile Include="BundledProxy.fs" />
     <Compile Include="BarInstall.fsi" />
     <Compile Include="BarInstall.fs" />
+    <Compile Include="LobbyConfig.fsi" />
+    <Compile Include="LobbyConfig.fs" />
+    <Compile Include="SessionManager.fsi" />
+    <Compile Include="SessionManager.fs" />
   </ItemGroup>
 
   <ItemGroup>
