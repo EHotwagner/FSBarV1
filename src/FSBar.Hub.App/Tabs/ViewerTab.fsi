@@ -27,8 +27,20 @@ module ViewerTab =
         sessionState: SessionManager.SessionState ->
         vizConfig: VizConfig ->
         viewStateRef: ViewState ref ->
+        isPaused: bool ->
         contentX: float32 ->
         contentY: float32 ->
         contentW: float32 ->
         contentH: float32 ->
             Element list
+
+    /// Rectangle for the feature-038 pause/unpause button in the top-
+    /// right corner of the Viewer-tab content area.
+    ///
+    /// `(x, y, w, h)` in the same coordinate space as `render`.
+    val pauseButtonRect:
+        contentX: float32 ->
+        contentY: float32 ->
+        contentW: float32 ->
+        contentH: float32 ->
+            float32 * float32 * float32 * float32

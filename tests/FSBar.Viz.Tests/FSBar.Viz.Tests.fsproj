@@ -13,6 +13,8 @@
     <Compile Include="..\Common\SurfaceAreaHelper.fs" />
     <Compile Include="VizEngineFixture.fs" />
     <Compile Include="UnitGlyphTests.fs" />
+    <Compile Include="EncyclopediaDataTests.fs" />
+    <Compile Include="UnitDisplayAdapterTests.fs" />
     <Compile Include="UnitGlyphSceneTests.fs" />
     <Compile Include="UnitLabelsGeneratorTests.fs" />
     <Compile Include="UnitGlyphPerfTests.fs" />

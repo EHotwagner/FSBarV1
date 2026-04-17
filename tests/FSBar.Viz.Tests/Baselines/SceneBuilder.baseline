@@ -29,10 +29,17 @@ module SceneBuilder =
     /// tab's content rectangle instead of `VizDefaults.defaultViewState`'s
     /// 1024x640 default, and so metal-spot markers render when
     /// `OverlayKind.MetalSpots` is active.
+    ///
+    /// `defCache` is consumed by feature 038's `UnitDisplayAdapter` to
+    /// populate `GameSnapshot.DisplayUnits` with correctly-classified
+    /// glyph data. `None` keeps the pre-038 legacy placeholder path so
+    /// tests and preview-only callers without a live `BarClient`
+    /// continue to work.
     val buildSceneHeadlessSized:
         state: GameState ->
         map: MapGrid option ->
         metalSpots: (float32 * float32 * float32 * float32) array ->
+        defCache: UnitDefCache option ->
         config: VizConfig ->
         viewportWidth: int ->
         viewportHeight: int ->
@@ -44,10 +51,13 @@ module SceneBuilder =
     /// they keep a mutable `ViewState`, adjust `Scale` / `OriginX/Y`
     /// on scroll-wheel + drag events, and pass the current value each
     /// frame.
+    ///
+    /// `defCache` — see `buildSceneHeadlessSized`.
     val buildSceneHeadlessView:
         state: GameState ->
         map: MapGrid option ->
         metalSpots: (float32 * float32 * float32 * float32) array ->
+        defCache: UnitDefCache option ->
         config: VizConfig ->
         viewState: ViewState ->
             Scene

@@ -212,7 +212,7 @@ module LobbyConfig =
                     Result.Error (AdapterUnsupportedShape
                         (sprintf "team 0 must use HighBarV2 (got %s); the hub's script generator is wired to that proxy" ourAi))
                 else
-                    let engineBin =
+                    let headlessBin =
                         if install.ActiveEngine.HasHeadlessBin then
                             Path.Combine(install.ActiveEngine.EngineDir, "spring-headless")
                         else
@@ -226,8 +226,21 @@ module LobbyConfig =
                         match FSBar.Client.EngineDiscovery.discoverGameVersion install.DataDir "byar:test" with
                         | Some g -> g.Name
                         | None -> "Beyond All Reason"
+                    // Feature 038 US3 FR-005/FR-006: pick EngineMode
+                    // based on the lobby's `LaunchGraphicalViewer`
+                    // toggle. Validation has already failed if the
+                    // graphical bin is missing, so this branch can
+                    // assume `ActiveEngine.GraphicalBin` is populated
+                    // when mode = Graphical.
+                    let mode =
+                        if config.LaunchGraphicalViewer then EngineMode.Graphical
+                        else EngineMode.Headless
+                    let appImagePath =
+                        if config.LaunchGraphicalViewer then
+                            Path.Combine(install.ActiveEngine.EngineDir, "spring")
+                        else ""
                     let ec: EngineConfig = {
-                        Mode = EngineMode.Headless
+                        Mode = mode
                         SocketPath = generateSocketPath ()
                         MapName = config.MapName
                         GameType = gameType
@@ -235,8 +248,8 @@ module LobbyConfig =
                         OpponentSide = oppSide
                         OurSide = ourSide
                         TimeoutMs = 30000
-                        EngineBin = engineBin
-                        AppImagePath = ""
+                        EngineBin = headlessBin
+                        AppImagePath = appImagePath
                         SpringDataDir = Some install.DataDir
                         GameSpeed = int (config.EngineSpeed |> max 1.0f |> min 100.0f)
                         ReadTimeoutMs = None

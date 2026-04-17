@@ -16,27 +16,12 @@ open FSBar.Viz
 /// (FR-022) are deferred.
 module EncyclopediaTab =
 
-    /// Pre-computed display record for one unit. Built once at tab
-    /// construction from `BarData.AllUnitDefs`. Heavy fields —
-    /// weapon-range list, glyph classification — land on this record
-    /// to keep per-frame rendering cheap.
-    type UnitEntry = {
-        DefId: int
-        InternalName: string
-        DisplayName: string
-        Subfolder: string
-        Faction: FactionId
-        Tier: Tier
-        Shape: MovementShape
-        MetalCost: int
-        EnergyCost: int
-        Health: int
-        BuildTime: int
-        SightRangeElmo: float32
-        WeaponRangesElmo: float32 list
-        FootprintX: int
-        FootprintZ: int
-    }
+    /// Pre-computed display record for one unit. Feature 038 moved
+    /// the underlying record to `FSBar.Viz.EncyclopediaData.EncyclopediaEntry`
+    /// so that `UnitDisplayAdapter.ofEncyclopediaEntry` can share it —
+    /// `UnitEntry` here is a simple alias preserved for external
+    /// callers and Hub script consumers.
+    type UnitEntry = EncyclopediaData.EncyclopediaEntry
 
     /// Actions the tab surfaces on mouse input.
     [<RequireQualifiedAccess>]

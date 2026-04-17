@@ -41,12 +41,42 @@ let ``save then load round-trips all fields`` () =
             BarDataDirOverride = Some "/opt/custom/bar"
             EngineVersionOverride = Some "2026.03.14"
             GrpcPort = 5055
-            LaunchGraphicalViewerDefault = true }
+            LaunchGraphicalViewerDefault = true
+            StartPausedDefault = false }
     match HubSettings.save custom with
     | Error msg -> Assert.Fail(sprintf "save failed: %s" msg)
     | Ok () -> ()
     let loaded = HubSettings.load ()
     Assert.Equal(custom, loaded)
+
+[<Fact>]
+let ``StartPausedDefault defaults to true on fresh install (feature 038 FR-004a)`` () =
+    use _scope = new XdgScope()
+    Assert.True(HubSettings.defaults.StartPausedDefault)
+    let loaded = HubSettings.load ()
+    Assert.True(loaded.StartPausedDefault)
+
+[<Fact>]
+let ``StartPausedDefault round-trips both values (feature 038)`` () =
+    use _scope = new XdgScope()
+    for value in [ false; true ] do
+        let s = { HubSettings.defaults with StartPausedDefault = value }
+        match HubSettings.save s with
+        | Error msg -> Assert.Fail(sprintf "save failed for %b: %s" value msg)
+        | Ok () -> ()
+        let loaded = HubSettings.load ()
+        Assert.Equal(value, loaded.StartPausedDefault)
+
+[<Fact>]
+let ``missing StartPausedDefault in JSON falls back to default true (feature 038)`` () =
+    use _scope = new XdgScope()
+    let path = HubSettings.settingsPath ()
+    Directory.CreateDirectory(Path.GetDirectoryName(path)) |> ignore
+    // Simulate a pre-038 settings.json that lacks the new field.
+    let raw = """{"grpcPort":5021,"launchGraphicalViewerDefault":false,"schemaVersion":1}"""
+    File.WriteAllText(path, raw)
+    let loaded = HubSettings.load ()
+    Assert.True(loaded.StartPausedDefault)
 
 [<Fact>]
 let ``save is atomic via temp-file-plus-rename`` () =

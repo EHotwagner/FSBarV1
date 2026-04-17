@@ -27,13 +27,22 @@ module HubSettings =
         /// Initial state of the "Launch original BAR viewer" toggle on
         /// the Setup tab (US4).
         LaunchGraphicalViewerDefault: bool
+        /// Initial state of the "Start paused" toggle on the Setup tab
+        /// (feature 038, FR-004a). Defaults to `true` on fresh install;
+        /// persisted across Hub restarts. When `true`, every launched
+        /// match starts paused via a `/pause` chat command on the first
+        /// `Running` transition.
+        StartPausedDefault: bool
         /// Schema version. `1` today; increments when additive /
         /// destructive changes require a migration step on load.
+        /// Adding `StartPausedDefault` does not bump the version because
+        /// missing fields fall back to defaults.
         SchemaVersion: int
     }
 
     /// Factory values identical to a fresh-install state:
-    /// no overrides, port `5021`, graphical-viewer toggle off, schema `1`.
+    /// no overrides, port `5021`, graphical-viewer toggle off,
+    /// start-paused toggle on, schema `1`.
     val defaults: HubSettings
 
     /// Returns the absolute filesystem path where settings are read /

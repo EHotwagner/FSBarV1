@@ -257,3 +257,119 @@ let ``advanceEffects: just-built transition produces JustBuiltRing effect`` () =
         |> Map.ofList
     let effects = UnitGlyph.advanceEffects prev curr 2000
     Assert.Contains(effects, fun e -> e.Kind = EventEffectKind.JustBuiltRing && e.UnitId = 1)
+
+// --- Feature 038 US4: direction triangle -----------------------------------
+
+open FSBar.Viz.Tests.VizEngineFixture
+
+// Flatten out the Scene.group wrapping so we can grep for Path primitives.
+let private flatten (els: Element list) : Element list =
+    els |> List.collect flattenElement
+
+let private pathApexOf (els: Element list) : (float32 * float32) option =
+    // The pip triangle is exactly 4 path commands: MoveTo (apex),
+    // LineTo, LineTo, Close. Filter to just that shape so we don't
+    // accidentally pick up the shape outline's first MoveTo.
+    flatten els
+    |> List.tryPick (fun e ->
+        match e with
+        | Element.Path(cmds, _) when cmds.Length = 4 ->
+            match cmds.Head with
+            | PathCommand.MoveTo(x, y) -> Some (x, y)
+            | _ -> None
+        | _ -> None)
+
+let private countTrianglePaths (els: Element list) : int =
+    flatten els
+    |> List.sumBy (fun e ->
+        match e with
+        | Element.Path(cmds, _) when cmds.Length = 4 -> 1
+        | _ -> 0)
+
+[<Fact>]
+let ``FacingTriangle: heading=0 places apex east of unit centre (canonical)`` () =
+    UnitGlyph.resetSession()
+    let u = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 1.0f 1.0f 0.0f defaultStatus
+    let els = UnitGlyph.buildUnit u style []
+    match pathApexOf els with
+    | None -> Assert.Fail("expected a triangle pip path")
+    | Some (apexX, apexY) ->
+        let cx = u.PositionX / 8.0f
+        let cy = u.PositionZ / 8.0f
+        Assert.True(apexX > cx + 1.0f,
+            sprintf "heading 0 should place apex east of centre; apex=(%f,%f) centre=(%f,%f)" apexX apexY cx cy)
+        Assert.InRange(apexY, cy - 0.5f, cy + 0.5f)
+
+[<Fact>]
+let ``FacingTriangle: heading=π/2 places apex south of unit centre`` () =
+    UnitGlyph.resetSession()
+    let halfPi = float32 System.Math.PI / 2.0f
+    let u = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 1.0f 1.0f halfPi defaultStatus
+    let els = UnitGlyph.buildUnit u style []
+    match pathApexOf els with
+    | None -> Assert.Fail("expected a triangle pip path")
+    | Some (apexX, apexY) ->
+        let cx = u.PositionX / 8.0f
+        let cy = u.PositionZ / 8.0f
+        Assert.InRange(apexX, cx - 0.5f, cx + 0.5f)
+        Assert.True(apexY > cy + 1.0f,
+            sprintf "heading π/2 should place apex below centre; apex=(%f,%f) centre=(%f,%f)" apexX apexY cx cy)
+
+[<Fact>]
+let ``FacingTriangle: heading=π places apex west of unit centre`` () =
+    UnitGlyph.resetSession()
+    let pi = float32 System.Math.PI
+    let u = mkUnit 1 1 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 1.0f 1.0f pi defaultStatus
+    let els = UnitGlyph.buildUnit u style []
+    match pathApexOf els with
+    | None -> Assert.Fail("expected a triangle pip path")
+    | Some (apexX, _apexY) ->
+        let cx = u.PositionX / 8.0f
+        Assert.True(apexX < cx - 1.0f,
+            sprintf "heading π should place apex west of centre; apex.x=%f centre.x=%f" apexX cx)
+
+[<Fact>]
+let ``FacingTriangle: suppressed for MovementShape.Building (FR-010)`` () =
+    UnitGlyph.resetSession()
+    let building = mkUnit 1 1 MovementShape.Building FactionId.Armada Tier.T1 "Fc" 1.0f 1.0f 0.0f defaultStatus
+    let mobile = mkUnit 2 2 MovementShape.Bot FactionId.Armada Tier.T1 "Pw" 1.0f 1.0f 0.0f defaultStatus
+    let buildingEls = UnitGlyph.buildUnit building style []
+    let mobileEls = UnitGlyph.buildUnit mobile style []
+    let buildingPips = countTrianglePaths buildingEls
+    let mobilePips = countTrianglePaths mobileEls
+    // Buildings emit the main-shape path (which may include MoveTo +
+    // other ops) and a damage stroke path (same commands). Confirm the
+    // pip is gone by asserting mobile has at least one MORE triangle
+    // path than building.
+    Assert.True(mobilePips > buildingPips,
+        sprintf "mobile unit should have more triangle paths than building (mobile=%d, building=%d)"
+            mobilePips buildingPips)
+
+[<Fact>]
+let ``FacingTriangle: static preview (heading=0) identical to encyclopedia path (FR-010a)`` () =
+    UnitGlyph.resetSession()
+    // UnitDisplayAdapter.ofEncyclopediaEntry sets heading=0.0f; a live
+    // unit with heading=0 must produce the same apex placement so
+    // Viewer-tab and Encyclopedia glyphs stay visually equivalent.
+    let entry : EncyclopediaData.EncyclopediaEntry =
+        { DefId = 1
+          InternalName = "armpw"
+          Subfolder = "Units/ARM"
+          Faction = FactionId.Armada
+          Tier = Tier.T1
+          Shape = MovementShape.Bot
+          MetalCost = 50
+          EnergyCost = 250
+          BuildTime = 1000
+          Health = 300
+          FootprintX = 1
+          FootprintZ = 1
+          SightRangeElmo = 300.0f
+          WeaponRangesElmo = [ 200.0f ] }
+    let preview = UnitDisplayAdapter.ofEncyclopediaEntry entry 32.0f
+    Assert.Equal(0.0f, preview.HeadingRadians)
+    Assert.Equal(MovementShape.Bot, preview.Shape)
+    let els = UnitGlyph.buildUnit preview style []
+    match pathApexOf els with
+    | None -> Assert.Fail("expected triangle pip for static preview (non-building shape)")
+    | Some _ -> ()

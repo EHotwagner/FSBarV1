@@ -88,7 +88,7 @@ let ``Launch with bad lobby returns Error and stays Idle`` () =
     use sm = SessionManager.create (fake.Resolve()) bus.Sink
     // No map named "NotInstalled" on disk.
     let bad = happyLobby "NotInstalled"
-    match sm.Launch bad with
+    match sm.Launch(bad, false) with
     | Ok () -> Assert.Fail("Launch should reject lobby with missing map")
     | Result.Error msg ->
         Assert.Contains("validation", msg)
@@ -110,15 +110,37 @@ let ``SetSpeed emits EngineSpeedChanged`` () =
     Assert.Contains(events, function HubEvents.EngineSpeedChanged 2.5f -> true | _ -> false)
 
 [<Fact>]
-let ``SetPaused emits SessionPaused`` () =
+let ``SetPaused no-op when not Running (feature 038)`` () =
+    // Feature 038 repurposes SetPaused from a simple event-emitter into
+    // an engine-wired call. Without a Running session there is nothing
+    // to pause — the call should be a silent no-op rather than emit a
+    // stale SessionPaused event.
     use fake = new FakeInstall()
     use bus = HubEvents.create ()
     use sm = SessionManager.create (fake.Resolve()) bus.Sink
-    let collector = Async.StartAsTask (async { return collectEvents bus 1 1000 })
+    let collector = Async.StartAsTask (async { return collectEvents bus 1 200 })
     Thread.Sleep(50)
     sm.SetPaused true
     let events = collector.Result
-    Assert.Contains(events, function HubEvents.SessionPaused true -> true | _ -> false)
+    // Guarantee: no SessionPaused event while Idle.
+    Assert.DoesNotContain(events, function HubEvents.SessionPaused _ -> true | _ -> false)
+    Assert.False(sm.IsPaused)
+
+[<Fact>]
+let ``TogglePause no-op when not Running (feature 038)`` () =
+    use fake = new FakeInstall()
+    use bus = HubEvents.create ()
+    use sm = SessionManager.create (fake.Resolve()) bus.Sink
+    sm.TogglePause()
+    sm.TogglePause()
+    Assert.False(sm.IsPaused)
+
+[<Fact>]
+let ``IsPaused defaults false on fresh manager (feature 038)`` () =
+    use fake = new FakeInstall()
+    use bus = HubEvents.create ()
+    use sm = SessionManager.create (fake.Resolve()) bus.Sink
+    Assert.False(sm.IsPaused)
 
 [<Fact>]
 let ``End on Idle is a no-op`` () =
@@ -149,7 +171,7 @@ let ``Launch transitions to Starting before returning`` () =
     // synchronous Starting transition for this test.
     let collector = Async.StartAsTask (async { return collectEvents bus 1 1000 })
     Thread.Sleep(50)
-    match sm.Launch (happyLobby "Fixture 1") with
+    match sm.Launch(happyLobby "Fixture 1", false) with
     | Ok () ->
         let state = sm.State
         match state with
@@ -164,10 +186,10 @@ let ``Second Launch while active returns Error`` () =
     use fake = new FakeInstall()
     use bus = HubEvents.create ()
     use sm = SessionManager.create (fake.Resolve()) bus.Sink
-    match sm.Launch (happyLobby "Fixture 1") with
+    match sm.Launch(happyLobby "Fixture 1", false) with
     | Ok () ->
         // Immediately try a second Launch while Starting / Running.
-        match sm.Launch (happyLobby "Fixture 1") with
+        match sm.Launch(happyLobby "Fixture 1", false) with
         | Result.Error msg -> Assert.Contains("already active", msg)
         | Ok () ->
             // Allow the fast-failing background task to terminate.

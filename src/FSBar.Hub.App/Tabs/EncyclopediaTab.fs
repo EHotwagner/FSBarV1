@@ -6,23 +6,10 @@ open FSBar.Viz
 
 module EncyclopediaTab =
 
-    type UnitEntry = {
-        DefId: int
-        InternalName: string
-        DisplayName: string
-        Subfolder: string
-        Faction: FactionId
-        Tier: Tier
-        Shape: MovementShape
-        MetalCost: int
-        EnergyCost: int
-        Health: int
-        BuildTime: int
-        SightRangeElmo: float32
-        WeaponRangesElmo: float32 list
-        FootprintX: int
-        FootprintZ: int
-    }
+    /// Feature 038 lifted the entry type to `FSBar.Viz.EncyclopediaData`
+    /// so `UnitDisplayAdapter` can share it. Keep the local alias so
+    /// external consumers (Hub scripting examples, tests) still compile.
+    type UnitEntry = EncyclopediaData.EncyclopediaEntry
 
     [<RequireQualifiedAccess>]
     type EncyclopediaTabAction =
@@ -39,70 +26,8 @@ module EncyclopediaTab =
 
     // --- Helpers --------------------------------------------------------
 
-    let private concreteFloat (v: BarData.ValueOrExpr<float>) (fallback: float) : float =
-        match v with
-        | BarData.ValueOrExpr.Concrete x -> x
-        | _ -> fallback
-
-    let private buildEntry
-            (idx: int)
-            (d: BarData.UnitDef)
-            : UnitEntry =
-        // Same classification heuristics the live viewer uses —
-        // ensures Encyclopedia glyphs byte-match session glyphs
-        // (SC-003). `ignore` discards classification-miss logs.
-        let canMove =
-            match d.movement with
-            | Some m -> m.canFly || (m.movementClass <> None)
-            | None -> false
-        let canFly =
-            match d.movement with
-            | Some m -> m.canFly
-            | None -> false
-        let mClass =
-            match d.movement with
-            | Some m -> m.movementClass
-            | None -> None
-        let shape = UnitGlyph.classifyShape canMove canFly mClass ignore
-        let faction = UnitGlyph.classifyFaction d.subfolder d.name ignore
-        let tier = UnitGlyph.classifyTier d.customParams d.category ignore
-        let weaponRanges =
-            match d.weapons with
-            | Some ws ->
-                ws
-                |> List.choose (fun w ->
-                    match w.range with
-                    | Some v -> Some (float32 (concreteFloat v 0.0))
-                    | None -> None)
-                |> List.filter (fun r -> r > 0.0f)
-            | None -> []
-        let metalCost = int (concreteFloat d.metalCost 0.0)
-        let energyCost = int (concreteFloat d.energyCost 0.0)
-        let health = int (concreteFloat d.health 0.0)
-        let buildTime = int (concreteFloat d.buildTime 0.0)
-        let sightRange = float32 (concreteFloat d.sightDistance 0.0)
-        { DefId = idx
-          InternalName = d.name
-          DisplayName = d.name
-          Subfolder = d.subfolder
-          Faction = faction
-          Tier = tier
-          Shape = shape
-          MetalCost = metalCost
-          EnergyCost = energyCost
-          Health = health
-          BuildTime = buildTime
-          SightRangeElmo = sightRange
-          WeaponRangesElmo = weaponRanges
-          FootprintX = max 1 (int d.footprintX)
-          FootprintZ = max 1 (int d.footprintZ) }
-
     let init () : EncyclopediaTabState =
-        let entries =
-            BarData.AllUnitDefs.all
-            |> List.mapi (fun i (_, _, d) -> buildEntry i d)
-            |> List.sortBy (fun e -> e.InternalName)
-        { Entries = entries
+        { Entries = EncyclopediaData.buildFromBarData ()
           FactionFilter = Set.empty
           Selected = None
           ListScroll = 0.0f }
@@ -263,11 +188,11 @@ module EncyclopediaTab =
                     let size = if i = 0 then 16.0f else 14.0f
                     let paint = if i = 0 then headingText else bodyText
                     Scene.text line (x + 14.0f) baseY size paint)
-            // Synthesise a UnitDisplay + render the glyph with UnitGlyph.buildUnit.
-            // Place it in the bottom-right of the detail panel at a comfortable size.
-            // In-game glyphs are sized to footprint (a few pixels), which is far
-            // too small here — scale the style + pin the footprint so every
-            // encyclopedia entry renders at a consistent, readable radius.
+            // Synthesise a UnitDisplay via the shared UnitDisplayAdapter
+            // and render the glyph with UnitGlyph.buildUnit. Feature 038
+            // FR-002: every Hub surface funnels through the same
+            // constructor so Viewer-tab and Units-tab glyphs can't
+            // diverge.
             let targetRadius = 48.0f
             let scale = targetRadius / style.MinPixelRadius
             let encyclopediaStyle =
@@ -287,34 +212,11 @@ module EncyclopediaTab =
             // Pin footprint to targetRadius (rawR = footprint/16) so large
             // buildings don't blow past the panel edge.
             let pinnedFootprint = targetRadius * 16.0f
+            let baseDisplay = UnitDisplayAdapter.ofEncyclopediaEntry e pinnedFootprint
             let unit =
-                { UnitId = 0
-                  DefId = e.DefId
-                  InternalName = e.InternalName
-                  Shape = e.Shape
-                  Faction = e.Faction
-                  Tier = e.Tier
-                  LabelCode = UnitLabels.lookupOrFallback e.InternalName
-                  FootprintWidthElmo = pinnedFootprint
-                  FootprintHeightElmo = pinnedFootprint
-                  TeamId = 0
-                  PositionX = glyphCx * 8.0f
-                  PositionY = 0.0f
-                  PositionZ = glyphCy * 8.0f
-                  HeadingRadians = 0.0f
-                  CurrentHealth = float32 e.Health
-                  MaxHealth = float32 e.Health
-                  BuildProgress = 1.0f
-                  Status =
-                    { IsUnderConstruction = false
-                      IsStunned = false
-                      JustDamagedWithinMs = None
-                      JustCompletedWithinMs = None
-                      IsCloaked = false }
-                  WeaponRangesElmo = e.WeaponRangesElmo
-                  SightRangeElmo = e.SightRangeElmo
-                  BuildRangeElmo = None
-                  CommandQueue = [] }
+                { baseDisplay with
+                    PositionX = glyphCx * 8.0f
+                    PositionZ = glyphCy * 8.0f }
             let glyphEls = UnitGlyph.buildUnit unit encyclopediaStyle []
             let glyphHint =
                 Scene.text "↑ same renderer as Viewer"

@@ -115,7 +115,7 @@ type LiveSessionLaunchTests() =
                     member _.OnError(_) = ()
                     member _.OnCompleted() = () })
 
-        match sm.Launch lobby with
+        match sm.Launch(lobby, false) with
         | Result.Error msg ->
             Assert.Fail(sprintf "Launch rejected: %s" msg)
         | Ok () -> ()
@@ -166,7 +166,7 @@ type LiveSessionLaunchTests() =
                     member _.OnError(_) = ()
                     member _.OnCompleted() = () })
 
-        match sm.Launch lobby with
+        match sm.Launch(lobby, false) with
         | Result.Error msg -> Assert.Fail(sprintf "Launch rejected: %s" msg)
         | Ok () -> ()
 

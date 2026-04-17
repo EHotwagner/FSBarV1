@@ -32,6 +32,15 @@ module SetupTab =
         /// User clicked Launch. Caller validates + calls
         /// `SessionManager.Launch`.
         | Launch
+        /// Feature 038 FR-004a. User clicked the "Start paused"
+        /// checkbox. Payload is the new desired state; caller
+        /// mutates `HubSettings.StartPausedDefault` and persists.
+        | ToggleStartPaused of startPaused: bool
+        /// Feature 038 FR-005. User clicked the "Launch graphical
+        /// engine" checkbox. Payload is the new desired state;
+        /// caller mutates `HubSettings.LaunchGraphicalViewerDefault`
+        /// and persists.
+        | ToggleGraphicalEngine of graphical: bool
 
     /// One row in the map picker — pairs an on-disk archive stem
     /// with the engine-registered name from `ArchiveCache20.lua`.
@@ -76,8 +85,12 @@ module SetupTab =
     /// Render the tab content into the area to the right of the
     /// TabBar and above the StatusBar. Caller provides the content
     /// rectangle `(x, y, w, h)`.
+    ///
+    /// `settings` is read so the feature-038 checkboxes (Start paused,
+    /// Launch graphical engine) reflect the currently persisted state.
     val render:
         state: SetupTabState ->
+        settings: HubSettings.HubSettings ->
         contentX: float32 ->
         contentY: float32 ->
         contentW: float32 ->
@@ -85,8 +98,11 @@ module SetupTab =
             Element list
 
     /// Hit-test a mouse click. Returns the action that should fire.
+    /// `settings` is threaded through so checkbox hit-tests can flip
+    /// the current bool rather than always emitting `true`.
     val handleMouse:
         state: SetupTabState ->
+        settings: HubSettings.HubSettings ->
         x: float32 ->
         y: float32 ->
         contentX: float32 ->

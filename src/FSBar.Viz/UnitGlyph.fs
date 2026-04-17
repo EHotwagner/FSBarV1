@@ -406,23 +406,60 @@ module UnitGlyph =
         let rotatedShape =
             Scene.rotate headingDeg mx mz shapeChildren
 
-        // Facing pip — alliance (team) coloured, pulsing, drawn outside the
-        // shape in the direction of travel. Defaults to the team palette's
-        // Fallback colour when no per-team entry is configured.
+        // Facing pip — feature 038 US4: rendered as a triangle whose
+        // apex points in the unit's current facing direction. Alliance
+        // (team) coloured, pulsing, drawn outside the shape in the
+        // direction of travel. Suppressed for non-rotating structures
+        // per FR-010; they have no meaningful facing and a persistent
+        // "east-pointing" arrow would mislead. Static previews pass
+        // `HeadingRadians = 0.0f` and get an east-pointing triangle —
+        // the renderer's canonical shape convention is "east-facing",
+        // so the pip direction is visually consistent with the shape
+        // outline (FR-010a: "remains visually equivalent to live glyphs").
         let pip =
-            let pipR = style.FacingPipRadius
-            let offset = r + pipR * 2.0f
-            let px = mx + offset * cos heading
-            let pz = mz + offset * sin heading
-            let t =
-                float32 (DateTime.UtcNow.Ticks % 10_000_000L) / 10_000_000.0f
-            let pulse = 0.5f + 0.5f * cos (t * 2.0f * float32 Math.PI)
-            let alpha = byte (int (110.0f + 145.0f * pulse))
-            let allianceColor = teamFillColor style unit'.TeamId
-            let pipPaint =
-                Scene.fill (
-                    SKColor(allianceColor.Red, allianceColor.Green, allianceColor.Blue, alpha))
-            Scene.ellipse px pz pipR pipR pipPaint
+            match unit'.Shape with
+            | MovementShape.Building -> []
+            | _ ->
+                let pipR = style.FacingPipRadius
+                // Triangle dimensions (in shape-local elmos).
+                // Apex sits further out than the old ellipse centre —
+                // the old pip was at `r + pipR * 2` with radius `pipR`,
+                // giving it a diameter `2 * pipR` on either side of its
+                // centre. The triangle tapers to its apex, so we can
+                // position the apex at roughly the same outer edge while
+                // keeping the base at `r + pipR * 0.5f` — this keeps
+                // visual density comparable to the ellipse version.
+                let baseOffset = r + pipR * 0.5f
+                let apexOffset = r + pipR * 2.5f
+                let halfBase = pipR * 1.0f
+                // Direction unit vector toward the unit's front.
+                let cosH = cos heading
+                let sinH = sin heading
+                // Apex point (forward along heading).
+                let apexX = mx + apexOffset * cosH
+                let apexY = mz + apexOffset * sinH
+                // Base midpoint and perpendicular offset. The perpendicular
+                // to (cosH, sinH) is (-sinH, cosH).
+                let baseMidX = mx + baseOffset * cosH
+                let baseMidY = mz + baseOffset * sinH
+                let leftX = baseMidX + halfBase * (-sinH)
+                let leftY = baseMidY + halfBase * cosH
+                let rightX = baseMidX - halfBase * (-sinH)
+                let rightY = baseMidY - halfBase * cosH
+                let t =
+                    float32 (DateTime.UtcNow.Ticks % 10_000_000L) / 10_000_000.0f
+                let pulse = 0.5f + 0.5f * cos (t * 2.0f * float32 Math.PI)
+                let alpha = byte (int (110.0f + 145.0f * pulse))
+                let allianceColor = teamFillColor style unit'.TeamId
+                let pipPaint =
+                    Scene.fill (
+                        SKColor(allianceColor.Red, allianceColor.Green, allianceColor.Blue, alpha))
+                let cmds =
+                    [ PathCommand.MoveTo(apexX, apexY)
+                      PathCommand.LineTo(leftX, leftY)
+                      PathCommand.LineTo(rightX, rightY)
+                      PathCommand.Close ]
+                [ Scene.path cmds pipPaint ]
 
         // The red damage stroke now doubles as the low-HP alert, so the
         // redundant body-tint overlay from the earlier design is dropped.
@@ -467,7 +504,7 @@ module UnitGlyph =
 
         [ yield rotatedShape
           yield! lowHpTint
-          yield pip
+          yield! pip
           yield! constructionHint
           yield labelElement
           yield! effectElements ]

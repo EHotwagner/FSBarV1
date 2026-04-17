@@ -11,6 +11,7 @@ module HubSettings =
         EngineVersionOverride: string option
         GrpcPort: int
         LaunchGraphicalViewerDefault: bool
+        StartPausedDefault: bool
         SchemaVersion: int
     }
 
@@ -19,6 +20,7 @@ module HubSettings =
         EngineVersionOverride = None
         GrpcPort = 5021
         LaunchGraphicalViewerDefault = false
+        StartPausedDefault = true
         SchemaVersion = 1
     }
 
@@ -57,6 +59,7 @@ module HubSettings =
         writeString writer "engineVersionOverride" s.EngineVersionOverride
         writer.WriteNumber("grpcPort", s.GrpcPort)
         writer.WriteBoolean("launchGraphicalViewerDefault", s.LaunchGraphicalViewerDefault)
+        writer.WriteBoolean("startPausedDefault", s.StartPausedDefault)
         writer.WriteNumber("schemaVersion", s.SchemaVersion)
         writer.WriteEndObject()
         writer.Flush()
@@ -101,6 +104,7 @@ module HubSettings =
               EngineVersionOverride = parseOptionalString root "engineVersionOverride"
               GrpcPort = port
               LaunchGraphicalViewerDefault = parseBool root "launchGraphicalViewerDefault" defaults.LaunchGraphicalViewerDefault
+              StartPausedDefault = parseBool root "startPausedDefault" defaults.StartPausedDefault
               SchemaVersion = if schemaVersion <= 0 then defaults.SchemaVersion else schemaVersion }
 
     let load () : HubSettings =

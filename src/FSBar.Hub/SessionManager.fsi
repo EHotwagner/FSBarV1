@@ -62,7 +62,16 @@ module SessionManager =
         /// `Error msg` if the lobby does not validate against the
         /// current `BarInstall`, or if a session is already running
         /// (caller must `End` first).
-        member Launch: config: LobbyConfig.LobbyConfig -> Result<unit, string>
+        ///
+        /// `startPaused` — feature 038 FR-003/004: when `true`, the
+        /// hub issues a single `/pause` chat command via
+        /// `BarClient.SendCommands` on the first `Running` transition,
+        /// before the engine produces a non-zero-time frame. The caller
+        /// sources this from `HubSettings.StartPausedDefault`.
+        member Launch:
+            config: LobbyConfig.LobbyConfig *
+            startPaused: bool ->
+                Result<unit, string>
 
         /// Request an engine speed change. Phase-3 scope: emits
         /// `HubEvents.EngineSpeedChanged` and updates the hub-side
@@ -70,9 +79,22 @@ module SessionManager =
         /// the AI-command plumbing in Phase 9 / US7.
         member SetSpeed: speed: float32 -> unit
 
-        /// Request pause / resume. Same Phase-3 scope as `SetSpeed`:
-        /// emits `HubEvents.SessionPaused`, actual wire-up deferred.
+        /// Ensure pause state matches the argument (feature 038). When
+        /// `IsPaused <> paused`, issues a `/pause` chat command via
+        /// the internal `BarClient` and publishes `SessionPaused`.
+        /// No-op when the session is not `Running`.
         member SetPaused: paused: bool -> unit
+
+        /// True when the hub has most recently issued a pause to the
+        /// engine. Not a live mirror of the engine state — BAR's
+        /// native UI can flip the engine pause out-of-band without
+        /// the hub noticing (research.md §R2 pick A).
+        member IsPaused: bool
+
+        /// Flip pause/unpause in a single call. Safe from any state;
+        /// emits `SessionPaused` exactly once per toggle. Backing the
+        /// Viewer-tab pause button (FR-004b).
+        member TogglePause: unit -> unit
 
         /// Tear down the active session. Safe to call from any state.
         /// Does not exit the hub process or close gRPC clients.

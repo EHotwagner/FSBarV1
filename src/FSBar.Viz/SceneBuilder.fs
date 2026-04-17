@@ -428,6 +428,7 @@ module SceneBuilder =
             (state: FSBar.Client.GameState)
             (mapGrid: MapGrid)
             (metalSpots: (float32 * float32 * float32 * float32) array)
+            (defCache: UnitDefCache option)
             : GameSnapshot =
         let friendlies =
             state.Units
@@ -464,10 +465,31 @@ module SceneBuilder =
             |> Map.ofSeq
         let allUnits =
             enemies |> Map.fold (fun acc k v -> Map.add k v acc) friendlies
+        // Feature 038 FR-001/002: when a defCache is supplied, build
+        // the BarData-classified `DisplayUnits` via the shared
+        // `UnitDisplayAdapter`. Callers without a cache (tests, preview
+        // sessions) leave `DisplayUnits = Map.empty` and the legacy
+        // placeholder path in `resolveDisplayUnits` still runs.
+        let displayUnits =
+            match defCache with
+            | None -> Map.empty
+            | Some cache ->
+                let friendly =
+                    state.Units
+                    |> Map.toSeq
+                    |> Seq.map (fun (uid, u) ->
+                        uid, UnitDisplayAdapter.ofTrackedUnit cache state.TeamId uid u)
+                let hostile =
+                    state.Enemies
+                    |> Map.toSeq
+                    |> Seq.filter (fun (_, e) -> e.InLOS)
+                    |> Seq.map (fun (eid, e) ->
+                        eid, UnitDisplayAdapter.ofTrackedEnemy cache eid e)
+                Seq.append friendly hostile |> Map.ofSeq
         { FrameNumber = int state.FrameNumber
           MapGrid = mapGrid
           Units = allUnits
-          DisplayUnits = Map.empty
+          DisplayUnits = displayUnits
           EventIndicators = []
           EconomyMetal = economyFrom state.Metal
           EconomyEnergy = economyFrom state.Energy
@@ -475,7 +497,7 @@ module SceneBuilder =
           Connected = true }
 
     let private gameStateToSnapshot (state: FSBar.Client.GameState) (mapGrid: MapGrid) : GameSnapshot =
-        gameStateToSnapshotWith state mapGrid [||]
+        gameStateToSnapshotWith state mapGrid [||] None
 
     let buildSceneHeadless (state: FSBar.Client.GameState) (map: FSBar.Client.MapGrid option) (config: VizConfig) : Scene =
         let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
@@ -498,12 +520,13 @@ module SceneBuilder =
             (state: FSBar.Client.GameState)
             (map: FSBar.Client.MapGrid option)
             (metalSpots: (float32 * float32 * float32 * float32) array)
+            (defCache: UnitDefCache option)
             (config: VizConfig)
             (viewportWidth: int)
             (viewportHeight: int)
             : Scene =
         let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
-        let snapshot = gameStateToSnapshotWith state mapGrid metalSpots
+        let snapshot = gameStateToSnapshotWith state mapGrid metalSpots defCache
         // Compute Scale so the map fits the viewport. The base-layer
         // renders at 1 pixel per heightmap cell under Scale=1.0;
         // choose the smaller of the two axes' ratios so the whole map
@@ -521,9 +544,10 @@ module SceneBuilder =
             (state: FSBar.Client.GameState)
             (map: FSBar.Client.MapGrid option)
             (metalSpots: (float32 * float32 * float32 * float32) array)
+            (defCache: UnitDefCache option)
             (config: VizConfig)
             (viewState: ViewState)
             : Scene =
         let mapGrid = map |> Option.defaultWith emptyHeadlessMapGrid
-        let snapshot = gameStateToSnapshotWith state mapGrid metalSpots
+        let snapshot = gameStateToSnapshotWith state mapGrid metalSpots defCache
         buildScene snapshot config viewState

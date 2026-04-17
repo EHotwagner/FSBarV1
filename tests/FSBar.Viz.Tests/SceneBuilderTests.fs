@@ -66,7 +66,11 @@ let ``Scene BackgroundColor matches VizConfig`` () =
 // ---- US2: Unit Overlay ----
 
 [<Fact>]
-let ``snapshot with units and Units overlay enabled produces Ellipse elements`` () =
+let ``snapshot with units and Units overlay enabled produces glyph primitives`` () =
+    // Feature 038 US4 replaced the ellipse facing pip with a triangle
+    // path — this test previously counted ellipses; it now counts any
+    // glyph-emitted primitive (path + text label + triangle pip) and
+    // just asserts the scene produced something per unit.
     LayerRenderer.invalidateAll ()
     let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
     let snap =
@@ -77,12 +81,13 @@ let ``snapshot with units and Units overlay enabled produces Ellipse elements`` 
     let config = { VizDefaults.defaultConfig with ActiveOverlays = Set.ofList [ OverlayKind.Units ] }
     let scene = SceneBuilder.buildScene snap config VizDefaults.defaultViewState
     let elements = collectElements scene
-    let ellipses = elements |> List.filter isEllipse
-    // Each unit produces 1 marker ellipse, so at least 3
-    Assert.True(ellipses.Length >= 3, $"Expected >= 3 ellipses for 3 units, got {ellipses.Length}")
+    let texts = elements |> List.filter isText
+    let paths = elements |> List.filter isPath
+    Assert.True(texts.Length >= 3, $"Expected >= 3 unit labels, got {texts.Length}")
+    Assert.True(paths.Length >= 3, $"Expected >= 3 shape paths, got {paths.Length}")
 
 [<Fact>]
-let ``empty units produces no unit ellipse elements`` () =
+let ``empty units produces no unit-specific primitives`` () =
     LayerRenderer.invalidateAll ()
     let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
     let snap = MockSnapshot.emptySnapshot grid

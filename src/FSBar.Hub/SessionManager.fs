@@ -76,6 +76,21 @@ module SessionManager =
         /// if any. Swapped on every session transition.
         let mutable currentSubscription: IDisposable option = None
 
+        // Feature 038: hub-known pause state.
+        //
+        // KNOWN LIMITATION (2026-04-17 investigation, spring-headless
+        // 2025.06.19): neither `/pause` nor `/speed 0` reliably halts
+        // simulation when sent via `BarClient.SendCommands` as a
+        // chat message from the AI team. `/pause` hangs the engine
+        // on the Pause Screen widget; `/speed 0` has no observable
+        // effect. Until a working mechanism ships, pause is hub-side
+        // only: `SetPaused` / `TogglePause` flip the in-memory flag
+        // and emit `SessionPaused`, and `ViewerTab.render` freezes
+        // the displayed snapshot while the flag is set. The game
+        // continues to advance in the background.
+        let mutable startPausedForNextLaunch: bool = false
+        let mutable isPausedFlag: int = 0
+
         let transitionTo (newState: SessionState) =
             lock sync (fun () -> state <- newState)
             events.Publish(HubEvents.StateChanged (stateTag newState))
@@ -151,6 +166,17 @@ module SessionManager =
                         MetalSpots = metalSpots
                     }
                     transitionTo (Running rs)
+                    // Feature 038 FR-003: if this launch was armed to
+                    // start paused, flip the hub-side flag now. The
+                    // Viewer tab renders the frozen first-frame state
+                    // until the user unpauses (engine-level pause is
+                    // unavailable on this BAR build — see note above).
+                    if startPausedForNextLaunch then
+                        startPausedForNextLaunch <- false
+                        Interlocked.Exchange(&isPausedFlag, 1) |> ignore
+                        events.Publish(HubEvents.SessionPaused true)
+                    else
+                        Interlocked.Exchange(&isPausedFlag, 0) |> ignore
                     publishDiagnostic HubEvents.Info
                         (sprintf "session %s started — map=%s vs %s (MapGrid=%s, metalSpots=%d)"
                             (rs.Id.ToString("N").Substring(0, 8))
@@ -170,7 +196,7 @@ module SessionManager =
 
         member _.Frames: IObservable<GameFrame> = fanOut :> IObservable<GameFrame>
 
-        member this.Launch(config: LobbyConfig.LobbyConfig) : Result<unit, string> =
+        member this.Launch(config: LobbyConfig.LobbyConfig, startPaused: bool) : Result<unit, string> =
             if Volatile.Read(&disposed) <> 0 then
                 Result.Error "session manager has been disposed"
             else
@@ -190,6 +216,7 @@ module SessionManager =
                         | Result.Error err ->
                             Result.Error (sprintf "toEngineConfig failed: %s" (LobbyConfig.formatError err))
                         | Ok engineCfg ->
+                            startPausedForNextLaunch <- startPaused
                             transitionTo (Starting validated)
                             startSessionBackground validated engineCfg
                             Ok ()
@@ -197,8 +224,20 @@ module SessionManager =
         member _.SetSpeed(speed: float32) =
             events.Publish(HubEvents.EngineSpeedChanged speed)
 
-        member _.SetPaused(paused: bool) =
-            events.Publish(HubEvents.SessionPaused paused)
+        member _.IsPaused =
+            Volatile.Read(&isPausedFlag) <> 0
+
+        member this.SetPaused(paused: bool) =
+            let current = this.IsPaused
+            if current = paused then () else
+            match this.State with
+            | Running _ ->
+                Interlocked.Exchange(&isPausedFlag, if paused then 1 else 0) |> ignore
+                events.Publish(HubEvents.SessionPaused paused)
+            | _ -> ()
+
+        member this.TogglePause() =
+            this.SetPaused(not this.IsPaused)
 
         member this.End() =
             if Volatile.Read(&disposed) <> 0 then () else

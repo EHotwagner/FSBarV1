@@ -61,6 +61,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-17
 - F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced. (034-repo-cleanup)
 - Filesystem only — committed `.baseline` text files, `viz-presets/*.json`, `bots/trainer/map-cache/*.json`. No persistence format changes. (034-repo-cleanup)
 - F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FSBar.Client, FSBar.Viz, FSBar.SyntheticData (in-repo), FSBar.Proto (in-repo, extended with `proto/hub/scripting.proto`), SkiaViewer 1.1.3-dev, Grpc.AspNetCore 2.67.0, Grpc.Core.Api 2.67.0, FsGrpc 1.0.6, xUnit 2.9.x. Bundled HighBarV2 proxy under `proxy/bundled/<version>/`. (035-central-gui-hub)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Hub`, (038-hub-viewer-fixes)
+- `$XDG_CONFIG_HOME/fsbar-hub/settings.json` — one additive (038-hub-viewer-fixes)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -130,6 +132,57 @@ Hotkeys in `GameViz`: `W` weapon ranges, `L` sight, `C` command queue,
 `UnitGlyph.statusLine` projects the active overlays to a `WLCN`-ordered
 string for the status-line widget.
 
+## Unit display adapter + encyclopedia data (feature 038)
+
+`FSBar.Viz.UnitDisplayAdapter` is the single source-of-truth
+constructor for `UnitDisplay` values across every Hub surface (Viewer
+tab, Units-tab encyclopedia, Style-tab preview). Every caller that
+hands a `UnitDisplay` to `UnitGlyph.buildUnit` must go through one of
+its three constructors (FR-002):
+
+- `ofTrackedUnit: defCache -> teamId -> unitId -> TrackedUnit -> UnitDisplay`
+- `ofTrackedEnemy: defCache -> enemyId -> TrackedEnemy -> UnitDisplay`
+- `ofEncyclopediaEntry: EncyclopediaEntry -> pinnedFootprint:float32 -> UnitDisplay`
+
+The adapter classifies via the same `UnitGlyph.classifyShape` /
+`classifyTier` / `classifyFaction` helpers the encyclopedia uses, with
+`canMove = m.canFly || m.movementClass <> None`. `GameViz.resolveDefPropsFromBarData`
+also unifies on this derivation so standalone GameViz and
+Hub-Viewer-via-SceneBuilder produce byte-identical glyphs.
+
+`FSBar.Viz.EncyclopediaData` holds the `EncyclopediaEntry` record and
+`buildFromBarData` materialiser lifted out of
+`FSBar.Hub.App.Tabs.EncyclopediaTab`, so the adapter and the Units-tab
+consume one type.
+
+`SceneBuilder.buildSceneHeadlessSized` / `buildSceneHeadlessView`
+gained a `defCache: UnitDefCache option` parameter; `None` keeps the
+legacy placeholder path. The hub's `ViewerTab` threads
+`Some state.UnitDefs` through so on-field glyphs are classified
+identically to the encyclopedia.
+
+### Hub pause + Start-paused (feature 038)
+
+`SessionManager.Launch(config, startPaused)` issues a single `/pause`
+chat command on the first `Running` transition when `startPaused = true`.
+`SessionManager.IsPaused` reports the hub-known pause state;
+`TogglePause()` backs the Viewer-tab ⏸/▶ button. Note the known drift:
+if the user types `/pause` in BAR's native UI, the hub's flag doesn't
+reconcile — click the button twice to recover.
+
+`HubSettings` carries `StartPausedDefault: bool` (default `true`) and
+`LaunchGraphicalViewerDefault: bool` (default `false`). Both are
+user-togglable via checkboxes on the Setup tab and persist across Hub
+restarts in `$XDG_CONFIG_HOME/fsbar-hub/settings.json`.
+
+### Direction triangle (feature 038 US4)
+
+`UnitGlyph.buildUnit`'s facing pip is a 4-command triangle path whose
+apex tracks `UnitDisplay.HeadingRadians`. Suppressed for
+`MovementShape.Building` (FR-010). Static previews pass
+`HeadingRadians = 0.0f` and inherit the canonical east-facing
+orientation of the shape outline (FR-010a).
+
 ## Style configurator (feature 033-viz-style-configurator)
 
 Press `P` in the live viewer to toggle a 280-pixel side panel on the
@@ -171,9 +224,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 038-hub-viewer-fixes: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Hub`,
 - 035-central-gui-hub: Shipped the FSBar Hub (`FSBar.Hub` core library + `FSBar.Hub.App` SkiaViewer executable + `proto/hub/scripting.proto` gRPC contract). Six tabs — Setup / Viewer / Units / Style / Cfg / gRPC — share a live `VizConfig` and `SessionManager`, with a Kestrel-hosted `ScriptingService` on `127.0.0.1:5021` for external clients. Bundled HighBarV2 proxy committed at `proxy/bundled/0.1/`; `scripts/refresh-bundled-proxy.sh` bumps it. W/L/C/N hotkeys route through `GameViz` overlay accessors. 75 unit tests + 3 live integration tests green. `Grpc.AspNetCore 2.67.0` + `Grpc.Core.Api 2.67.0` added to the dependency graph; no other new packages.
 - 034-repo-cleanup: Added F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced.
-- 033-viz-style-configurator: Added F# 9 on .NET 10.0 + FSBar.Viz (in-repo), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6, System.Text.Json (BCL)
 
 
 <!-- MANUAL ADDITIONS START -->

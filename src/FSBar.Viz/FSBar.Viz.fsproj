@@ -28,6 +28,10 @@
     <Compile Include="UnitLabels.generated.fs" />
     <Compile Include="UnitGlyph.fsi" />
     <Compile Include="UnitGlyph.fs" />
+    <Compile Include="EncyclopediaData.fsi" />
+    <Compile Include="EncyclopediaData.fs" />
+    <Compile Include="UnitDisplayAdapter.fsi" />
+    <Compile Include="UnitDisplayAdapter.fs" />
     <Compile Include="SyntheticDataAdapter.fsi" />
     <Compile Include="SyntheticDataAdapter.fs" />
     <Compile Include="ColorMaps.fsi" />

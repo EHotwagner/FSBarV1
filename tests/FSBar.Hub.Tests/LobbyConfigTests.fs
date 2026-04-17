@@ -3,6 +3,7 @@ module FSBar.Hub.Tests.LobbyConfigTests
 open System
 open System.IO
 open Xunit
+open FSBar.Client
 open FSBar.Hub
 open FSBar.Hub.LobbyConfig
 
@@ -199,6 +200,57 @@ let ``toEngineConfig rejects >2 teams`` () =
     match LobbyConfig.toEngineConfig install lobby with
     | Result.Error(AdapterUnsupportedShape _) -> ()
     | other -> Assert.Fail(sprintf "expected AdapterUnsupportedShape, got %A" other)
+
+[<Fact>]
+let ``toEngineConfig picks Headless mode when LaunchGraphicalViewer=false (feature 038 FR-007)`` () =
+    use fake = new FakeInstall()
+    fake.AddMap("Avalanche 3.4")
+    fake.AddAi("HighBarV2"); fake.AddAi("BARb")
+    let install = fake.Resolve()
+    let lobby = happyLobby "Avalanche 3.4"
+    Assert.False(lobby.LaunchGraphicalViewer)
+    match LobbyConfig.toEngineConfig install lobby with
+    | Ok ec ->
+        Assert.Equal(EngineMode.Headless, ec.Mode)
+        Assert.Equal("", ec.AppImagePath)
+    | Result.Error err ->
+        Assert.Fail(sprintf "toEngineConfig failed: %s" (LobbyConfig.formatError err))
+
+[<Fact>]
+let ``toEngineConfig picks Graphical mode + AppImagePath when LaunchGraphicalViewer=true (feature 038 FR-005/FR-006)`` () =
+    use fake = new FakeInstall()
+    fake.AddMap("Avalanche 3.4")
+    fake.AddAi("HighBarV2"); fake.AddAi("BARb")
+    fake.AddGraphicalBinary()
+    let install = fake.Resolve()
+    let lobby = { happyLobby "Avalanche 3.4" with LaunchGraphicalViewer = true }
+    match LobbyConfig.toEngineConfig install lobby with
+    | Ok ec ->
+        Assert.Equal(EngineMode.Graphical, ec.Mode)
+        Assert.EndsWith("spring", ec.AppImagePath)
+        Assert.Contains(install.ActiveEngine.EngineDir, ec.AppImagePath)
+    | Result.Error err ->
+        Assert.Fail(sprintf "toEngineConfig failed: %s" (LobbyConfig.formatError err))
+
+[<Fact>]
+let ``validate rejects LaunchGraphicalViewer=true when graphical binary missing (feature 038 FR-008)`` () =
+    // Covered indirectly by the existing `GraphicalBinaryMissing` test
+    // — here we assert the error specifically carries an engine version
+    // string so SetupTab can format an actionable message.
+    use fake = new FakeInstall()
+    fake.AddMap("Avalanche 3.4")
+    fake.AddAi("HighBarV2"); fake.AddAi("BARb")
+    // Deliberately do NOT add graphical binary.
+    let install = fake.Resolve()
+    let lobby = { happyLobby "Avalanche 3.4" with LaunchGraphicalViewer = true }
+    match LobbyConfig.validate install lobby with
+    | Result.Error errs ->
+        Assert.Contains(
+            errs,
+            function
+            | GraphicalBinaryMissing v -> v = install.ActiveEngine.Version
+            | _ -> false)
+    | Ok _ -> Assert.Fail("graphical binary missing should fail validation")
 
 [<Fact>]
 let ``toEngineConfig rejects team 0 non-HighBarV2 AI`` () =

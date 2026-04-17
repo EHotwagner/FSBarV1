@@ -56,7 +56,9 @@ let main _argv =
             Environment.SetEnvironmentVariable("FSBAR_ENGINE_WRAPPER", defaultWrapper)
 
     // --- Load settings + environment detection -----------------------------
-    let settings = HubSettings.load ()
+    // Settings is mutable so SetupTab toggles (Start paused, Launch
+    // graphical engine) can persist without a full reload.
+    let mutable settings = HubSettings.load ()
     let bus = HubEvents.create ()
 
     let barInstall, initialBanner =
@@ -92,9 +94,18 @@ let main _argv =
 
     // Setup-tab state: only meaningful when BAR was detected. When we
     // have no install the Setup pane falls back to the placeholder
-    // diagnostic block.
+    // diagnostic block. Seed the lobby's `LaunchGraphicalViewer`
+    // from `HubSettings.LaunchGraphicalViewerDefault` so persisted
+    // preference (feature 038 FR-005) takes effect on every startup.
     let mutable setupState : SetupTab.SetupTabState option =
-        barInstall |> Option.map SetupTab.init
+        barInstall
+        |> Option.map (fun install ->
+            let initial = SetupTab.init install
+            { initial with
+                Lobby =
+                    { initial.Lobby with
+                        LaunchGraphicalViewer = settings.LaunchGraphicalViewerDefault } }
+            |> SetupTab.validate install)
 
     // Live VizConfig shared by ViewerTab + ConfiguratorTab. Starts
     // from VizDefaults.defaultConfig and mutates as the user edits
@@ -250,13 +261,17 @@ let main _argv =
         match tab with
         | HubTab.Setup ->
             match setupState with
-            | Some st -> SetupTab.render st cx cy cw ch
+            | Some st -> SetupTab.render st settings cx cy cw ch
             | None ->
                 placeholderBlock
                     "Setup — configure your next session"
                     "BAR install not detected — no lobby builder surface."
         | HubTab.Viewer ->
-            ViewerTab.render sessState vizConfig viewerViewState cx cy cw ch
+            let paused =
+                sessions
+                |> Option.map (fun sm -> sm.IsPaused)
+                |> Option.defaultValue false
+            ViewerTab.render sessState vizConfig viewerViewState paused cx cy cw ch
         | HubTab.Configurator ->
             ConfiguratorTab.render configuratorState vizConfig cx cy cw ch
         | HubTab.Encyclopedia ->
@@ -340,7 +355,7 @@ let main _argv =
                         let (cx, cy, cw, ch) = contentRect ()
                         match activeTab, setupState, barInstall with
                         | HubTab.Setup, Some st, Some install ->
-                            match SetupTab.handleMouse st x y cx cy cw ch with
+                            match SetupTab.handleMouse st settings x y cx cy cw ch with
                             | Some (SetupTab.SetupTabAction.SelectMap name) ->
                                 let lobby = { st.Lobby with MapName = name }
                                 setupState <- Some (SetupTab.validate install { st with Lobby = lobby })
@@ -352,12 +367,22 @@ let main _argv =
                                     setupState <-
                                         Some { st with LastLaunchError = Some "no BAR install detected" }
                                 | Some sm ->
-                                    match sm.Launch st.Lobby with
+                                    match sm.Launch(st.Lobby, settings.StartPausedDefault) with
                                     | Ok () ->
                                         setupState <- Some { st with LastLaunchError = None }
                                         activeTab <- HubTab.Viewer
                                     | Result.Error msg ->
                                         setupState <- Some { st with LastLaunchError = Some msg }
+                            | Some (SetupTab.SetupTabAction.ToggleStartPaused v) ->
+                                settings <- { settings with StartPausedDefault = v }
+                                HubSettings.save settings |> ignore
+                            | Some (SetupTab.SetupTabAction.ToggleGraphicalEngine v) ->
+                                settings <- { settings with LaunchGraphicalViewerDefault = v }
+                                HubSettings.save settings |> ignore
+                                let updated =
+                                    { st with
+                                        Lobby = { st.Lobby with LaunchGraphicalViewer = v } }
+                                setupState <- Some (SetupTab.validate install updated)
                             | None -> ()
                         | HubTab.Configurator, _, _ ->
                             let (ns, action) =
@@ -481,10 +506,18 @@ let main _argv =
                                 | None -> ()
                             | None -> ()
                         | HubTab.Viewer, _, _ ->
-                            // Left-click inside the Viewer content rect
-                            // starts a pan drag. Subsequent MouseMove
-                            // events update OriginX/Y; MouseUp ends it.
-                            if x >= cx && x < cx + cw && y >= cy && y < cy + ch then
+                            // Feature 038 FR-004b: hit-test the pause
+                            // button first, then fall through to pan.
+                            let (bx, by, bw, bh) =
+                                ViewerTab.pauseButtonRect cx cy cw ch
+                            if x >= bx && x < bx + bw && y >= by && y < by + bh then
+                                match sessions with
+                                | Some sm -> sm.TogglePause()
+                                | None -> ()
+                            elif x >= cx && x < cx + cw && y >= cy && y < cy + ch then
+                                // Left-click inside the Viewer content rect
+                                // starts a pan drag. Subsequent MouseMove
+                                // events update OriginX/Y; MouseUp ends it.
                                 viewerDragStart <- Some (x, y)
                                 viewerDragOrigin <-
                                     Some (viewerViewState.Value.OriginX, viewerViewState.Value.OriginY)
@@ -646,7 +679,7 @@ let main _argv =
             match setupState, sessions with
             | Some st, Some sm when st.Errors.IsEmpty ->
                 eprintfn "[hub] auto-launch: attempting Launch"
-                match sm.Launch st.Lobby with
+                match sm.Launch(st.Lobby, settings.StartPausedDefault) with
                 | Ok () ->
                     activeTab <- HubTab.Viewer
                     trigger ()

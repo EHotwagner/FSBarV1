@@ -13,6 +13,8 @@ module SetupTab =
         | SelectMap of mapName: string
         | ScrollMapList of offset: float32
         | Launch
+        | ToggleStartPaused of startPaused: bool
+        | ToggleGraphicalEngine of graphical: bool
 
     /// One row in the map picker. `EngineName` is what the engine
     /// registered for this archive (what the start script must use);
@@ -129,6 +131,24 @@ module SetupTab =
         let y = contentY + contentH - launchButtonHeight - 16.0f
         sx, y, sw, launchButtonHeight
 
+    // Feature 038: two checkboxes above the Launch button.
+    let private checkboxSize : float32 = 18.0f
+    let private checkboxLabelGap : float32 = 8.0f
+
+    let private startPausedRect
+            (contentX: float32) (contentY: float32)
+            (contentW: float32) (contentH: float32) =
+        let lx, ly, _, _ = launchButtonRect contentX contentY contentW contentH
+        let y = ly - checkboxSize - 16.0f
+        lx + 8.0f, y, checkboxSize, checkboxSize
+
+    let private graphicalEngineRect
+            (contentX: float32) (contentY: float32)
+            (contentW: float32) (contentH: float32) =
+        let spx, spy, _, _ = startPausedRect contentX contentY contentW contentH
+        let y = spy - checkboxSize - 8.0f
+        spx, y, checkboxSize, checkboxSize
+
     // --- Render --------------------------------------------------------
 
     let private renderHeader
@@ -223,8 +243,35 @@ module SetupTab =
         [ Scene.rect x y w h bg
           Scene.text label (x + w / 2.0f - 40.0f) (y + h * 0.66f) 17.0f textColor ]
 
+    let private checkboxFill = Scene.fill (SKColor(0x2buy, 0x38uy, 0x52uy, 0xffuy))
+    let private checkboxBorder = Scene.stroke (SKColor(0x7auy, 0x9fuy, 0xd5uy, 0xffuy)) 1.5f
+    let private checkmark = Scene.fill (SKColor(0x7auy, 0xe0uy, 0xa0uy, 0xffuy))
+
+    let private renderCheckbox
+            (x: float32) (y: float32) (size: float32)
+            (isChecked: bool) (label: string) : Element list =
+        let box = Scene.rect x y size size checkboxFill
+        let border = Scene.rect x y size size checkboxBorder
+        let mark =
+            if isChecked then
+                let pad = size * 0.25f
+                [ Scene.rect (x + pad) (y + pad) (size - pad * 2.0f) (size - pad * 2.0f) checkmark ]
+            else []
+        let text = Scene.text label (x + size + checkboxLabelGap) (y + size * 0.8f) 14.0f bodyText
+        box :: border :: mark @ [ text ]
+
+    let private renderSettingsCheckboxes
+            (settings: HubSettings.HubSettings)
+            (contentX: float32) (contentY: float32)
+            (contentW: float32) (contentH: float32) : Element list =
+        let spx, spy, _, _ = startPausedRect contentX contentY contentW contentH
+        let gx, gy, _, _ = graphicalEngineRect contentX contentY contentW contentH
+        (renderCheckbox spx spy checkboxSize settings.StartPausedDefault "Start paused")
+        @ (renderCheckbox gx gy checkboxSize settings.LaunchGraphicalViewerDefault "Launch graphical engine")
+
     let render
             (state: SetupTabState)
+            (settings: HubSettings.HubSettings)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : Element list =
@@ -232,6 +279,7 @@ module SetupTab =
             renderHeader state contentX contentY
             renderMapList state contentX contentY contentW contentH
             renderSummaryPanel state contentX contentY contentW contentH
+            renderSettingsCheckboxes settings contentX contentY contentW contentH
             renderLaunchButton state contentX contentY contentW contentH ]
 
     // --- Input ---------------------------------------------------------
@@ -241,13 +289,20 @@ module SetupTab =
 
     let handleMouse
             (state: SetupTabState)
+            (settings: HubSettings.HubSettings)
             (x: float32) (y: float32)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : SetupTabAction option =
         let launchR = launchButtonRect contentX contentY contentW contentH
         let mapR = mapPanelRect contentX contentY contentW contentH
-        if hit launchR x y then
+        let startPausedR = startPausedRect contentX contentY contentW contentH
+        let graphicalR = graphicalEngineRect contentX contentY contentW contentH
+        if hit startPausedR x y then
+            Some (SetupTabAction.ToggleStartPaused (not settings.StartPausedDefault))
+        elif hit graphicalR x y then
+            Some (SetupTabAction.ToggleGraphicalEngine (not settings.LaunchGraphicalViewerDefault))
+        elif hit launchR x y then
             if state.Errors.IsEmpty then Some SetupTabAction.Launch
             else None
         elif hit mapR x y then

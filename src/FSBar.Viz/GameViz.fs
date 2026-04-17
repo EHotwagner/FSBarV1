@@ -36,7 +36,17 @@ module GameViz =
     let resolveDefPropsFromBarData (name: string) : DefProps =
         match Map.tryFind name barDataByName.Value with
         | Some d ->
-            let canMove = match d.movement with Some m -> m.canMove | None -> false
+            // Feature 038 FR-002: unify canMove derivation with
+            // `FSBar.Viz.UnitDisplayAdapter` so standalone GameViz and
+            // Hub-Viewer-via-SceneBuilder produce byte-identical glyphs
+            // for the same internal name. Previous derivation used
+            // `m.canMove` directly; the encyclopedia path has always
+            // used `canFly || movementClass <> None` and is the
+            // reference per spec 038.
+            let canMove =
+                match d.movement with
+                | Some m -> m.canFly || (m.movementClass <> None)
+                | None -> false
             let canFly = match d.movement with Some m -> m.canFly | None -> false
             let mClass = match d.movement with Some m -> m.movementClass | None -> None
             let weaponRanges =

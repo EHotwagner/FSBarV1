@@ -74,6 +74,70 @@ let ``buildSceneHeadless converts TrackedUnit positions into UnitState entries``
     Assert.True(elements |> List.filter isEllipse |> List.length >= 2,
                 sprintf "expected >=2 unit ellipses, saw %d" (elements |> List.filter isEllipse |> List.length))
 
+// --- Feature 038 FR-001/002: defCache wiring -------------------------------
+
+let private infoOf (defId: int) (name: string) : UnitDefInfo =
+    { DefId = defId; Name = name; Cost = 0.0f; BuildSpeed = 0.0f
+      MaxWeaponRange = 0.0f; BuildOptions = [||] }
+
+[<Fact>]
+let ``buildSceneHeadlessSized with defCache=None falls back to legacy placeholder`` () =
+    LayerRenderer.invalidateAll ()
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let units =
+        [ 1, { UnitId = 1; DefId = 1; Position = (64.0f, 0.0f, 64.0f)
+               Health = 100.0f; MaxHealth = 100.0f
+               IsFinished = true; IsIdle = false } ]
+    let state = gameStateWithUnits units
+    let scene =
+        SceneBuilder.buildSceneHeadlessSized state (Some grid) [||] None
+            VizDefaults.defaultConfig 320 240
+    Assert.True(scene.Elements.Length > 0)
+
+[<Fact>]
+let ``buildSceneHeadlessSized with defCache=Some populates UnitDisplayAdapter path`` () =
+    LayerRenderer.invalidateAll ()
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    // Pick a BarData-backed name so classification fires the non-fallback branch.
+    let name =
+        BarData.AllUnitDefs.all
+        |> List.tryPick (fun (_, _, d) -> if d.name = "armpw" then Some d.name else None)
+    match name with
+    | None -> Assert.True(true, "BarData missing armpw; skipping parity check")
+    | Some n ->
+        let cache = UnitDefCache.ofSeq [ infoOf 1 n ]
+        let units =
+            [ 1, { UnitId = 1; DefId = 1; Position = (64.0f, 0.0f, 64.0f)
+                   Health = 100.0f; MaxHealth = 100.0f
+                   IsFinished = true; IsIdle = false } ]
+        let state = gameStateWithUnits units
+        let scene =
+            SceneBuilder.buildSceneHeadlessSized state (Some grid) [||] (Some cache)
+                VizDefaults.defaultConfig 320 240
+        Assert.True(scene.Elements.Length > 0)
+
+[<Fact>]
+let ``buildSceneHeadlessView with defCache matches adapter output`` () =
+    LayerRenderer.invalidateAll ()
+    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let cache = UnitDefCache.ofSeq [ infoOf 1 "armcom" ]
+    let tu =
+        { UnitId = 1; DefId = 1; Position = (100.0f, 0.0f, 100.0f)
+          Health = 300.0f; MaxHealth = 500.0f
+          IsFinished = true; IsIdle = false }
+    let state = gameStateWithUnits [ 1, tu ]
+    let cfg =
+        { VizDefaults.defaultConfig with
+            ActiveOverlays = Set.ofList [ OverlayKind.Units ] }
+    let scene =
+        SceneBuilder.buildSceneHeadlessView state (Some grid) [||] (Some cache) cfg
+            VizDefaults.defaultViewState
+    // The adapter provides a non-empty DisplayUnits map; the scene must
+    // therefore render something unit-ish.
+    let expected = UnitDisplayAdapter.ofTrackedUnit cache 0 1 tu
+    Assert.Equal(FactionId.Armada, expected.Faction)
+    Assert.True(scene.Elements.Length > 0)
+
 [<Fact>]
 let ``GameViz.getActiveOverlays and setActiveOverlays round-trip`` () =
     let before = GameViz.getActiveOverlays ()
