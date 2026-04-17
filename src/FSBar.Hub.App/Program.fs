@@ -23,6 +23,13 @@ module FSBar.Hub.App.Program
 
 open System
 open System.Threading
+open System.Threading.Tasks
+open Microsoft.AspNetCore.Builder
+open Microsoft.AspNetCore.Hosting
+open Microsoft.AspNetCore.Server.Kestrel.Core
+open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Hosting
+open Microsoft.Extensions.Logging
 open SkiaSharp
 open SkiaViewer
 open Silk.NET.Input
@@ -78,6 +85,69 @@ let main _argv =
     // swatches / sliders / toggles in the Configurator tab.
     let mutable vizConfig = FSBar.Viz.VizDefaults.defaultConfig
     let mutable configuratorState = ConfiguratorTab.init ()
+
+    // --- gRPC scripting service (T063/T064) -------------------------------
+    // Registered only when we have a real BAR install + SessionManager.
+    // Hosted on a background Kestrel task so it doesn't block the main
+    // UI thread. Bound to 127.0.0.1:<GrpcPort> with HTTP/2 cleartext.
+    let grpcEndpointUrl = sprintf "http://127.0.0.1:%d" settings.GrpcPort
+
+    let grpcService : ScriptingHub.ScriptingService option =
+        match barInstall, sessions with
+        | Some install, Some sm ->
+            // Bundled proxy is surfaced on GetSessionStatusResponse
+            // but is not required for the service to run. When the
+            // resolver hasn't found a complete bundle (e.g. a fresh
+            // checkout where refresh-bundled-proxy.sh hasn't been
+            // run), substitute a sentinel so the gRPC contract still
+            // returns a sensible "unknown" string.
+            let bundleInfo =
+                bundled
+                |> Option.defaultValue
+                    { BundledProxy.Version = "unknown"
+                      BundledProxy.BundleRoot = ""
+                      BundledProxy.LibSkirmishAiPath = ""
+                      BundledProxy.AiInfoLuaPath = ""
+                      BundledProxy.AiOptionsLuaPath = "" }
+            let unitDefsThunk () =
+                match sm.State with
+                | SessionManager.Running rs ->
+                    try rs.BarClient.GameState.UnitDefs
+                    with _ -> FSBar.Client.UnitDefCache.empty
+                | _ -> FSBar.Client.UnitDefCache.empty
+            Some (new ScriptingHub.ScriptingService(
+                    sm, bus.Sink, unitDefsThunk, install, bundleInfo,
+                    settings.GrpcPort, ScriptingHub.defaults))
+        | _ -> None
+
+    let grpcHostTask : Task =
+        match grpcService with
+        | None -> Task.CompletedTask
+        | Some svc ->
+            try
+                let webBuilder = WebApplication.CreateBuilder()
+                // Mute ASP.NET Core's default stdout spam so the hub's
+                // own stderr diagnostics stay readable.
+                webBuilder.Logging.ClearProviders() |> ignore
+                webBuilder.Logging.AddFilter(fun _ -> false) |> ignore
+                webBuilder.Services.AddGrpc() |> ignore
+                webBuilder.Services.AddSingleton<ScriptingHub.ScriptingService>(svc)
+                |> ignore
+                webBuilder.WebHost.ConfigureKestrel(fun opts ->
+                    opts.ListenLocalhost(settings.GrpcPort, fun lo ->
+                        lo.Protocols <- HttpProtocols.Http2))
+                |> ignore
+                let app = webBuilder.Build()
+                app.MapGrpcService<ScriptingHub.ScriptingService>() |> ignore
+                eprintfn "[hub] gRPC scripting service listening on %s" grpcEndpointUrl
+                app.RunAsync() :> Task
+            with ex ->
+                eprintfn "[hub] gRPC host failed to start: %s" ex.Message
+                bus.Sink.Publish(
+                    HubEvents.DiagnosticsLine(
+                        HubEvents.Error,
+                        sprintf "gRPC host failed to start: %s" ex.Message))
+                Task.CompletedTask
 
     // --- Paints ------------------------------------------------------------
     let contentBgColor = SKColor(0x0cuy, 0x10uy, 0x18uy, 0xffuy)
@@ -138,7 +208,7 @@ let main _argv =
         | HubTab.Settings ->
             placeholderBlock "Settings — BAR install, proxy, ports" "Settings rows land in T040."
         | HubTab.Grpc ->
-            placeholderBlock "gRPC — scripting clients + endpoint" "gRPC tab + scripting service register in T064/T065."
+            GrpcTab.render grpcService grpcEndpointUrl cx cy cw ch
 
     let renderScene () : Scene =
         let sessState =
@@ -286,6 +356,24 @@ let main _argv =
                             | None -> ()
                         | _ -> ()
             trigger ()
+        | InputEvent.KeyDown key ->
+            // FR-017: W/L/C/N toggle the four unit-glyph overlays in
+            // the Viewer tab. Keys are processed regardless of active
+            // tab so a user on Setup can still pre-arm overlays for
+            // the next session.
+            let toggle (k: FSBar.Viz.OverlayKind) =
+                let current = vizConfig.ActiveOverlays
+                let next =
+                    if current.Contains k then current.Remove k
+                    else current.Add k
+                vizConfig <- { vizConfig with ActiveOverlays = next }
+            match key with
+            | Key.W -> toggle FSBar.Viz.OverlayKind.WeaponRanges
+            | Key.L -> toggle FSBar.Viz.OverlayKind.SightRanges
+            | Key.C -> toggle FSBar.Viz.OverlayKind.CommandQueue
+            | Key.N -> toggle FSBar.Viz.OverlayKind.FullNames
+            | _ -> ()
+            trigger ()
         | InputEvent.MouseScroll(delta, x, y) ->
             let (cx, cy, cw, ch) = contentRect ()
             match activeTab, setupState with
@@ -399,6 +487,12 @@ let main _argv =
     try (viewer :> IDisposable).Dispose() with _ -> ()
 
     // --- Teardown --------------------------------------------------------
+    grpcService |> Option.iter (fun svc ->
+        try (svc :> IDisposable).Dispose() with _ -> ())
+    // Kestrel host task is left to exit on process shutdown — it has
+    // no clean-shutdown hook registered and the hub is on its way
+    // out.
+    ignore grpcHostTask
     sessions |> Option.iter (fun sm ->
         try sm.End() with _ -> ()
         try (sm :> IDisposable).Dispose() with _ -> ())
