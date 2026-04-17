@@ -17,6 +17,17 @@ module GameViz =
     val toggleOverlay: overlay: OverlayKind -> unit
     val enableOverlay: overlay: OverlayKind -> unit
     val disableOverlay: overlay: OverlayKind -> unit
+    /// Returns the current set of active overlays. Thread-safe; takes a
+    /// snapshot under the same lock the `toggleOverlay` / `enableOverlay`
+    /// / `disableOverlay` mutators hold. Added for feature
+    /// 035-central-gui-hub (FR-017): hub chrome reads this each frame
+    /// to reflect the in-viewer hotkey state in its own toolbar.
+    val getActiveOverlays: unit -> Set<OverlayKind>
+    /// Replaces the current overlay set wholesale. Use this when the
+    /// hub chrome's toolbar is the authoritative input, so a single
+    /// click updates many overlays atomically rather than through a
+    /// series of toggle calls. Thread-safe.
+    val setActiveOverlays: overlays: Set<OverlayKind> -> unit
     val setConfig: cfg: VizConfig -> unit
     val updateConfig: f: (VizConfig -> VizConfig) -> unit
     val setColorScheme: layer: LayerKind -> scheme: ColorScheme -> unit
