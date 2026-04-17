@@ -1,0 +1,76 @@
+local options = {
+    {
+        key    = 'socket_path',
+        name   = 'Socket Path',
+        desc   = 'Unix domain socket path for AI communication',
+        type   = 'string',
+        def    = '/tmp/highbar.sock',
+    },
+    {
+        key    = 'timeout_ms',
+        name   = 'Frame Timeout (ms)',
+        desc   = 'Max time to wait for AI response per frame',
+        type   = 'number',
+        def    = '25',
+        min    = '1',
+        max    = '1000',
+    },
+    {
+        key    = 'log_level',
+        name   = 'Log Level',
+        desc   = 'Logging verbosity (0=ERROR, 1=WARN, 2=INFO, 3=DEBUG)',
+        type   = 'number',
+        def    = '2',
+        min    = '0',
+        max    = '3',
+    },
+    {
+        key    = 'frame_mode',
+        name   = 'Frame Mode',
+        desc   = 'Event delivery mode (0=INDIVIDUAL, 1=BATCHED)',
+        type   = 'number',
+        def    = '1',
+    },
+    {
+        key    = 'push_state',
+        name   = 'Push State',
+        desc   = 'Include game state snapshot with frame updates',
+        type   = 'bool',
+        def    = 'false',
+    },
+    {
+        key    = 'max_message_size',
+        name   = 'Max Message Size',
+        desc   = 'Maximum protobuf message size in bytes',
+        type   = 'number',
+        def    = '8388608',
+        min    = '65536',
+        max    = '16777216',
+    },
+    {
+        key    = 'transport',
+        name   = 'Transport',
+        desc   = 'Transport type (0=UNIX, 1=TCP)',
+        type   = 'number',
+        def    = '0',
+    },
+    {
+        key    = 'tcp_port',
+        name   = 'TCP Port',
+        desc   = 'TCP port for loopback transport',
+        type   = 'number',
+        def    = '17432',
+        min    = '1024',
+        max    = '65535',
+    },
+    {
+        key    = 'verbose_commands',
+        name   = 'Verbose Per-Command Logging',
+        desc   = 'When enabled, the proxy logs every command dispatched to engine.infolog. ' ..
+                 'Default OFF to avoid bloating infolog files in normal sessions. ' ..
+                 'Override at runtime with HIGHBAR_VERBOSE_COMMANDS=1.',
+        type   = 'bool',
+        def    = 'false',
+    },
+}
+return options
