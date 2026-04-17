@@ -4,11 +4,15 @@
     <Project Path="src/FSBar.Client/FSBar.Client.fsproj" />
     <Project Path="src/FSBar.SyntheticData/FSBar.SyntheticData.fsproj" />
     <Project Path="src/FSBar.Viz/FSBar.Viz.fsproj" />
+    <Project Path="src/FSBar.Hub/FSBar.Hub.fsproj" />
+    <Project Path="src/FSBar.Hub.App/FSBar.Hub.App.fsproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/FSBar.Client.Tests/FSBar.Client.Tests.fsproj" />
     <Project Path="tests/FSBar.SyntheticData.Tests/FSBar.SyntheticData.Tests.fsproj" />
     <Project Path="tests/FSBar.LiveTests/FSBar.LiveTests.fsproj" />
     <Project Path="tests/FSBar.Viz.Tests/FSBar.Viz.Tests.fsproj" />
+    <Project Path="tests/FSBar.Hub.Tests/FSBar.Hub.Tests.fsproj" />
+    <Project Path="tests/FSBar.Hub.LiveTests/FSBar.Hub.LiveTests.fsproj" />
   </Folder>
 </Solution>

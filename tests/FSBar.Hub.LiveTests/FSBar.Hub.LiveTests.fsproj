@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Hub.LiveTests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="PlaceholderTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/FSBar.Hub/FSBar.Hub.fsproj" />
+    <ProjectReference Include="../../src/FSBar.Hub.App/FSBar.Hub.App.fsproj" />
+    <ProjectReference Include="../../src/FSBar.Client/FSBar.Client.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.9.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.*" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

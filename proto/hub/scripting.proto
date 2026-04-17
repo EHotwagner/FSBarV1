@@ -1,0 +1,175 @@
+// Hub Scripting Service contract for FSBar.Hub (feature 035-central-gui-hub).
+//
+// Regenerate with: `cd proto && buf generate`.
+//
+// The generator writes to src/FSBar.Proto/Generated/hub/ — that file is then
+// listed in src/FSBar.Proto/FSBar.Proto.fsproj alongside the existing
+// Generated/highbar/*.gen.fs entries.
+//
+// ---------------------------------------------------------------------------
+// Spec / implementation reconciliation note (Phase 1):
+// ---------------------------------------------------------------------------
+//
+// The spec-side draft at specs/035-central-gui-hub/contracts/hub/scripting.proto
+// references `highbar.GameFrame` and `highbar.UnitDef`. The existing highbar
+// proto bundle only exposes `highbar.Frame` (raw envelope: frame_number,
+// events, team_id) and no UnitDef message — the F# `FSBar.Client.GameFrame`
+// and `FSBar.Client.UnitDefCache` types carry rich decoded state that has no
+// current wire representation.
+//
+// For Phase 1 we stub the missing types as hub-namespace messages so the
+// file compiles end-to-end. Phase 9 (US7) MUST either:
+//   a) add `GameFrame` / `UnitDef` messages to the highbar workspace (proper
+//      protocol widening), or
+//   b) keep them in the hub namespace and document that the hub is the
+//      authoritative schema for the scripting wire format.
+//
+// Until then, `StreamGameFrames` yields a `GameFrameMessage` carrying the
+// raw `highbar.Frame` plus hub-assigned diagnostics (sequence, enqueue ts).
+
+syntax = "proto3";
+
+package fsbar.hub.scripting.v1;
+
+import "highbar/messages.proto";   // highbar.Frame
+import "highbar/commands.proto";   // highbar.AICommand
+
+// -----------------------------------------------------------------------------
+// Service
+// -----------------------------------------------------------------------------
+
+service ScriptingService {
+  // Server-streaming RPC. The hub pushes every frame the embedded viewer
+  // sees to every connected scripting client. When no session is running,
+  // the stream stays open but produces no messages until a session starts
+  // (FR-030). Per-client buffering is a bounded channel of 16 with
+  // drop-oldest semantics; cumulative drops > 32 trigger detach (R3).
+  rpc StreamGameFrames(StreamGameFramesRequest) returns (stream GameFrameMessage);
+
+  // Unary RPC. The client submits one command; the hub forwards it to the
+  // active session's proxy command queue (FR-027). If no session is active,
+  // returns NOT_FOUND.
+  rpc SendCommand(SendCommandRequest) returns (SendCommandResponse);
+
+  // Unary RPC. Returns the current session status, bundled-proxy version,
+  // BAR install location, and connected-client roster.
+  rpc GetSessionStatus(GetSessionStatusRequest) returns (GetSessionStatusResponse);
+
+  // Unary RPC. Returns one UnitDef by either DefId or internal name.
+  // Backed by FSBar.Client.UnitDefCache; lets scripts avoid carrying their
+  // own BarData dependency (matches the v1 contract scope listed in the
+  // spec's Assumptions).
+  rpc GetUnitDef(GetUnitDefRequest) returns (GetUnitDefResponse);
+}
+
+// -----------------------------------------------------------------------------
+// Messages
+// -----------------------------------------------------------------------------
+
+message StreamGameFramesRequest {
+  // Optional client identifier for diagnostics. If empty, hub assigns a uuid.
+  string client_label = 1;
+
+  // If true, the hub will close the stream when the current session ends
+  // (instead of keeping it open and waiting for the next session).
+  bool close_on_session_end = 2;
+}
+
+message GameFrameMessage {
+  // The raw proxy frame envelope as seen by the embedded viewer.
+  // Phase-9 note: may be widened with decoded state projections.
+  highbar.Frame frame = 1;
+
+  // Hub-assigned monotonic sequence number for this client. Lets clients
+  // detect dropped frames locally (gaps).
+  uint64 client_sequence = 2;
+
+  // Hub-side timestamp (unix millis) when the frame was enqueued for this
+  // client. Useful for measuring fan-out latency.
+  int64 hub_enqueued_at_unix_ms = 3;
+}
+
+message SendCommandRequest {
+  highbar.AICommand command = 1;
+}
+
+message SendCommandResponse {
+  // The frame number on which the hub forwarded the command, or 0 if the
+  // command was queued before the next frame request. Diagnostic only.
+  int32 forwarded_at_frame = 1;
+}
+
+message GetSessionStatusRequest {}
+
+message GetSessionStatusResponse {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    IDLE              = 1;
+    STARTING          = 2;
+    RUNNING           = 3;
+    ENDING            = 4;
+    FAILED            = 5;
+  }
+
+  State state = 1;
+  string bar_data_dir = 2;
+  string active_engine_version = 3;
+  string bundled_proxy_version = 4;
+  int32 grpc_port = 5;
+
+  // Populated when state = RUNNING.
+  optional ActiveSession active_session = 6;
+
+  // Connected scripting clients (including this caller).
+  repeated ConnectedClient clients = 7;
+
+  // The most recent failure, populated when state = FAILED.
+  optional FailureInfo failure = 8;
+}
+
+message ActiveSession {
+  string session_id = 1;          // GUID
+  string map_name = 2;
+  string mode = 3;                // "Skirmish" | "FFA" | "Team"
+  float engine_speed = 4;
+  bool paused = 5;
+  int64 started_at_unix_ms = 6;
+}
+
+message ConnectedClient {
+  string client_id = 1;           // GUID
+  string client_label = 2;
+  string remote_endpoint = 3;
+  int64 attached_at_unix_ms = 4;
+  int32 cumulative_dropped_frames = 5;
+}
+
+message FailureInfo {
+  string reason = 1;
+  // First N kilobytes of the engine's infolog excerpt at failure time (FR-031).
+  string infolog_excerpt = 2;
+}
+
+message GetUnitDefRequest {
+  oneof selector {
+    int32 def_id = 1;
+    string internal_name = 2;
+  }
+}
+
+// UnitDef projection for the scripting wire format. Phase-9 note: may be
+// superseded by a canonical highbar.UnitDef message; kept in hub namespace
+// until that reconciliation happens.
+message UnitDefInfo {
+  int32 def_id = 1;
+  string internal_name = 2;
+  string display_name = 3;
+  int32 metal_cost = 4;
+  int32 energy_cost = 5;
+  int32 build_time = 6;
+  int32 max_health = 7;
+}
+
+message GetUnitDefResponse {
+  optional UnitDefInfo unit_def = 1;
+}

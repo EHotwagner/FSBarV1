@@ -60,6 +60,7 @@ Auto-generated from all feature plans. Last updated: 2026-04-17
 - JSON files on disk (`viz-presets/` directory) for presets (033-viz-style-configurator)
 - F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced. (034-repo-cleanup)
 - Filesystem only — committed `.baseline` text files, `viz-presets/*.json`, `bots/trainer/map-cache/*.json`. No persistence format changes. (034-repo-cleanup)
+- F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FSBar.Client, FSBar.Viz, FSBar.SyntheticData (in-repo), FSBar.Proto (in-repo, extended with `proto/hub/scripting.proto`), SkiaViewer 1.1.3-dev, Grpc.AspNetCore 2.67.0, Grpc.Core.Api 2.67.0, FsGrpc 1.0.6, xUnit 2.9.x. Bundled HighBarV2 proxy under `proxy/bundled/<version>/`. (035-central-gui-hub)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -170,12 +171,36 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 035-central-gui-hub: Added F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + Existing in-repo only —
 - 034-repo-cleanup: Added F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced.
 - 033-viz-style-configurator: Added F# 9 on .NET 10.0 + FSBar.Viz (in-repo), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6, System.Text.Json (BCL)
-- 032-lockfree-viewer-dataflow: Added F# 9 on .NET 10.0 + FSBar.Client (GameState, MapGrid, UnitDefCache), FSBar.Viz (GameViz, SceneBuilder, VizTypes), SkiaViewer 1.1.3-dev, SkiaSharp 2.88.6
 
 
 <!-- MANUAL ADDITIONS START -->
+
+## Hub scripting proto regeneration
+
+`FSBar.Proto` generates F# code from `proto/highbar/*.proto` and
+`proto/hub/scripting.proto` via `cd proto && buf generate`. Generated
+files are committed under `src/FSBar.Proto/Generated/` so a plain
+`dotnet build` works without the plugin installed.
+
+Regenerating requires the `protoc-gen-fsgrpc` plugin on PATH. **No
+prebuilt binary is distributed**, and `FsGrpc.Tools 1.0.6` is not on
+nuget.org. Install from source via the helper script in the sibling
+`fsGRPCSkills` repo:
+
+```bash
+~/tools/fsGRPCSkills/fsgrpc-setup/scripts/install-protoc-gen-fsgrpc.sh
+```
+
+The script clones `dmgtech/fsgrpc@a52b8a7`, patches it to skip optics
+emission (so generated code compiles against `FsGrpc 1.0.6`), publishes
+for the current TFM, and drops a wrapper at `~/.local/bin/protoc-gen-fsgrpc`.
+See the script's `--help` for why the patch is necessary.
+
+After regeneration, verify `dotnet build FSBarV1.slnx` succeeds and that
+the committed `highbar/*.gen.fs` files weren't gratuitously rewritten.
 
 ## FSI MCP Server
 
