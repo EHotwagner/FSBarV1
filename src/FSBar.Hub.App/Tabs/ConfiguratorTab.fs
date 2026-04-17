@@ -21,8 +21,8 @@ module ConfiguratorTab =
         LastPresetResult: Result<string, string> option
     }
 
-    let private headingText = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
-    let private dimText = Scene.fill (SKColor(0x7auy, 0x86uy, 0x9cuy, 0xffuy))
+    let private headingText = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
+    let private dimText = Scene.fill (SKColor(0xb4uy, 0xbduy, 0xccuy, 0xffuy))
     let private panelBg = Scene.fill (SKColor(0x08uy, 0x0buy, 0x12uy, 0xffuy))
     let private divider = Scene.fill (SKColor(0x2auy, 0x33uy, 0x44uy, 0xffuy))
     let private okText = Scene.fill (SKColor(0x7auy, 0xe0uy, 0x8buy, 0xffuy))
@@ -60,20 +60,20 @@ module ConfiguratorTab =
             Scene.group (Some tx) None panelElems
         let headerY = contentY + 22.0f
         let header =
-            [ Scene.text "Style — live visualisation configurator" (contentX + 8.0f) headerY 18.0f headingText
+            [ Scene.text "Style — live visualisation configurator" (contentX + 8.0f) headerY 20.0f headingText
               Scene.text
                 (sprintf "%d preset(s) on disk%s"
                     state.PresetNames.Length
                     (state.ActivePreset
                      |> Option.map (sprintf " · active: %s")
                      |> Option.defaultValue ""))
-                (contentX + 8.0f) (headerY + 20.0f) 12.0f dimText
+                (contentX + 8.0f) (headerY + 20.0f) 14.0f dimText
               // Result toast from the last save/load/delete.
               match state.LastPresetResult with
               | Some (Ok msg) ->
-                  Scene.text (sprintf "✓ %s" msg) (contentX + 8.0f) (headerY + 40.0f) 11.0f okText
+                  Scene.text (sprintf "✓ %s" msg) (contentX + 8.0f) (headerY + 40.0f) 13.0f okText
               | Some (Result.Error msg) ->
-                  Scene.text (sprintf "✗ %s" msg) (contentX + 8.0f) (headerY + 40.0f) 11.0f errText
+                  Scene.text (sprintf "✗ %s" msg) (contentX + 8.0f) (headerY + 40.0f) 13.0f errText
               | None -> () ]
         let dividerEl =
             Scene.rect contentX (headerY + 56.0f) (contentW * 0.45f) 1.0f divider

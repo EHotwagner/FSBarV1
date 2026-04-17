@@ -22,9 +22,9 @@ module SetupTab =
     }
 
     // --- Paints ----------------------------------------------------------
-    let private headingText = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
-    let private bodyText = Scene.fill (SKColor(0xc0uy, 0xcauy, 0xdcuy, 0xffuy))
-    let private dimText = Scene.fill (SKColor(0x7auy, 0x86uy, 0x9cuy, 0xffuy))
+    let private headingText = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
+    let private bodyText = Scene.fill (SKColor(0xf3uy, 0xf5uy, 0xfauy, 0xffuy))
+    let private dimText = Scene.fill (SKColor(0xb4uy, 0xbduy, 0xccuy, 0xffuy))
     let private errorText = Scene.fill (SKColor(0xffuy, 0x7auy, 0x7auy, 0xffuy))
     let private warnText = Scene.fill (SKColor(0xffuy, 0xc0uy, 0x60uy, 0xffuy))
     let private rowBg = Scene.fill (SKColor(0x16uy, 0x1buy, 0x26uy, 0xffuy))
@@ -112,11 +112,11 @@ module SetupTab =
 
     let private renderHeader
             (state: SetupTabState) (contentX: float32) (contentY: float32) =
-        [ Scene.text "Setup — configure your next session" (contentX + 8.0f) (contentY + 22.0f) 18.0f headingText
+        [ Scene.text "Setup — configure your next session" (contentX + 8.0f) (contentY + 22.0f) 20.0f headingText
           Scene.text
             (sprintf "%d maps · %d teams · mode=%A · speed=%.1fx"
                 state.Maps.Length state.Lobby.Teams.Length state.Lobby.Mode state.Lobby.EngineSpeed)
-            (contentX + 8.0f) (contentY + 42.0f) 12.0f dimText ]
+            (contentX + 8.0f) (contentY + 42.0f) 14.0f dimText ]
 
     let private renderMapList
             (state: SetupTabState)
@@ -126,7 +126,7 @@ module SetupTab =
         let selectedDisplay = state.Lobby.MapName
         let rows : Element list =
             [ yield Scene.rect x y w h panelBg
-              yield Scene.text "Map" (x + 8.0f) (y - 6.0f) 12.0f dimText
+              yield Scene.text "Map" (x + 8.0f) (y - 6.0f) 14.0f dimText
               // Determine first visible index.
               let firstIdx = int (state.MapListScroll / mapRowHeight)
               let visibleRows = int (h / mapRowHeight) + 1
@@ -142,7 +142,7 @@ module SetupTab =
                   let label =
                       if display <> stem then sprintf "%s  (%s)" display stem
                       else stem
-                  yield Scene.text label (x + 12.0f) (rowY + mapRowHeight - 8.0f) 12.0f textColor ]
+                  yield Scene.text label (x + 14.0f) (rowY + mapRowHeight - 8.0f) 14.0f textColor ]
         rows
 
     let private renderSummaryPanel
@@ -167,26 +167,26 @@ module SetupTab =
                   state.Lobby.Mode state.Lobby.EngineSpeed state.Lobby.LaunchGraphicalViewer
               yield! teamLines ]
         [ yield Scene.rect x y w h panelBg
-          yield Scene.text "Lobby" (x + 8.0f) (y - 6.0f) 12.0f dimText
+          yield Scene.text "Lobby" (x + 8.0f) (y - 6.0f) 14.0f dimText
           for i in 0 .. lines.Length - 1 do
-              yield Scene.text lines.[i] (x + 12.0f) (y + 22.0f + float32 i * 20.0f) 13.0f bodyText
+              yield Scene.text lines.[i] (x + 14.0f) (y + 22.0f + float32 i * 20.0f) 15.0f bodyText
           // Errors
           let errBaseY = y + 22.0f + float32 lines.Length * 20.0f + 20.0f
           if state.Errors.IsEmpty then
-              yield Scene.text "✓ Lobby validates — ready to launch." (x + 12.0f) errBaseY 12.0f headingText
+              yield Scene.text "✓ Lobby validates — ready to launch." (x + 14.0f) errBaseY 14.0f headingText
           else
               yield Scene.text (sprintf "✗ %d validation error(s):" state.Errors.Length)
-                      (x + 12.0f) errBaseY 12.0f errorText
+                      (x + 14.0f) errBaseY 14.0f errorText
               for i in 0 .. state.Errors.Length - 1 do
                   let msg = LobbyConfig.formatError state.Errors.[i]
                   yield Scene.text (sprintf "  · %s" msg)
-                          (x + 12.0f) (errBaseY + 20.0f + float32 i * 16.0f) 12.0f errorText
+                          (x + 14.0f) (errBaseY + 20.0f + float32 i * 16.0f) 14.0f errorText
           // Last launch error (from SessionManager)
           match state.LastLaunchError with
           | Some err ->
               let launchErrY = errBaseY + 40.0f + float32 (max 1 state.Errors.Length) * 16.0f
               yield Scene.text (sprintf "⚠ last Launch attempt: %s" err)
-                      (x + 12.0f) launchErrY 11.0f warnText
+                      (x + 14.0f) launchErrY 13.0f warnText
           | None -> () ]
 
     let private renderLaunchButton
@@ -199,7 +199,7 @@ module SetupTab =
         let label = if enabled then "Launch →" else "Launch (fix errors first)"
         let textColor = if enabled then headingText else dimText
         [ Scene.rect x y w h bg
-          Scene.text label (x + w / 2.0f - 40.0f) (y + h * 0.66f) 15.0f textColor ]
+          Scene.text label (x + w / 2.0f - 40.0f) (y + h * 0.66f) 17.0f textColor ]
 
     let render
             (state: SetupTabState)

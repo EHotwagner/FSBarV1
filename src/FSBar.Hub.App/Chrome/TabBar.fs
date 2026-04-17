@@ -53,8 +53,8 @@ module TabBar =
     let private bgPaint = Scene.fill (SKColor(0x18uy, 0x1cuy, 0x24uy, 0xffuy))
     let private activeBg = Scene.fill (SKColor(0x2buy, 0x36uy, 0x4buy, 0xffuy))
     let private divider = Scene.fill (SKColor(0x31uy, 0x3buy, 0x4auy, 0xffuy))
-    let private textPaint = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
-    let private textDim = Scene.fill (SKColor(0x8auy, 0x94uy, 0xa6uy, 0xffuy))
+    let private textPaint = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
+    let private textDim = Scene.fill (SKColor(0xb4uy, 0xbduy, 0xccuy, 0xffuy))
 
     /// Index of the tab in `allTabs`.
     let private indexOf (tab: HubTab) : int =
@@ -78,8 +78,8 @@ module TabBar =
               let labelY = y0 + tabHeight * 0.45f
               let subY = y0 + tabHeight * 0.78f
               let labelPaint = if tab = active then textPaint else textDim
-              yield Scene.text lbl 8.0f labelY 13.0f labelPaint
-              yield Scene.text sub 8.0f subY 10.0f textDim
+              yield Scene.text lbl 8.0f labelY 15.0f labelPaint
+              yield Scene.text sub 8.0f subY 12.0f textDim
               // Row divider (except after last tab).
               if i < allTabs.Length - 1 then
                   yield Scene.rect 4.0f (y1 - 0.5f) (Width - 8.0f) 1.0f divider ]

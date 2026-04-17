@@ -55,9 +55,9 @@ module SettingsTab =
 
     // --- Paints ---------------------------------------------------------
 
-    let private headingText = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
-    let private bodyText = Scene.fill (SKColor(0xc0uy, 0xcauy, 0xdcuy, 0xffuy))
-    let private dimText = Scene.fill (SKColor(0x7auy, 0x86uy, 0x9cuy, 0xffuy))
+    let private headingText = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
+    let private bodyText = Scene.fill (SKColor(0xf3uy, 0xf5uy, 0xfauy, 0xffuy))
+    let private dimText = Scene.fill (SKColor(0xb4uy, 0xbduy, 0xccuy, 0xffuy))
     let private okText = Scene.fill (SKColor(0x7auy, 0xe0uy, 0x8buy, 0xffuy))
     let private warnText = Scene.fill (SKColor(0xffuy, 0xc0uy, 0x60uy, 0xffuy))
     let private errText = Scene.fill (SKColor(0xffuy, 0x7auy, 0x7auy, 0xffuy))
@@ -129,73 +129,73 @@ module SettingsTab =
             y
         let lines =
             [ yield Scene.text "Settings — BAR install · bundled proxy · ports"
-                      (contentX + 8.0f) headerY 18.0f headingText
+                      (contentX + 8.0f) headerY 20.0f headingText
               yield Scene.text
                 (sprintf "gRPC port %d · LaunchGraphicalViewerDefault=%b · schemaVersion=%d"
                     settings.GrpcPort
                     settings.LaunchGraphicalViewerDefault
                     settings.SchemaVersion)
-                (contentX + 8.0f) (headerY + 22.0f) 12.0f dimText
+                (contentX + 8.0f) (headerY + 22.0f) 14.0f dimText
 
               // Section 1: BAR install
-              yield Scene.text "BAR install" (contentX + 8.0f) (nextRow ()) 13.0f headingText
+              yield Scene.text "BAR install" (contentX + 8.0f) (nextRow ()) 15.0f headingText
               match install with
               | Some i ->
                   yield Scene.text (sprintf "  data dir     : %s" i.DataDir)
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   yield Scene.text (sprintf "  active engine: %s%s"
                                         i.ActiveEngine.Version
                                         (if i.DataDirIsDefault then " (default data dir)" else " (overridden)"))
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   yield Scene.text (sprintf "  engines      : %d detected, newest first"
                                         i.Engines.Length)
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   let ais = BarInstall.listSkirmishAis i.ActiveEngine
                   yield Scene.text
                           (sprintf "  AIs installed: %s"
                               (if ais.IsEmpty then "(none)" else String.concat ", " ais))
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
               | None ->
                   yield Scene.text "  ⚠ BAR install not detected"
-                          (contentX + 8.0f) (nextRow ()) 12.0f errText
+                          (contentX + 8.0f) (nextRow ()) 14.0f errText
 
               // Section 2: bundled proxy
               rowY <- rowY + 8.0f
-              yield Scene.text "Bundled proxy" (contentX + 8.0f) (nextRow ()) 13.0f headingText
+              yield Scene.text "Bundled proxy" (contentX + 8.0f) (nextRow ()) 15.0f headingText
               match bundled with
               | Some b ->
                   yield Scene.text (sprintf "  version  : %s" b.Version)
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   yield Scene.text (sprintf "  root     : %s" b.BundleRoot)
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
               | None ->
                   yield Scene.text "  ⚠ bundled proxy not resolved — run scripts/refresh-bundled-proxy.sh"
-                          (contentX + 8.0f) (nextRow ()) 12.0f warnText
+                          (contentX + 8.0f) (nextRow ()) 14.0f warnText
 
               // Section 3: proxy install status
               rowY <- rowY + 8.0f
-              yield Scene.text "Proxy install status" (contentX + 8.0f) (nextRow ()) 13.0f headingText
+              yield Scene.text "Proxy install status" (contentX + 8.0f) (nextRow ()) 15.0f headingText
               match state.Status, state.Health with
               | Some s, Some h ->
                   let (healthText, paint) = healthParts h
                   yield Scene.text (sprintf "  engine       : %s" s.EngineVersion)
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   yield Scene.text (sprintf "  installed to : %s" s.InstalledAtPath)
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   yield Scene.text
                           (sprintf "  installed ver: %s"
                               (s.InstalledVersion |> Option.defaultValue "(none)"))
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   yield Scene.text
                           (sprintf "  files / devmode / simpleAiList: %b / %b / %b"
                               s.AiFilesPresent s.DevModeFilePresent s.SimpleAiListDisabled)
-                          (contentX + 8.0f) (nextRow ()) 12.0f bodyText
+                          (contentX + 8.0f) (nextRow ()) 14.0f bodyText
                   yield Scene.text (sprintf "  health       : %s" healthText)
-                          (contentX + 8.0f) (nextRow ()) 12.0f paint
+                          (contentX + 8.0f) (nextRow ()) 14.0f paint
               | _ ->
                   yield Scene.text
                           "  (status unavailable — BAR install or bundle not resolved)"
-                          (contentX + 8.0f) (nextRow ()) 12.0f dimText ]
+                          (contentX + 8.0f) (nextRow ()) 14.0f dimText ]
 
         // Buttons
         let haveBoth = Option.isSome install && Option.isSome bundled
@@ -208,21 +208,21 @@ module SettingsTab =
             [ Scene.rect ix iy iw ih installBgPaint
               Scene.text
                 (if state.InstallInFlight then "Installing…" else "Install / Upgrade")
-                (ix + 16.0f) (iy + ih * 0.68f) 13.0f (if enableInstall then headingText else dimText)
+                (ix + 16.0f) (iy + ih * 0.68f) 15.0f (if enableInstall then headingText else dimText)
               Scene.rect fx fy fw fh (if enableInstall then dangerBg else installBgDisabled)
-              Scene.text "Force reinstall" (fx + 16.0f) (fy + fh * 0.68f) 13.0f
+              Scene.text "Force reinstall" (fx + 16.0f) (fy + fh * 0.68f) 15.0f
                   (if enableInstall then headingText else dimText)
               Scene.rect rx ry rw rh refreshBg
-              Scene.text "Refresh status" (rx + 16.0f) (ry + rh * 0.68f) 13.0f bodyText ]
+              Scene.text "Refresh status" (rx + 16.0f) (ry + rh * 0.68f) 15.0f bodyText ]
 
         // Toast / last-result line below buttons.
-        let toastY = iy + ih + 12.0f
+        let toastY = iy + ih + 14.0f
         let toast =
             match state.LastInstallResult with
             | Some (Ok msg) ->
-                [ Scene.text (sprintf "✓ %s" msg) (contentX + 16.0f) toastY 12.0f okText ]
+                [ Scene.text (sprintf "✓ %s" msg) (contentX + 16.0f) toastY 14.0f okText ]
             | Some (Result.Error msg) ->
-                [ Scene.text (sprintf "✗ %s" msg) (contentX + 16.0f) toastY 12.0f errText ]
+                [ Scene.text (sprintf "✗ %s" msg) (contentX + 16.0f) toastY 14.0f errText ]
             | None -> []
 
         let bg = Scene.rect contentX contentY contentW contentH panelBg

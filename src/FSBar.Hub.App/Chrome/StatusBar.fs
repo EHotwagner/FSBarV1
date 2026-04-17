@@ -22,8 +22,8 @@ module StatusBar =
 
     let private bg = Scene.fill (SKColor(0x14uy, 0x18uy, 0x22uy, 0xffuy))
     let private divider = Scene.fill (SKColor(0x2auy, 0x33uy, 0x44uy, 0xffuy))
-    let private textPaint = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
-    let private textDim = Scene.fill (SKColor(0x8auy, 0x94uy, 0xa6uy, 0xffuy))
+    let private textPaint = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
+    let private textDim = Scene.fill (SKColor(0xb4uy, 0xbduy, 0xccuy, 0xffuy))
     let private buttonBg = Scene.fill (SKColor(0x21uy, 0x29uy, 0x38uy, 0xffuy))
     let private buttonHot = Scene.fill (SKColor(0x34uy, 0x40uy, 0x58uy, 0xffuy))
     let private buttonDanger = Scene.fill (SKColor(0x6auy, 0x1cuy, 0x28uy, 0xffuy))
@@ -75,13 +75,13 @@ module StatusBar =
     let private sliderToSpeed (frac: float32) : float32 =
         let clamped = max 0.0f (min 1.0f frac)
         let logMin = log 0.1f
-        let logMax = log 10.0f
+        let logMax = log 12.0f
         exp (logMin + clamped * (logMax - logMin))
 
     let private speedToSlider (speed: float32) : float32 =
-        let clamped = max 0.1f (min 10.0f speed)
+        let clamped = max 0.1f (min 12.0f speed)
         let logMin = log 0.1f
-        let logMax = log 10.0f
+        let logMax = log 12.0f
         (log clamped - logMin) / (logMax - logMin)
 
     let render (state: StatusBarState) (windowWidth: int) (windowHeight: int) : Element list =
@@ -93,7 +93,7 @@ module StatusBar =
           yield Scene.rect 0.0f y winW 1.0f divider
           // Left-side state text.
           let (txt, paint) = stateLabel state.SessionState state.Paused
-          yield Scene.text txt (padX * 2.0f) (y + Height * 0.68f) 12.0f paint
+          yield Scene.text txt (padX * 2.0f) (y + Height * 0.68f) 14.0f paint
           // Right-side controls. Only rendered when a session is actually
           // running / starting — avoids misleading controls when Idle.
           let showControls =
@@ -110,17 +110,17 @@ module StatusBar =
               yield Scene.rect (thumbX - 3.0f) sy 6.0f sh sliderThumb
               // Speed label (numeric).
               yield Scene.text (sprintf "%.1fx" state.Speed)
-                      (sx + sw + 4.0f) (sy + sh * 0.7f) 11.0f textDim
+                      (sx + sw + 4.0f) (sy + sh * 0.7f) 13.0f textDim
               // Pause button.
               let (px, py, pw, ph) = pauseButtonRect windowWidth windowHeight
               let pauseBg = if state.Paused then buttonHot else buttonBg
               yield Scene.rect px py pw ph pauseBg
               let pauseText = if state.Paused then "Resume" else "Pause"
-              yield Scene.text pauseText (px + 6.0f) (py + ph * 0.7f) 11.0f textPaint
+              yield Scene.text pauseText (px + 6.0f) (py + ph * 0.7f) 13.0f textPaint
               // End button.
               let (ex, ey, ew, eh) = endButtonRect windowWidth windowHeight
               yield Scene.rect ex ey ew eh buttonDanger
-              yield Scene.text "End" (ex + 14.0f) (ey + eh * 0.7f) 11.0f textPaint ]
+              yield Scene.text "End" (ex + 16.0f) (ey + eh * 0.7f) 13.0f textPaint ]
 
     let private hit (rx: float32, ry: float32, rw: float32, rh: float32) (x: float32) (y: float32) =
         x >= rx && x < rx + rw && y >= ry && y < ry + rh

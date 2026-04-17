@@ -109,9 +109,9 @@ module EncyclopediaTab =
 
     // --- Paints --------------------------------------------------------
 
-    let private headingText = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
-    let private bodyText = Scene.fill (SKColor(0xc0uy, 0xcauy, 0xdcuy, 0xffuy))
-    let private dimText = Scene.fill (SKColor(0x7auy, 0x86uy, 0x9cuy, 0xffuy))
+    let private headingText = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
+    let private bodyText = Scene.fill (SKColor(0xf3uy, 0xf5uy, 0xfauy, 0xffuy))
+    let private dimText = Scene.fill (SKColor(0xb4uy, 0xbduy, 0xccuy, 0xffuy))
     let private accentText = Scene.fill (SKColor(0x7auy, 0x9fuy, 0xd5uy, 0xffuy))
     let private panelBg = Scene.fill (SKColor(0x10uy, 0x14uy, 0x1cuy, 0xffuy))
     let private rowBg = Scene.fill (SKColor(0x16uy, 0x1buy, 0x26uy, 0xffuy))
@@ -157,7 +157,7 @@ module EncyclopediaTab =
     let private listPanelRect
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32) =
-        let y = chipsY contentY + chipHeight + 12.0f
+        let y = chipsY contentY + chipHeight + 14.0f
         let w = contentW * 0.40f
         let h = contentH - (y - contentY) - 16.0f
         contentX + 8.0f, y, w, h
@@ -194,7 +194,7 @@ module EncyclopediaTab =
                 let bg = if active then chipActive else chipInactive
                 let paint = if active then headingText else bodyText
                 [ Scene.rect x y w h bg
-                  Scene.text (chipLabel f) (x + 6.0f) (y + h * 0.68f) 11.0f paint ])
+                  Scene.text (chipLabel f) (x + 6.0f) (y + h * 0.68f) 13.0f paint ])
         let filterHint =
             if Set.isEmpty state.FactionFilter then "(showing all factions)"
             else sprintf "(filter: %s)"
@@ -202,7 +202,7 @@ module EncyclopediaTab =
         chipEls @
         [ Scene.text filterHint
               (contentX + 410.0f) (chipsY contentY + chipHeight * 0.68f)
-              11.0f dimText ]
+              13.0f dimText ]
 
     let private renderList
             (state: EncyclopediaTabState)
@@ -214,7 +214,7 @@ module EncyclopediaTab =
         let firstIdx = int (state.ListScroll / rowHeight)
         let visibleRows = int (h / rowHeight) + 2
         [ yield Scene.rect x y w h panelBg
-          yield Scene.text (sprintf "%d units" visible.Length) (x + 8.0f) (y - 6.0f) 12.0f dimText
+          yield Scene.text (sprintf "%d units" visible.Length) (x + 8.0f) (y - 6.0f) 14.0f dimText
           for i in firstIdx .. min (visible.Length - 1) (firstIdx + visibleRows) do
               let e = visible.[i]
               let rowY = y + float32 (i - firstIdx) * rowHeight - (state.ListScroll - float32 firstIdx * rowHeight)
@@ -226,7 +226,7 @@ module EncyclopediaTab =
                   sprintf "%s   %A %A   %dm %de"
                       e.InternalName e.Faction e.Tier e.MetalCost e.EnergyCost
               let paint = if isSelected then headingText else bodyText
-              yield Scene.text label (x + 12.0f) (rowY + rowHeight - 8.0f) 11.0f paint ]
+              yield Scene.text label (x + 14.0f) (rowY + rowHeight - 8.0f) 13.0f paint ]
 
     let private renderDetail
             (state: EncyclopediaTabState)
@@ -237,12 +237,12 @@ module EncyclopediaTab =
         let (x, y, w, h) = detailPanelRect contentX contentY contentW contentH
         let header =
             [ Scene.rect x y w h panelBg
-              Scene.text "Detail" (x + 8.0f) (y - 6.0f) 12.0f dimText ]
+              Scene.text "Detail" (x + 8.0f) (y - 6.0f) 14.0f dimText ]
         match state.Selected |> Option.bind (findEntry state) with
         | None ->
             header @
             [ Scene.text "Select a unit on the left to see its details + glyph."
-                (x + 12.0f) (y + 32.0f) 12.0f dimText ]
+                (x + 14.0f) (y + 32.0f) 14.0f dimText ]
         | Some e ->
             let lines =
                 [ sprintf "%s  (%A %A %A)" e.InternalName e.Faction e.Tier e.Shape
@@ -260,9 +260,9 @@ module EncyclopediaTab =
                 lines
                 |> List.mapi (fun i line ->
                     let baseY = y + 32.0f + float32 i * 20.0f
-                    let size = if i = 0 then 14.0f else 12.0f
+                    let size = if i = 0 then 16.0f else 14.0f
                     let paint = if i = 0 then headingText else bodyText
-                    Scene.text line (x + 12.0f) baseY size paint)
+                    Scene.text line (x + 14.0f) baseY size paint)
             // Synthesise a UnitDisplay + render the glyph with UnitGlyph.buildUnit.
             // Place it in the bottom-right of the detail panel at a comfortable size.
             let glyphCx = x + w - 120.0f
@@ -298,7 +298,7 @@ module EncyclopediaTab =
             let glyphEls = UnitGlyph.buildUnit unit style []
             let glyphHint =
                 Scene.text "↑ glyph (same renderer as Viewer tab)"
-                    (glyphCx - 40.0f) (glyphCy + 60.0f) 10.0f dimText
+                    (glyphCx - 40.0f) (glyphCy + 60.0f) 12.0f dimText
             header @ textEls @ glyphEls @ [ glyphHint ]
 
     let render
@@ -308,11 +308,11 @@ module EncyclopediaTab =
             (contentW: float32) (contentH: float32)
             : Element list =
         let header =
-            [ Scene.text "Units — BarData encyclopedia" (contentX + 8.0f) (contentY + 22.0f) 18.0f headingText
+            [ Scene.text "Units — BarData encyclopedia" (contentX + 8.0f) (contentY + 22.0f) 20.0f headingText
               Scene.text
                 (sprintf "%d units total · click a faction chip to filter · click a row to see the glyph"
                     state.Entries.Length)
-                (contentX + 8.0f) (contentY + 42.0f) 12.0f dimText ]
+                (contentX + 8.0f) (contentY + 42.0f) 14.0f dimText ]
         header
         @ renderChips state contentX contentY
         @ renderList state contentX contentY contentW contentH

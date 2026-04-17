@@ -183,7 +183,7 @@ let main _argv =
     // --- Paints ------------------------------------------------------------
     let contentBgColor = SKColor(0x0cuy, 0x10uy, 0x18uy, 0xffuy)
     let placeholderText = Scene.fill (SKColor(0x70uy, 0x80uy, 0x98uy, 0xffuy))
-    let headingText = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
+    let headingText = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
     let bannerText = Scene.fill (SKColor(0xffuy, 0xa5uy, 0x50uy, 0xffuy))
 
     let contentRect () =

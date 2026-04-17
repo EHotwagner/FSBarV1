@@ -7,8 +7,8 @@ open FSBar.Hub
 
 module ViewerTab =
 
-    let private headingText = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
-    let private dimText = Scene.fill (SKColor(0x7auy, 0x86uy, 0x9cuy, 0xffuy))
+    let private headingText = Scene.fill (SKColor(0xffuy, 0xffuy, 0xffuy, 0xffuy))
+    let private dimText = Scene.fill (SKColor(0xb4uy, 0xbduy, 0xccuy, 0xffuy))
     let private panelBg = Scene.fill (SKColor(0x08uy, 0x0buy, 0x12uy, 0xffuy))
 
     let render
@@ -44,16 +44,16 @@ module ViewerTab =
               content ]
         | SessionManager.Starting _ ->
             [ Scene.rect contentX contentY contentW contentH panelBg
-              Scene.text "Session starting…" (contentX + 16.0f) (contentY + 32.0f) 14.0f headingText
-              Scene.text "Engine warmup typically takes 5–30s." (contentX + 16.0f) (contentY + 52.0f) 12.0f dimText ]
+              Scene.text "Session starting…" (contentX + 16.0f) (contentY + 32.0f) 16.0f headingText
+              Scene.text "Engine warmup typically takes 5–30s." (contentX + 16.0f) (contentY + 52.0f) 14.0f dimText ]
         | SessionManager.Ending _ ->
             [ Scene.rect contentX contentY contentW contentH panelBg
-              Scene.text "Session ending…" (contentX + 16.0f) (contentY + 32.0f) 14.0f headingText ]
+              Scene.text "Session ending…" (contentX + 16.0f) (contentY + 32.0f) 16.0f headingText ]
         | SessionManager.Failed(_, reason, _) ->
             [ Scene.rect contentX contentY contentW contentH panelBg
-              Scene.text "Session failed" (contentX + 16.0f) (contentY + 32.0f) 14.0f headingText
-              Scene.text reason (contentX + 16.0f) (contentY + 52.0f) 12.0f dimText ]
+              Scene.text "Session failed" (contentX + 16.0f) (contentY + 32.0f) 16.0f headingText
+              Scene.text reason (contentX + 16.0f) (contentY + 52.0f) 14.0f dimText ]
         | SessionManager.Idle ->
             [ Scene.rect contentX contentY contentW contentH panelBg
-              Scene.text "No session active" (contentX + 16.0f) (contentY + 32.0f) 14.0f dimText
-              Scene.text "Switch to the Setup tab to pick a lobby and launch." (contentX + 16.0f) (contentY + 52.0f) 12.0f dimText ]
+              Scene.text "No session active" (contentX + 16.0f) (contentY + 32.0f) 16.0f dimText
+              Scene.text "Switch to the Setup tab to pick a lobby and launch." (contentX + 16.0f) (contentY + 52.0f) 14.0f dimText ]
