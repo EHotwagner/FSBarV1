@@ -22,6 +22,8 @@
     <Compile Include="LobbyConfig.fs" />
     <Compile Include="SessionManager.fsi" />
     <Compile Include="SessionManager.fs" />
+    <Compile Include="ProxyInstaller.fsi" />
+    <Compile Include="ProxyInstaller.fs" />
   </ItemGroup>
 
   <ItemGroup>

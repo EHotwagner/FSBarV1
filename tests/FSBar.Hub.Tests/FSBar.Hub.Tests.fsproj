@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="fixtures\IGL_data.lua" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,6 +20,8 @@
     <Compile Include="BarInstallTests.fs" />
     <Compile Include="LobbyConfigTests.fs" />
     <Compile Include="SessionManagerTests.fs" />
+    <Compile Include="ProxyInstallerTests.fs" />
+    <Compile Include="ProxyInstallerIdempotencyTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>
 
