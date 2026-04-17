@@ -109,16 +109,41 @@ module EngineLauncher =
         let settingsPath = Path.Combine(sessionDir, "springsettings.cfg")
         File.WriteAllText(settingsPath, "Fullscreen=0\nXResolution=1280\nYResolution=720\n")
 
-        // Set up process
+        // When FSBAR_ENGINE_WRAPPER is set to an executable path, run
+        // the engine through it — the wrapper can install
+        // prctl(PR_SET_PDEATHSIG, SIGTERM) so the engine is killed
+        // by the kernel if the parent hub crashes (bypassing the
+        // normal SIGTERM-on-exit path). scripts/hub-spawn-engine.sh
+        // is the canonical wrapper; the trainer can opt in by
+        // setting the same env var.
+        let wrapper =
+            match Environment.GetEnvironmentVariable("FSBAR_ENGINE_WRAPPER") with
+            | null | "" -> None
+            | path when File.Exists(path) -> Some path
+            | path ->
+                eprintfn "[EngineLauncher] FSBAR_ENGINE_WRAPPER=%s not found — launching directly" path
+                None
+
         let psi =
-            ProcessStartInfo(
-                FileName = engineBinary,
-                Arguments = scriptPath,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true
-            )
+            match wrapper with
+            | Some w ->
+                ProcessStartInfo(
+                    FileName = w,
+                    Arguments = sprintf "\"%s\" \"%s\"" engineBinary scriptPath,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                )
+            | None ->
+                ProcessStartInfo(
+                    FileName = engineBinary,
+                    Arguments = scriptPath,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                )
 
         psi.Environment.["HIGHBAR_SOCKET_PATH"] <- config.SocketPath
         psi.Environment.["SPRING_WRITEDIR"] <- sessionDir
