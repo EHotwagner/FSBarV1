@@ -28,6 +28,7 @@ open SkiaViewer
 open Silk.NET.Input
 open FSBar.Hub
 open FSBar.Hub.App.Chrome
+open FSBar.Hub.App.Tabs
 
 [<EntryPoint>]
 let main _argv =
@@ -55,39 +56,32 @@ let main _argv =
     let mutable currentPaused = false
     let mutable statusBanner : string option = initialBanner
 
+    // Setup-tab state: only meaningful when BAR was detected. When we
+    // have no install the Setup pane falls back to the placeholder
+    // diagnostic block.
+    let mutable setupState : SetupTab.SetupTabState option =
+        barInstall |> Option.map SetupTab.init
+
     // --- Paints ------------------------------------------------------------
     let contentBgColor = SKColor(0x0cuy, 0x10uy, 0x18uy, 0xffuy)
     let placeholderText = Scene.fill (SKColor(0x70uy, 0x80uy, 0x98uy, 0xffuy))
     let headingText = Scene.fill (SKColor(0xeauy, 0xeeuy, 0xf6uy, 0xffuy))
     let bannerText = Scene.fill (SKColor(0xffuy, 0xa5uy, 0x50uy, 0xffuy))
 
-    // --- Tab content placeholder -----------------------------------------
+    let contentRect () =
+        let x = TabBar.Width + 16.0f
+        let y = 16.0f
+        let w = float32 windowWidth - x - 16.0f
+        let h = float32 windowHeight - StatusBar.Height - y - 8.0f
+        x, y, w, h
+
+    // --- Tab content renderer -----------------------------------------
     let renderTabContent (tab: HubTab) : Element list =
-        let contentX = TabBar.Width + 16.0f
-        let contentY = 24.0f
+        let (cx, cy, cw, ch) = contentRect ()
         let sessState =
             match sessions with
             | Some sm -> sm.State
             | None -> SessionManager.Idle
-        let heading =
-            match tab with
-            | HubTab.Setup -> "Setup — configure your next session"
-            | HubTab.Viewer -> "Viewer — embedded live game view"
-            | HubTab.Encyclopedia -> "Units — BarData encyclopedia"
-            | HubTab.Configurator -> "Style — visualisation configurator"
-            | HubTab.Settings -> "Settings — BAR install, proxy, ports"
-            | HubTab.Grpc -> "gRPC — scripting clients + endpoint"
-        let subline =
-            match tab with
-            | HubTab.Setup -> "Lobby builder lands in T029."
-            | HubTab.Viewer ->
-                match sessState with
-                | SessionManager.Running _ -> "Session running. Viewer tab wiring lands in T030."
-                | _ -> "No session active. Switch to Setup to configure one."
-            | HubTab.Encyclopedia -> "Unit catalog renderer lands in T056."
-            | HubTab.Configurator -> "ConfigPanel embed lands in T058."
-            | HubTab.Settings -> "Settings rows land in T040."
-            | HubTab.Grpc -> "gRPC tab + scripting service register in T064/T065."
         let diagLines =
             [ match barInstall with
               | Some i ->
@@ -100,15 +94,34 @@ let main _argv =
               | Some b -> yield sprintf "bundled proxy: %s" b.Version
               | None -> yield "bundled proxy: not resolved"
               yield sprintf "gRPC port    : %d (scripting service not yet started)" settings.GrpcPort ]
-        [ yield Scene.text heading contentX (contentY + 18.0f) 18.0f headingText
-          yield Scene.text subline contentX (contentY + 44.0f) 13.0f placeholderText
-          match statusBanner with
-          | Some msg ->
-              yield Scene.text (sprintf "⚠ %s" msg) contentX (contentY + 68.0f) 12.0f bannerText
-          | None -> ()
-          let baseY = contentY + (match statusBanner with Some _ -> 92.0f | None -> 76.0f)
-          for i in 0 .. diagLines.Length - 1 do
-              yield Scene.text diagLines.[i] contentX (baseY + float32 i * 18.0f) 12.0f placeholderText ]
+        let placeholderBlock (heading: string) (subline: string) =
+            [ yield Scene.text heading cx (cy + 18.0f) 18.0f headingText
+              yield Scene.text subline cx (cy + 44.0f) 13.0f placeholderText
+              match statusBanner with
+              | Some msg ->
+                  yield Scene.text (sprintf "⚠ %s" msg) cx (cy + 68.0f) 12.0f bannerText
+              | None -> ()
+              let baseY = cy + (match statusBanner with Some _ -> 92.0f | None -> 76.0f)
+              for i in 0 .. diagLines.Length - 1 do
+                  yield Scene.text diagLines.[i] cx (baseY + float32 i * 18.0f) 12.0f placeholderText ]
+        match tab with
+        | HubTab.Setup ->
+            match setupState with
+            | Some st -> SetupTab.render st cx cy cw ch
+            | None ->
+                placeholderBlock
+                    "Setup — configure your next session"
+                    "BAR install not detected — no lobby builder surface."
+        | HubTab.Viewer ->
+            ViewerTab.render sessState FSBar.Viz.VizDefaults.defaultConfig cx cy cw ch
+        | HubTab.Encyclopedia ->
+            placeholderBlock "Units — BarData encyclopedia" "Unit catalog renderer lands in T056."
+        | HubTab.Configurator ->
+            placeholderBlock "Style — visualisation configurator" "ConfigPanel embed lands in T058."
+        | HubTab.Settings ->
+            placeholderBlock "Settings — BAR install, proxy, ports" "Settings rows land in T040."
+        | HubTab.Grpc ->
+            placeholderBlock "gRPC — scripting clients + endpoint" "gRPC tab + scripting service register in T064/T065."
 
     let renderScene () : Scene =
         let sessState =
@@ -174,7 +187,41 @@ let main _argv =
                         sessions |> Option.iter (fun sm -> sm.SetPaused currentPaused)
                     | Some StatusBar.StatusBarAction.EndSession ->
                         sessions |> Option.iter (fun sm -> sm.End())
-                    | None -> ()
+                    | None ->
+                        // Route to the active tab.
+                        match activeTab, setupState, barInstall with
+                        | HubTab.Setup, Some st, Some install ->
+                            let (cx, cy, cw, ch) = contentRect ()
+                            match SetupTab.handleMouse st x y cx cy cw ch with
+                            | Some (SetupTab.SetupTabAction.SelectMap name) ->
+                                let lobby = { st.Lobby with MapName = name }
+                                setupState <- Some (SetupTab.validate install { st with Lobby = lobby })
+                            | Some (SetupTab.SetupTabAction.ScrollMapList off) ->
+                                setupState <- Some { st with MapListScroll = off }
+                            | Some SetupTab.SetupTabAction.Launch ->
+                                match sessions with
+                                | None ->
+                                    setupState <-
+                                        Some { st with LastLaunchError = Some "no BAR install detected" }
+                                | Some sm ->
+                                    match sm.Launch st.Lobby with
+                                    | Ok () ->
+                                        setupState <- Some { st with LastLaunchError = None }
+                                        activeTab <- HubTab.Viewer
+                                    | Result.Error msg ->
+                                        setupState <- Some { st with LastLaunchError = Some msg }
+                            | None -> ()
+                        | _ -> ()
+            trigger ()
+        | InputEvent.MouseScroll(delta, x, y) ->
+            match activeTab, setupState with
+            | HubTab.Setup, Some st ->
+                let (cx, cy, cw, ch) = contentRect ()
+                match SetupTab.handleScroll st delta x y cx cy cw ch with
+                | Some (SetupTab.SetupTabAction.ScrollMapList off) ->
+                    setupState <- Some { st with MapListScroll = off }
+                | _ -> ()
+            | _ -> ()
             trigger ()
         | _ -> ()
 
@@ -207,24 +254,58 @@ let main _argv =
     // window shows something immediately on open.
     trigger ()
 
-    // --- Test hook: snapshot + exit ---------------------------------------
-    // When FSBAR_HUB_SCREENSHOT_DIR is set (CI / smoke test), the hub
-    // takes a screenshot after a brief settle delay, then closes the
-    // window programmatically. Normal interactive runs ignore this
-    // branch and block until the user closes the window.
+    // --- Test hook: auto-launch + snapshot + exit -------------------------
+    // FSBAR_HUB_AUTO_LAUNCH=1 triggers SetupTab.Launch programmatically
+    // and waits for the session to reach Running before the screenshot
+    // (total ~20s with engine warmup). FSBAR_HUB_SCREENSHOT_DIR tells
+    // the hub where to save the PNG; without it the hub runs
+    // interactively.
+    let autoLaunch =
+        match Environment.GetEnvironmentVariable("FSBAR_HUB_AUTO_LAUNCH") with
+        | null | "" | "0" -> false
+        | _ -> true
     match Environment.GetEnvironmentVariable("FSBAR_HUB_SCREENSHOT_DIR") with
     | null | "" ->
         closedSignal.Wait()
     | dir ->
-        // Give the render thread a few frames to settle.
         Thread.Sleep(800)
-        trigger ()
-        Thread.Sleep(200)
+        if autoLaunch then
+            match setupState, sessions with
+            | Some st, Some sm when st.Errors.IsEmpty ->
+                eprintfn "[hub] auto-launch: attempting Launch"
+                match sm.Launch st.Lobby with
+                | Ok () ->
+                    activeTab <- HubTab.Viewer
+                    trigger ()
+                    // Wait up to 40s for Running.
+                    let sw = System.Diagnostics.Stopwatch.StartNew()
+                    let mutable reached = false
+                    while not reached && sw.ElapsedMilliseconds < 40000L do
+                        match sm.State with
+                        | SessionManager.Running _ -> reached <- true
+                        | _ -> Thread.Sleep(200)
+                    if reached then
+                        eprintfn "[hub] auto-launch: Running reached in %dms" sw.ElapsedMilliseconds
+                        // Let a few frames flow so the viewer renders units.
+                        Thread.Sleep(2000)
+                        trigger ()
+                        Thread.Sleep(300)
+                    else
+                        eprintfn "[hub] auto-launch: timeout waiting for Running; state=%A" sm.State
+                | Result.Error msg ->
+                    eprintfn "[hub] auto-launch failed: %s" msg
+            | _ -> eprintfn "[hub] auto-launch skipped (no session manager or lobby invalid)"
+        else
+            trigger ()
+            Thread.Sleep(200)
         try
             match viewer.Screenshot(dir) with
             | r -> eprintfn "[hub] screenshot: %A" r
         with ex ->
             eprintfn "[hub] screenshot failed: %s" ex.Message
+        // Clean session teardown before disposing the viewer.
+        sessions |> Option.iter (fun sm ->
+            try sm.End() with _ -> ())
 
     try (viewer :> IDisposable).Dispose() with _ -> ()
 
