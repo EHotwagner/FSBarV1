@@ -1,5 +1,18 @@
 namespace FSBar.Viz
 
+/// Typed attribute-value DU mirroring the gRPC `VizAttributeValue` oneof
+/// (feature 040). Used by the scripting path to move values losslessly
+/// between wire and F# without resorting to `obj`. The existing
+/// `AttributeDescriptor.Get` / `Set` helpers still marshal via `obj` for
+/// backwards compatibility.
+type AttributeValue =
+    | BoolValue of bool
+    | IntValue of int
+    | FloatValue of float
+    | StringValue of string
+    | ColorRgbaValue of uint32
+    | StringListValue of string list
+
 /// Describes the type of input control rendered for an attribute.
 [<RequireQualifiedAccess>]
 type InputKind =

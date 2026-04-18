@@ -59,9 +59,23 @@ let private makeService (opts: ScriptingHub.ScriptingHubOptions) =
     let bus = HubEvents.create ()
     let sessions = SessionManager.create install bus.Sink
     let unitDefs () = FSBar.Client.UnitDefCache.empty
+    let initialState : HubState =
+        { ActiveTab = FSBar.Hub.HubTab.Setup
+          VizConfig = FSBar.Viz.VizDefaults.defaultConfig
+          Camera = ViewerCamera.defaults
+          Lobby = LobbyConfig.defaults
+          Encyclopedia =
+              { FactionFilter = Set.empty; SelectedDefId = None }
+          PresetList = []
+          Settings = HubSettings.defaults }
+    let store = HubStateStore.create bus.Sink initialState
+    let overlays = OverlayLayerStore.create bus.Sink
+    let renderer =
+        HeadlessRenderer.create sessions store overlays (fun () -> HubSettings.defaults)
     let service =
         new ScriptingHub.ScriptingService(
-            sessions, bus.Sink, unitDefs, install, makeBundled (), 5021, opts)
+            sessions, bus.Sink, bus.Events, unitDefs, install, makeBundled (), 5021,
+            store, renderer, overlays, opts)
     service, bus, sessions, fixture
 
 let private drain (reader: ChannelReader<GameFrameMessage>) (expected: int) (timeoutMs: int) =

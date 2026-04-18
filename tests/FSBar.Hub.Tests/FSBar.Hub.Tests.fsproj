@@ -15,6 +15,7 @@
   <ItemGroup>
     <Compile Include="..\Common\SurfaceAreaHelper.fs" />
     <Compile Include="HubEventsTests.fs" />
+    <Compile Include="HubStateStoreTests.fs" />
     <Compile Include="AdminChannelHostTests.fs" />
     <Compile Include="HubSettingsTests.fs" />
     <Compile Include="BundledProxyTests.fs" />
@@ -24,6 +25,9 @@
     <Compile Include="ProxyInstallerTests.fs" />
     <Compile Include="ProxyInstallerIdempotencyTests.fs" />
     <Compile Include="ScriptingHubTests.fs" />
+    <Compile Include="ScriptingServiceUnaryTests.fs" />
+    <Compile Include="HeadlessRendererTests.fs" />
+    <Compile Include="OverlayLayerStoreTests.fs" />
     <Compile Include="CloseWhileRunningTests.fs" />
     <Compile Include="SurfaceAreaTests.fs" />
   </ItemGroup>

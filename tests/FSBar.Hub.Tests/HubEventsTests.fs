@@ -36,7 +36,11 @@ let ``Publish reaches a subscribed observer`` () =
                 member _.OnCompleted() = () })
     bus.Sink.Publish(StateChanged Running)
     Assert.True(signal.Wait(1000), "observer did not receive event within 1s")
-    Assert.Equal<HubEvent[]>([| StateChanged Running |], received.ToArray())
+    let got = received.ToArray()
+    Assert.Equal(1, got.Length)
+    match got.[0] with
+    | StateChanged Running -> ()
+    | other -> Assert.Fail(sprintf "expected StateChanged Running, got %A" other)
 
 [<Fact>]
 let ``Multiple observers all receive each event`` () =
@@ -60,8 +64,14 @@ let ``Multiple observers all receive each event`` () =
     bus.Sink.Publish(EngineSpeedChanged 2.0f)
     signal1.Wait(1000) |> ignore
     signal2.Wait(1000) |> ignore
-    Assert.Equal<HubEvent[]>([| EngineSpeedChanged 2.0f |], received1.ToArray())
-    Assert.Equal<HubEvent[]>([| EngineSpeedChanged 2.0f |], received2.ToArray())
+    let expectSpeed (q: ConcurrentQueue<HubEvent>) =
+        let arr = q.ToArray()
+        Assert.Equal(1, arr.Length)
+        match arr.[0] with
+        | EngineSpeedChanged s -> Assert.Equal(2.0f, s)
+        | other -> Assert.Fail(sprintf "expected EngineSpeedChanged 2.0f, got %A" other)
+    expectSpeed received1
+    expectSpeed received2
 
 [<Fact>]
 let ``Disposed subscription stops receiving events`` () =

@@ -16,6 +16,7 @@
     <Compile Include="LiveAdminSpeedTests.fs" />
     <Compile Include="LiveAdminForceEndTests.fs" />
     <Compile Include="LiveAdminMessageTests.fs" />
+    <Compile Include="LiveHeadlessOrchestrationTests.fs" />
     <Compile Include="PlaceholderTests.fs" />
   </ItemGroup>
 

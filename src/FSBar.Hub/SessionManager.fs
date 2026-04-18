@@ -432,6 +432,18 @@ module SessionManager =
                 transitionTo Idle
             | Ending _ | Idle | Failed _ | Starting _ -> ()
 
+        member this.Stop() : SubmitOutcome =
+            match this.State with
+            | Idle -> Rejected "no active session"
+            | _ ->
+                this.End()
+                Sent
+
+        member this.IsLobbyEditable() : bool =
+            match this.State with
+            | Idle -> true
+            | _ -> false
+
         interface IDisposable with
             member this.Dispose() =
                 if Interlocked.Exchange(&disposed, 1) = 0 then

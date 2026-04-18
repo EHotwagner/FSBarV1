@@ -4,17 +4,15 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>FSBar.Hub</RootNamespace>
     <PackageId>FSBar.Hub</PackageId>
-    <VersionPrefix>0.1.3</VersionPrefix>
+    <VersionPrefix>0.2.0</VersionPrefix>
     <IsPackable>true</IsPackable>
     <Description>F# core library for the FSBar central GUI hub — BAR install detection, proxy installer, lobby + session management, hub event bus, and gRPC scripting service implementation</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="AssemblyInfo.fs" />
-    <Compile Include="HubEvents.fsi" />
-    <Compile Include="HubEvents.fs" />
-    <Compile Include="AdminChannelHost.fsi" />
-    <Compile Include="AdminChannelHost.fs" />
+    <Compile Include="HubUiTypes.fsi" />
+    <Compile Include="HubUiTypes.fs" />
     <Compile Include="HubSettings.fsi" />
     <Compile Include="HubSettings.fs" />
     <Compile Include="BundledProxy.fsi" />
@@ -23,10 +21,20 @@
     <Compile Include="BarInstall.fs" />
     <Compile Include="LobbyConfig.fsi" />
     <Compile Include="LobbyConfig.fs" />
+    <Compile Include="HubEvents.fsi" />
+    <Compile Include="HubEvents.fs" />
+    <Compile Include="AdminChannelHost.fsi" />
+    <Compile Include="AdminChannelHost.fs" />
     <Compile Include="SessionManager.fsi" />
     <Compile Include="SessionManager.fs" />
     <Compile Include="ProxyInstaller.fsi" />
     <Compile Include="ProxyInstaller.fs" />
+    <Compile Include="HubStateStore.fsi" />
+    <Compile Include="HubStateStore.fs" />
+    <Compile Include="OverlayLayerStore.fsi" />
+    <Compile Include="OverlayLayerStore.fs" />
+    <Compile Include="HeadlessRenderer.fsi" />
+    <Compile Include="HeadlessRenderer.fs" />
     <Compile Include="ScriptingHub.fsi" />
     <Compile Include="ScriptingHub.fs" />
   </ItemGroup>
@@ -34,6 +42,7 @@
   <ItemGroup>
     <ProjectReference Include="../FSBar.Proto/FSBar.Proto.fsproj" />
     <ProjectReference Include="../FSBar.Client/FSBar.Client.fsproj" />
+    <ProjectReference Include="../FSBar.Viz/FSBar.Viz.fsproj" />
   </ItemGroup>
 
 </Project>

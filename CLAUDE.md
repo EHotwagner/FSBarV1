@@ -1,6 +1,6 @@
 # FSBarV1 Development Guidelines
 
-Auto-generated from all feature plans. Last updated: 2026-04-17
+Auto-generated from all feature plans. Last updated: 2026-04-18
 
 ## Active Technologies
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf), BarData (unit definitions), xUnit 2.9.x (002-test-suite-report)
@@ -65,6 +65,10 @@ Auto-generated from all feature plans. Last updated: 2026-04-17
 - `$XDG_CONFIG_HOME/fsbar-hub/settings.json` — one additive (038-hub-viewer-fixes)
 - F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Client`, `FSBar.Hub`, `FSBar.Viz`, `FSBar.Proto`. BCL `System.Net.Sockets.UdpClient` + `System.Threading.Channels` for the autohost socket. `Grpc.AspNetCore 2.67.0` / `Grpc.Core.Api 2.67.0` already in the graph for scripting. `SkiaViewer` 1.1.3-dev for UI. `xUnit 2.9.x` for tests. **No new NuGet dependencies.** (039-hub-admin-channel)
 - In-memory only — `AdminChannelStatus` lives for the session's lifetime; no persistence. `HubSettings` is not extended (engine speed does NOT persist across launches per Session 2026-04-17 Q5). (039-hub-admin-channel)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.** (040-grpc-full-hub-ui)
+- Filesystem only — unchanged from pre-feature. `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (HubSettings), `viz-presets/*.json` (style presets), `bots/trainer/map-cache/*.json` (map analysis). `HubStateStore` and `HeadlessRenderer` are in-memory only. (040-grpc-full-hub-ui)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.** (040-grpc-full-hub-ui)
+- Filesystem only — unchanged from pre-feature. `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (HubSettings), `viz-presets/*.json` (style presets), `bots/trainer/map-cache/*.json` (map analysis). `HubStateStore` and `HeadlessRenderer` are in-memory only. (040-grpc-full-hub-ui)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -211,6 +215,78 @@ Regenerate the label table whenever `nupkg/BarData.*.nupkg` changes.
 Keep the `.fsi` for `UnitLabels.generated` stable — the generator only
 rewrites the `.fs`.
 
+## gRPC parity for Hub UI (feature 040)
+
+Feature 040 exposes every Hub-GUI action through the
+`fsbar.hub.scripting.v1` gRPC service and adds a server-streaming RPC
+that delivers the Viewer-tab's rendered Skia output to remote clients
+as PNG/JPEG image bytes.
+
+Three new `FSBar.Hub` modules:
+
+- `HubStateStore` — central atomic-LWW store for active tab, VizConfig,
+  Viewer camera, lobby, encyclopedia selection, preset cache, settings.
+  Tabs and gRPC handlers read/write through it; every mutation emits an
+  event on the `HubEventBus`.
+- `HeadlessRenderer` — off-screen Viewer render pipeline with a
+  per-subscriber `BoundedChannel<RenderFrameMessage>` (capacity 16,
+  DropOldest). Rasterises via `Scene.recordPicture` →
+  `SKCanvas.DrawPicture` on a raster `SKSurface` (GPU GRContext
+  segfaults in this environment). Cap:
+  `HubSettings.MaxRenderFrameSubscribers` (default 8, range 1–32).
+- `OverlayLayerStore` — per-client, name-keyed overlay layers with
+  declarative `OverlayPrimitive` DU (Line/Polyline/Polygon/Rectangle/
+  Circle/Path/Text/Image) and `CoordinateSpace = World | Screen`.
+  FR-026 cap matrix enforced in `putLayer` (16 layers/client, 500
+  primitives/layer, 1 MiB/push, 256 KiB/image, 2048² dims, 4 KiB text).
+  Auto-clean on `HubEvent.ScriptingClientDetached` via
+  `wireDisconnectCleanup`.
+
+Feature 040 does **not** introduce `PresetFacade` / `EncyclopediaFacade`;
+the preset + encyclopedia RPCs call `FSBar.Viz.StylePreset` and
+`FSBar.Viz.EncyclopediaData` directly from `ScriptingHub`.
+
+New RPCs grouped by user story:
+
+| Story | RPCs |
+|-------|------|
+| US1 (session orchestration) | `ConfigureLobby`, `ListMaps`, `ValidateLobby`, `LaunchSession`, `StopSession` |
+| US2 (render frames) | `StreamRenderFrames`, `GetRenderFrame` |
+| US3 (viz + camera) | `SetVizConfig`, `SetVizAttribute`, `ToggleOverlay`, `SetCamera`, `SetActiveTab` |
+| US4 (preset / encyc / settings / proxy) | `ListPresets`, `SavePreset`, `LoadPreset`, `DeletePreset`, `ListUnits`, `SelectUnit`, `GetHubSettings`, `SetHubSettings`, `InstallProxy`, `RefreshProxyStatus` |
+| US5 (state observation) | `GetHubState`, `StreamHubStateEvents` |
+| US6 (client overlays) | `PutLayer`, `DeleteLayer`, `ListLayers`, `ClearLayers` |
+
+`ScriptingService` constructor accepts:
+
+```fsharp
+new:
+    sessions * events * busEvents * unitDefs * install * bundled *
+    port * state * renderer * overlays * opts -> ScriptingService
+```
+
+where `state: HubStateStore.T`, `renderer: HeadlessRenderer.T`,
+`overlays: OverlayLayerStore.T`, and
+`busEvents: IObservable<HubEvent>` is used by `StreamHubStateEvents`.
+
+FSI walkthroughs for each user story live under `scripts/examples/`:
+
+- `17-hub-lobby-launch.fsx` — US1
+- `18-hub-render-frames.fsx` — US2
+- `19-hub-vizconfig-drive.fsx` — US3
+- `20-hub-state-observer.fsx` — US5
+- `21-hub-overlay-layers.fsx` — US6
+
+The feature-039 `16-hub-admin.fsx` keeps working unchanged (SC-007
+additive-only wire-contract guard — verified via `buf breaking`).
+
+Env-var mapping to `SetActiveTab` / `SelectUnit`:
+
+| Env var | Equivalent RPC |
+|---------|----------------|
+| `FSBAR_HUB_INITIAL_TAB=Viewer` | `SetActiveTab(HubTab.Viewer)` |
+| `FSBAR_HUB_ENCYCLOPEDIA_SELECT=armcom` | `SelectUnit(InternalName="armcom")` |
+
 ## Commands
 
 # Add commands for F# / .NET 10.0
@@ -226,9 +302,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 040-grpc-full-hub-ui: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
+- 040-grpc-full-hub-ui: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
 - 039-hub-admin-channel: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Client`, `FSBar.Hub`, `FSBar.Viz`, `FSBar.Proto`. BCL `System.Net.Sockets.UdpClient` + `System.Threading.Channels` for the autohost socket. `Grpc.AspNetCore 2.67.0` / `Grpc.Core.Api 2.67.0` already in the graph for scripting. `SkiaViewer` 1.1.3-dev for UI. `xUnit 2.9.x` for tests. **No new NuGet dependencies.**
-- 038-hub-viewer-fixes: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Hub`,
-- 035-central-gui-hub: Shipped the FSBar Hub (`FSBar.Hub` core library + `FSBar.Hub.App` SkiaViewer executable + `proto/hub/scripting.proto` gRPC contract). Six tabs — Setup / Viewer / Units / Style / Cfg / gRPC — share a live `VizConfig` and `SessionManager`, with a Kestrel-hosted `ScriptingService` on `127.0.0.1:5021` for external clients. Bundled HighBarV2 proxy committed at `proxy/bundled/0.1/`; `scripts/refresh-bundled-proxy.sh` bumps it. W/L/C/N hotkeys route through `GameViz` overlay accessors. 75 unit tests + 3 live integration tests green. `Grpc.AspNetCore 2.67.0` + `Grpc.Core.Api 2.67.0` added to the dependency graph; no other new packages.
 
 
 <!-- MANUAL ADDITIONS START -->

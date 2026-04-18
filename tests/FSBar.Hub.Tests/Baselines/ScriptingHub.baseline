@@ -60,6 +60,10 @@ module ScriptingHub =
     ///      when running, else a cached / empty fallback.
     ///   * `install` / `bundled` / `port` — filled into
     ///     `GetSessionStatusResponse`.
+    ///   * `state` — authoritative hub-UI state store (feature 040).
+    ///     Lobby-related RPCs (`ConfigureLobby`, `LaunchSession`) read
+    ///     and write through this store so the local GUI and gRPC
+    ///     clients never drift.
     ///   * `opts` — fan-out tunables.
     [<Sealed>]
     type ScriptingService =
@@ -67,10 +71,14 @@ module ScriptingHub =
         new:
             sessions: SessionManager.SessionManager *
             events: HubEvents.IHubEventSink *
+            busEvents: System.IObservable<HubEvents.HubEvent> *
             unitDefs: (unit -> UnitDefCache) *
             install: BarInstall.BarInstall *
             bundled: BundledProxy.BundledProxyInfo *
             port: int *
+            state: HubStateStore.T *
+            renderer: HeadlessRenderer.T *
+            overlays: OverlayLayerStore.T *
             opts: ScriptingHubOptions ->
                 ScriptingService
 

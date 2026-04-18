@@ -191,11 +191,23 @@ type LiveAdminSpeedTests() =
         use bus = HubEvents.create ()
         use sm = SessionManager.create install bus.Sink
         let unitDefs () = FSBar.Client.UnitDefCache.empty
+        let store =
+            HubStateStore.create bus.Sink
+                { ActiveTab = FSBar.Hub.HubTab.Setup
+                  VizConfig = FSBar.Viz.VizDefaults.defaultConfig
+                  Camera = ViewerCamera.defaults
+                  Lobby = LobbyConfig.defaults
+                  Encyclopedia = { FactionFilter = Set.empty; SelectedDefId = None }
+                  PresetList = []
+                  Settings = HubSettings.defaults }
+        let overlays = OverlayLayerStore.create bus.Sink
+        let renderer =
+            HeadlessRenderer.create sm store overlays (fun () -> HubSettings.defaults)
         use svc =
             new ScriptingHub.ScriptingService(
-                sm, bus.Sink, unitDefs, install,
+                sm, bus.Sink, bus.Events, unitDefs, install,
                 AdminSpeedFixtures.makeBundled (), 5099,
-                ScriptingHub.defaults)
+                store, renderer, overlays, ScriptingHub.defaults)
 
         match sm.Launch(lobby, false) with
         | Result.Error msg -> Assert.Fail(sprintf "Launch rejected: %s" msg)

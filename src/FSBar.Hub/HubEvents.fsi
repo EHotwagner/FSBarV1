@@ -82,6 +82,13 @@ module HubEvents =
         | Failed
 
     /// Hub-wide event payload.
+    ///
+    /// Equality and comparison are opted out — feature 040 added cases
+    /// carrying `VizConfig`, whose transitive `ColorScheme.MapValue`
+    /// function field has no structural equality. Rather than forcing
+    /// every downstream record to custom-equal, tests compare events by
+    /// pattern-match + per-field check.
+    [<NoEquality; NoComparison>]
     type HubEvent =
         /// The session lifecycle transitioned to a new tag.
         | StateChanged of tag: SessionStateTag
@@ -100,6 +107,38 @@ module HubEvents =
         | ProxyInstallProgress of step: ProxyInstallStep * outcome: StepOutcome
         /// The admin channel's hub-level status changed (feature 039).
         | AdminChannelStatusChanged of status: AdminChannelStatus
+        // -----------------------------------------------------------------
+        // Feature 040 — Hub UI state change signals. Published by
+        // `HubStateStore`, `PresetFacade`, and the `HubSettings` update
+        // helpers. Consumers: the local GUI (tab redraw), the gRPC
+        // `StreamHubStateEvents` fan-out, and the GetHubState snapshot
+        // hydrator.
+        // -----------------------------------------------------------------
+        /// Authoritative active-tab changed. Payload = new tab.
+        | ActiveTabChanged of tab: HubTab
+        /// A whole-`VizConfig` replacement was applied (e.g. preset load).
+        | VizConfigChanged of config: FSBar.Viz.VizConfig
+        /// A single-attribute change within `VizConfig`. Both old/new values
+        /// are carried so subscribers can produce a focused UI diff or an
+        /// authoritative wire event without re-reading the store.
+        | VizAttributeChanged of
+            key: string *
+            oldValue: FSBar.Viz.AttributeValue *
+            newValue: FSBar.Viz.AttributeValue
+        /// Viewer-tab camera (pan/zoom/autofit) changed.
+        | CameraChanged of camera: ViewerCamera
+        /// Setup-tab lobby edited; only valid while `SessionManager` is idle.
+        | LobbyChanged of lobby: LobbyConfig.LobbyConfig
+        /// Units-tab filter or pinned selection changed.
+        | EncyclopediaSelectionChanged of selection: EncyclopediaSelection
+        /// A style preset was persisted under `name`.
+        | PresetSaved of name: string
+        /// A style preset was deleted.
+        | PresetDeleted of name: string
+        /// A style preset was loaded into the live `VizConfig`.
+        | PresetLoaded of name: string
+        /// The persisted `HubSettings` snapshot changed.
+        | HubSettingsChanged of settings: HubSettings.HubSettings
 
     /// Inbound-only handle for modules that publish events. Taking this
     /// instead of a full `HubEventBus` reference in constructors makes the

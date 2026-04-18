@@ -73,6 +73,37 @@ let main _argv =
         | Some install -> Some (SessionManager.create install bus.Sink)
         | None -> None
 
+    // Feature 040: central state store for Hub UI. Tabs + gRPC handlers
+    // both read/write through this so the local GUI and remote clients
+    // never drift.
+    let hubState =
+        let initial : HubState =
+            { ActiveTab = FSBar.Hub.HubTab.Setup
+              VizConfig = FSBar.Viz.VizDefaults.defaultConfig
+              Camera = ViewerCamera.defaults
+              Lobby = LobbyConfig.defaults
+              Encyclopedia =
+                  { FactionFilter = Set.empty; SelectedDefId = None }
+              PresetList = []
+              Settings = settings }
+        HubStateStore.create bus.Sink initial
+
+    // Feature 040 US6: per-client overlay layer store. US2 renders the
+    // base scene only; US6 will query this store to composite primitives.
+    let overlayStore = OverlayLayerStore.create bus.Sink
+    // Wire disconnect cleanup so stream clients' layers drop when their
+    // gRPC channel closes (SC-010 cleanup).
+    OverlayLayerStore.wireDisconnectCleanup overlayStore bus.Events
+
+    // Feature 040 US2: off-screen render-frame pipeline. Shared by
+    // GetRenderFrame (single-shot) and StreamRenderFrames (per-client
+    // bounded channel fanout).
+    let headlessRenderer =
+        match sessions with
+        | Some sm ->
+            Some (HeadlessRenderer.create sm hubState overlayStore (fun () -> settings))
+        | None -> None
+
     // --- Render state (mutable; updated by input handler) ------------------
     let mutable activeTab =
         // FSBAR_HUB_INITIAL_TAB lets CI screenshots skip past Setup
@@ -97,15 +128,27 @@ let main _argv =
     // diagnostic block. Seed the lobby's `LaunchGraphicalViewer`
     // from `HubSettings.LaunchGraphicalViewerDefault` so persisted
     // preference (feature 038 FR-005) takes effect on every startup.
+    //
+    // Feature 040 T028: Lobby is now owned by HubStateStore. The tab
+    // keeps a SetupTabState shell (for Maps list / scroll / errors), but
+    // Lobby is pulled from the store on every render via Program.fs
+    // wiring below. Tab actions mutate the store; the HubEvent.LobbyChanged
+    // subscription then fires a re-render.
     let mutable setupState : SetupTab.SetupTabState option =
         barInstall
         |> Option.map (fun install ->
             let initial = SetupTab.init install
-            { initial with
-                Lobby =
-                    { initial.Lobby with
-                        LaunchGraphicalViewer = settings.LaunchGraphicalViewerDefault } }
-            |> SetupTab.validate install)
+            let seeded =
+                { initial with
+                    Lobby =
+                        { initial.Lobby with
+                            LaunchGraphicalViewer = settings.LaunchGraphicalViewerDefault } }
+                |> SetupTab.validate install
+            // Seed the store with the validated lobby so the gRPC
+            // ConfigureLobby handler / GetHubState snapshot see the same
+            // starting point as the GUI.
+            HubStateStore.setLobby hubState seeded.Lobby |> ignore
+            seeded)
 
     // Live VizConfig shared by ViewerTab + ConfiguratorTab. Starts
     // from VizDefaults.defaultConfig and mutates as the user edits
@@ -117,8 +160,21 @@ let main _argv =
     // letterbox the map into the content rect each frame; scroll-
     // wheel + left-drag flip it to manual (AutoFit=false) with the
     // user's Scale/Origin preserved across frames. `R` resets.
+    //
+    // Feature 040 T041: the ref is the GUI-local mirror; Program.fs
+    // writes every pan/zoom mutation through HubStateStore.setCamera
+    // so the HeadlessRenderer + gRPC clients see the same camera.
     let viewerViewState : FSBar.Viz.ViewState ref =
         ref { FSBar.Viz.VizDefaults.defaultViewState with AutoFit = true }
+    let pushCameraToStore () =
+        let vs = viewerViewState.Value
+        let cam : ViewerCamera = {
+            Scale = vs.Scale
+            OriginX = vs.OriginX
+            OriginY = vs.OriginY
+            AutoFit = vs.AutoFit
+        }
+        HubStateStore.setCamera hubState cam |> ignore
     let mutable viewerDragStart : (float32 * float32) option = None
     let mutable viewerDragOrigin : (float32 * float32) option = None
 
@@ -160,8 +216,8 @@ let main _argv =
     let grpcEndpointUrl = sprintf "http://127.0.0.1:%d" settings.GrpcPort
 
     let grpcService : ScriptingHub.ScriptingService option =
-        match barInstall, sessions with
-        | Some install, Some sm ->
+        match barInstall, sessions, headlessRenderer with
+        | Some install, Some sm, Some hr ->
             // Bundled proxy is surfaced on GetSessionStatusResponse
             // but is not required for the service to run. When the
             // resolver hasn't found a complete bundle (e.g. a fresh
@@ -183,8 +239,8 @@ let main _argv =
                     with _ -> FSBar.Client.UnitDefCache.empty
                 | _ -> FSBar.Client.UnitDefCache.empty
             Some (new ScriptingHub.ScriptingService(
-                    sm, bus.Sink, unitDefsThunk, install, bundleInfo,
-                    settings.GrpcPort, ScriptingHub.defaults))
+                    sm, bus.Sink, bus.Events, unitDefsThunk, install, bundleInfo,
+                    settings.GrpcPort, hubState, hr, overlayStore, ScriptingHub.defaults))
         | _ -> None
 
     let grpcHostTask : Task =
@@ -364,7 +420,11 @@ let main _argv =
                         | HubTab.Setup, Some st, Some install ->
                             match SetupTab.handleMouse st settings x y cx cy cw ch with
                             | Some (SetupTab.SetupTabAction.SelectMap name) ->
+                                // Feature 040: route lobby mutation through
+                                // HubStateStore. The HubEvent.LobbyChanged
+                                // subscription below reconciles setupState.
                                 let lobby = { st.Lobby with MapName = name }
+                                HubStateStore.setLobby hubState lobby |> ignore
                                 setupState <- Some (SetupTab.validate install { st with Lobby = lobby })
                             | Some (SetupTab.SetupTabAction.ScrollMapList off) ->
                                 setupState <- Some { st with MapListScroll = off }
@@ -389,6 +449,7 @@ let main _argv =
                                 let updated =
                                     { st with
                                         Lobby = { st.Lobby with LaunchGraphicalViewer = v } }
+                                HubStateStore.setLobby hubState updated.Lobby |> ignore
                                 setupState <- Some (SetupTab.validate install updated)
                             | None -> ()
                         | HubTab.Configurator, _, _ ->
@@ -538,6 +599,7 @@ let main _argv =
                 let dy = (y - sy) / scale
                 viewerViewState.Value <-
                     { vs with OriginX = ox - dx; OriginY = oy - dy; AutoFit = false }
+                pushCameraToStore ()
                 trigger ()
             | _ -> ()
         | InputEvent.MouseUp(_btn, _x, _y) ->
@@ -549,12 +611,14 @@ let main _argv =
             // the Viewer tab. Keys are processed regardless of active
             // tab so a user on Setup can still pre-arm overlays for
             // the next session.
+            //
+            // Feature 040 T053: route through HubStateStore.toggleOverlay
+            // so gRPC clients observe the event + the renderer picks up
+            // the same VizConfig snapshot the GUI sees.
             let toggle (k: FSBar.Viz.OverlayKind) =
-                let current = vizConfig.ActiveOverlays
-                let next =
-                    if current.Contains k then current.Remove k
-                    else current.Add k
-                vizConfig <- { vizConfig with ActiveOverlays = next }
+                HubStateStore.toggleOverlay hubState k FSBar.Hub.ToggleTarget.Toggle
+                |> ignore
+                vizConfig <- (HubStateStore.current hubState).VizConfig
             match key with
             | Key.W -> toggle FSBar.Viz.OverlayKind.WeaponRanges
             | Key.L -> toggle FSBar.Viz.OverlayKind.SightRanges
@@ -565,6 +629,7 @@ let main _argv =
                 // recomputes Scale + zero Origin on the next frame.
                 viewerViewState.Value <-
                     { viewerViewState.Value with AutoFit = true }
+                pushCameraToStore ()
             | _ -> ()
             trigger ()
         | InputEvent.MouseScroll(delta, x, y) ->
@@ -608,6 +673,7 @@ let main _argv =
                         OriginX = mapX - lx / newScale
                         OriginY = mapY - ly / newScale
                         AutoFit = false }
+                pushCameraToStore ()
             | _ -> ()
             trigger ()
         | _ -> ()
@@ -633,6 +699,55 @@ let main _argv =
                         eprintfn "[hub diag %A] %s" sev msg
                     | HubEvents.StateChanged tag ->
                         eprintfn "[hub state] %A" tag
+                    | HubEvents.LobbyChanged lobby ->
+                        // Feature 040 T028: reconcile SetupTab state with
+                        // authoritative store writes (e.g. gRPC ConfigureLobby).
+                        match setupState, barInstall with
+                        | Some st, Some install when not (obj.ReferenceEquals(st.Lobby, lobby)) ->
+                            setupState <-
+                                Some (SetupTab.validate install { st with Lobby = lobby })
+                            trigger ()
+                        | _ -> ()
+                    | HubEvents.VizConfigChanged cfg ->
+                        vizConfig <- cfg
+                        trigger ()
+                    | HubEvents.VizAttributeChanged _ ->
+                        // Refresh from store on any attr mutation.
+                        vizConfig <- (HubStateStore.current hubState).VizConfig
+                        trigger ()
+                    | HubEvents.ActiveTabChanged tab ->
+                        // Feature 040 T055: reflect remote SetActiveTab
+                        // writes in the GUI.
+                        let chromeTab =
+                            match tab with
+                            | FSBar.Hub.HubTab.Setup -> HubTab.Setup
+                            | FSBar.Hub.HubTab.Viewer -> HubTab.Viewer
+                            | FSBar.Hub.HubTab.Units -> HubTab.Encyclopedia
+                            | FSBar.Hub.HubTab.Style -> HubTab.Configurator
+                            | FSBar.Hub.HubTab.Cfg -> HubTab.Settings
+                            | FSBar.Hub.HubTab.Grpc -> HubTab.Grpc
+                        if activeTab <> chromeTab then
+                            activeTab <- chromeTab
+                            trigger ()
+                    | HubEvents.CameraChanged cam ->
+                        // Feature 040 T041: reflect remote gRPC SetCamera
+                        // writes in the GUI. Guard against the drag/zoom
+                        // echo (we wrote the same values ourselves via
+                        // pushCameraToStore).
+                        let vs = viewerViewState.Value
+                        let sameAsLocal =
+                            vs.Scale = cam.Scale
+                            && vs.OriginX = cam.OriginX
+                            && vs.OriginY = cam.OriginY
+                            && vs.AutoFit = cam.AutoFit
+                        if not sameAsLocal then
+                            viewerViewState.Value <-
+                                { vs with
+                                    Scale = cam.Scale
+                                    OriginX = cam.OriginX
+                                    OriginY = cam.OriginY
+                                    AutoFit = cam.AutoFit }
+                            trigger ()
                     | _ -> ()
                 member _.OnError(_) = ()
                 member _.OnCompleted() = () })

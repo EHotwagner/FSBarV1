@@ -12,6 +12,7 @@ module HubSettings =
         GrpcPort: int
         LaunchGraphicalViewerDefault: bool
         StartPausedDefault: bool
+        MaxRenderFrameSubscribers: int
         SchemaVersion: int
     }
 
@@ -21,11 +22,14 @@ module HubSettings =
         GrpcPort = 5021
         LaunchGraphicalViewerDefault = false
         StartPausedDefault = true
-        SchemaVersion = 1
+        MaxRenderFrameSubscribers = 8
+        SchemaVersion = 2
     }
 
     let private minPort = 1024
     let private maxPort = 65535
+    let private minRenderSubscribers = 1
+    let private maxRenderSubscribers = 32
 
     let settingsPath () =
         let xdgConfigHome = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")
@@ -60,6 +64,7 @@ module HubSettings =
         writer.WriteNumber("grpcPort", s.GrpcPort)
         writer.WriteBoolean("launchGraphicalViewerDefault", s.LaunchGraphicalViewerDefault)
         writer.WriteBoolean("startPausedDefault", s.StartPausedDefault)
+        writer.WriteNumber("maxRenderFrameSubscribers", s.MaxRenderFrameSubscribers)
         writer.WriteNumber("schemaVersion", s.SchemaVersion)
         writer.WriteEndObject()
         writer.Flush()
@@ -100,12 +105,28 @@ module HubSettings =
                 else
                     rawPort
             let schemaVersion = parseInt root "schemaVersion" defaults.SchemaVersion
+            let rawRenderSubscribers =
+                parseInt root "maxRenderFrameSubscribers" defaults.MaxRenderFrameSubscribers
+            let renderSubscribers =
+                // Missing field (v1 file) or out-of-range → clamp to default.
+                if rawRenderSubscribers < minRenderSubscribers
+                   || rawRenderSubscribers > maxRenderSubscribers then
+                    defaults.MaxRenderFrameSubscribers
+                else
+                    rawRenderSubscribers
             { BarDataDirOverride = parseOptionalString root "barDataDirOverride"
               EngineVersionOverride = parseOptionalString root "engineVersionOverride"
               GrpcPort = port
               LaunchGraphicalViewerDefault = parseBool root "launchGraphicalViewerDefault" defaults.LaunchGraphicalViewerDefault
               StartPausedDefault = parseBool root "startPausedDefault" defaults.StartPausedDefault
-              SchemaVersion = if schemaVersion <= 0 then defaults.SchemaVersion else schemaVersion }
+              MaxRenderFrameSubscribers = renderSubscribers
+              // v1 → v2 migration: any load below v2 is rewritten as v2 on
+              // the next `save` (the record already carries the upgraded
+              // value, and `serialize` always emits the current version).
+              SchemaVersion =
+                  if schemaVersion <= 0 then defaults.SchemaVersion
+                  elif schemaVersion < 2 then defaults.SchemaVersion
+                  else schemaVersion }
 
     let load () : HubSettings =
         let path = settingsPath ()
@@ -121,6 +142,13 @@ module HubSettings =
     let save (settings: HubSettings) : Result<unit, string> =
         if settings.GrpcPort < minPort || settings.GrpcPort > maxPort then
             Error (sprintf "grpcPort=%d outside [%d, %d]" settings.GrpcPort minPort maxPort)
+        elif settings.MaxRenderFrameSubscribers < minRenderSubscribers
+             || settings.MaxRenderFrameSubscribers > maxRenderSubscribers then
+            Error
+                (sprintf "maxRenderFrameSubscribers=%d outside [%d, %d]"
+                    settings.MaxRenderFrameSubscribers
+                    minRenderSubscribers
+                    maxRenderSubscribers)
         else
             let path = settingsPath ()
             try
@@ -136,3 +164,20 @@ module HubSettings =
                 Ok ()
             with ex ->
                 Error (sprintf "%s: %s" (ex.GetType().Name) ex.Message)
+
+    let updateStartPausedDefault (settings: HubSettings) (value: bool) : HubSettings =
+        { settings with StartPausedDefault = value }
+
+    let updateLaunchGraphicalViewerDefault (settings: HubSettings) (value: bool) : HubSettings =
+        { settings with LaunchGraphicalViewerDefault = value }
+
+    let updateMaxRenderFrameSubscribers
+        (settings: HubSettings)
+        (value: int)
+        : Result<HubSettings, string> =
+        if value < minRenderSubscribers || value > maxRenderSubscribers then
+            Error
+                (sprintf "maxRenderFrameSubscribers=%d outside [%d, %d]"
+                    value minRenderSubscribers maxRenderSubscribers)
+        else
+            Ok { settings with MaxRenderFrameSubscribers = value }

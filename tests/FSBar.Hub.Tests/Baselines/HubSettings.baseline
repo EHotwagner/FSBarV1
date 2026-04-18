@@ -33,16 +33,22 @@ module HubSettings =
         /// match starts paused via a `/pause` chat command on the first
         /// `Running` transition.
         StartPausedDefault: bool
-        /// Schema version. `1` today; increments when additive /
-        /// destructive changes require a migration step on load.
-        /// Adding `StartPausedDefault` does not bump the version because
-        /// missing fields fall back to defaults.
+        /// Maximum number of concurrent `StreamRenderFrames` subscribers
+        /// served by `HeadlessRenderer` (feature 040 US2). Validated to
+        /// `[1, 32]`; default `8`. Persisted starting at schema v2.
+        /// v1 files load this field as the default and are rewritten as
+        /// v2 on the next `save`.
+        MaxRenderFrameSubscribers: int
+        /// Schema version. Currently `2` (feature 040 bumped from 1 when
+        /// `MaxRenderFrameSubscribers` was added). Increments when
+        /// additive / destructive changes require a migration step on
+        /// load; missing-field additions do not bump.
         SchemaVersion: int
     }
 
     /// Factory values identical to a fresh-install state:
     /// no overrides, port `5021`, graphical-viewer toggle off,
-    /// start-paused toggle on, schema `1`.
+    /// start-paused toggle on, 8 concurrent render subscribers, schema `2`.
     val defaults: HubSettings
 
     /// Returns the absolute filesystem path where settings are read /
@@ -69,3 +75,22 @@ module HubSettings =
     /// Returns `Ok ()` on success; `Error msg` carries an operator-visible
     /// reason on failure (permissions, I/O error, serialisation).
     val save: settings: HubSettings -> Result<unit, string>
+
+    /// Return a copy of `settings` with `StartPausedDefault = value`.
+    /// Pure transformation; callers persist via `save` and publish a
+    /// `HubEvent.HubSettingsChanged` if desired.
+    val updateStartPausedDefault:
+        settings: HubSettings -> value: bool -> HubSettings
+
+    /// Return a copy of `settings` with
+    /// `LaunchGraphicalViewerDefault = value`. Pure transformation.
+    val updateLaunchGraphicalViewerDefault:
+        settings: HubSettings -> value: bool -> HubSettings
+
+    /// Return a validated copy of `settings` with
+    /// `MaxRenderFrameSubscribers = value`. Rejects values outside
+    /// `[1, 32]` with an operator-visible reason (data-model §HubSettings).
+    val updateMaxRenderFrameSubscribers:
+        settings: HubSettings ->
+        value: int ->
+            Result<HubSettings, string>

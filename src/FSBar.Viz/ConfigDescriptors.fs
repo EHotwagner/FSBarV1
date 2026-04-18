@@ -2,6 +2,14 @@ namespace FSBar.Viz
 
 open SkiaSharp
 
+type AttributeValue =
+    | BoolValue of bool
+    | IntValue of int
+    | FloatValue of float
+    | StringValue of string
+    | ColorRgbaValue of uint32
+    | StringListValue of string list
+
 [<RequireQualifiedAccess>]
 type InputKind =
     | ColorPicker

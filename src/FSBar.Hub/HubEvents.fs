@@ -40,6 +40,7 @@ module HubEvents =
         | Ending
         | Failed
 
+    [<NoEquality; NoComparison>]
     type HubEvent =
         | StateChanged of tag: SessionStateTag
         | EngineSpeedChanged of speed: float32
@@ -49,6 +50,20 @@ module HubEvents =
         | ScriptingClientDetached of clientId: Guid * reason: DetachReason
         | ProxyInstallProgress of step: ProxyInstallStep * outcome: StepOutcome
         | AdminChannelStatusChanged of status: AdminChannelStatus
+        // Feature 040 additions.
+        | ActiveTabChanged of tab: HubTab
+        | VizConfigChanged of config: FSBar.Viz.VizConfig
+        | VizAttributeChanged of
+            key: string *
+            oldValue: FSBar.Viz.AttributeValue *
+            newValue: FSBar.Viz.AttributeValue
+        | CameraChanged of camera: ViewerCamera
+        | LobbyChanged of lobby: LobbyConfig.LobbyConfig
+        | EncyclopediaSelectionChanged of selection: EncyclopediaSelection
+        | PresetSaved of name: string
+        | PresetDeleted of name: string
+        | PresetLoaded of name: string
+        | HubSettingsChanged of settings: HubSettings.HubSettings
 
     type IHubEventSink =
         abstract Publish: HubEvent -> unit

@@ -127,6 +127,18 @@ module SessionManager =
         /// Does not exit the hub process or close gRPC clients.
         member End: unit -> unit
 
+        // ---------------- Feature 040 additions ----------------
+
+        /// Abort the currently-running or starting session via `End`.
+        /// Returns `Sent` on success; `Rejected "no active session"`
+        /// when the state is already `Idle`. Emits `StateChanged` on
+        /// transition through the same path as `End`.
+        member Stop: unit -> SubmitOutcome
+
+        /// True when `State = Idle` — the Setup tab and the gRPC
+        /// `ConfigureLobby` handler both gate on this.
+        member IsLobbyEditable: unit -> bool
+
         interface System.IDisposable
 
     /// Construct a `SessionManager` bound to a specific `BarInstall`

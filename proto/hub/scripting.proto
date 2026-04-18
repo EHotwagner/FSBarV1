@@ -69,6 +69,59 @@ service ScriptingService {
   rpc SetEngineSpeed(SetEngineSpeedRequest) returns (SetEngineSpeedResponse);
   rpc ForceEndMatch(ForceEndMatchRequest) returns (ForceEndMatchResponse);
   rpc SendAdminMessage(SendAdminMessageRequest) returns (SendAdminMessageResponse);
+
+  // ---------------------------------------------------------------------------
+  // Feature 040 — gRPC parity for Hub UI and rendered viewer. Additive only.
+  // ---------------------------------------------------------------------------
+
+  // ---------------- Session orchestration (US1) ----------------
+
+  rpc ConfigureLobby(ConfigureLobbyRequest) returns (ConfigureLobbyResponse);
+  rpc ListMaps(ListMapsRequest) returns (ListMapsResponse);
+  rpc ValidateLobby(ValidateLobbyRequest) returns (ValidateLobbyResponse);
+  rpc LaunchSession(LaunchSessionRequest) returns (LaunchSessionResponse);
+  rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
+
+  // ---------------- Rendered viewer frames (US2) ----------------
+
+  rpc StreamRenderFrames(StreamRenderFramesRequest) returns (stream RenderFrameMessage);
+  rpc GetRenderFrame(GetRenderFrameRequest) returns (GetRenderFrameResponse);
+
+  // ---------------- Viz + camera control (US3) ----------------
+
+  rpc SetVizConfig(SetVizConfigRequest) returns (SetVizConfigResponse);
+  rpc SetVizAttribute(SetVizAttributeRequest) returns (SetVizAttributeResponse);
+  rpc ToggleOverlay(ToggleOverlayRequest) returns (ToggleOverlayResponse);
+  rpc SetCamera(SetCameraRequest) returns (SetCameraResponse);
+  rpc SetActiveTab(SetActiveTabRequest) returns (SetActiveTabResponse);
+
+  // ---------------- Preset + encyclopedia + settings (US4) ----------------
+
+  rpc ListPresets(ListPresetsRequest) returns (ListPresetsResponse);
+  rpc SavePreset(SavePresetRequest) returns (SavePresetResponse);
+  rpc LoadPreset(LoadPresetRequest) returns (LoadPresetResponse);
+  rpc DeletePreset(DeletePresetRequest) returns (DeletePresetResponse);
+
+  rpc ListUnits(ListUnitsRequest) returns (ListUnitsResponse);
+  rpc SelectUnit(SelectUnitRequest) returns (SelectUnitResponse);
+
+  rpc GetHubSettings(GetHubSettingsRequest) returns (GetHubSettingsResponse);
+  rpc SetHubSettings(SetHubSettingsRequest) returns (SetHubSettingsResponse);
+
+  rpc InstallProxy(InstallProxyRequest) returns (InstallProxyResponse);
+  rpc RefreshProxyStatus(RefreshProxyStatusRequest) returns (RefreshProxyStatusResponse);
+
+  // ---------------- Hub-wide state sync (US5) ----------------
+
+  rpc GetHubState(GetHubStateRequest) returns (HubStateSnapshot);
+  rpc StreamHubStateEvents(StreamHubStateEventsRequest) returns (stream HubStateEvent);
+
+  // ---------------- Client-authored overlays (US6) ----------------
+
+  rpc PutLayer(PutLayerRequest) returns (PutLayerResponse);
+  rpc DeleteLayer(DeleteLayerRequest) returns (DeleteLayerResponse);
+  rpc ListLayers(ListLayersRequest) returns (ListLayersResponse);
+  rpc ClearLayers(ClearLayersRequest) returns (ClearLayersResponse);
 }
 
 // -----------------------------------------------------------------------------
@@ -241,3 +294,574 @@ message SendAdminMessageRequest {
   string text = 1;
 }
 message SendAdminMessageResponse { AdminSubmitResult result = 1; }
+
+// -----------------------------------------------------------------------------
+// Feature 040 — gRPC parity for Hub UI and rendered viewer. Additive only.
+// -----------------------------------------------------------------------------
+
+// ---- Common helper messages ----
+
+enum HubTab {
+  HUB_TAB_UNSPECIFIED = 0;
+  HUB_TAB_SETUP = 1;
+  HUB_TAB_VIEWER = 2;
+  HUB_TAB_UNITS = 3;
+  HUB_TAB_STYLE = 4;
+  HUB_TAB_CFG = 5;
+  HUB_TAB_GRPC = 6;
+}
+
+enum ImageFormat {
+  IMAGE_FORMAT_UNSPECIFIED = 0;
+  IMAGE_FORMAT_PNG = 1;
+  IMAGE_FORMAT_JPEG = 2;
+}
+
+enum SubmitOutcome {
+  SUBMIT_OUTCOME_UNSPECIFIED = 0;
+  SUBMIT_OUTCOME_SENT = 1;
+  SUBMIT_OUTCOME_COALESCED = 2;
+  SUBMIT_OUTCOME_REJECTED = 3;
+}
+
+// Reused by every mutating RPC that doesn't need a richer response.
+message MutationResult {
+  SubmitOutcome outcome = 1;
+  // Populated when outcome = REJECTED.
+  string reason = 2;
+}
+
+// ---- US1 — Session orchestration ----
+
+message ConfigureLobbyRequest {
+  LobbyConfigWire lobby = 1;
+}
+
+message ConfigureLobbyResponse {
+  MutationResult result = 1;
+  repeated string validation_errors = 2;
+}
+
+message LobbyConfigWire {
+  string map_name = 1;
+  LobbyMode mode = 2;
+  float engine_speed = 3;
+  bool launch_graphical_viewer = 4;
+  repeated TeamWire teams = 5;
+  repeated SpectatorWire spectators = 6;
+}
+
+enum LobbyMode {
+  LOBBY_MODE_UNSPECIFIED = 0;
+  LOBBY_MODE_SKIRMISH = 1;
+  LOBBY_MODE_FFA = 2;
+  LOBBY_MODE_TEAM = 3;
+}
+
+message TeamWire {
+  int32 ally_team_id = 1;
+  repeated SeatWire seats = 2;
+}
+
+message SeatWire {
+  SeatKind kind = 1;
+  string side = 2;
+  float handicap = 3;
+  string ai_name = 4;
+  string human_name = 5;
+}
+
+enum SeatKind {
+  SEAT_KIND_UNSPECIFIED = 0;
+  SEAT_KIND_AI = 1;
+  SEAT_KIND_HUMAN = 2;
+}
+
+message SpectatorWire {
+  string name = 1;
+}
+
+message ListMapsRequest {}
+
+message ListMapsResponse {
+  repeated MapDescriptor maps = 1;
+}
+
+message MapDescriptor {
+  string name = 1;
+  string file_path = 2;
+}
+
+message ValidateLobbyRequest {
+  LobbyConfigWire lobby = 1;
+}
+
+message ValidateLobbyResponse {
+  repeated string errors = 1;
+}
+
+message LaunchSessionRequest {
+  bool start_paused = 1;
+  bool launch_graphical_viewer = 2;
+}
+
+message LaunchSessionResponse {
+  MutationResult result = 1;
+  optional string session_id = 2;
+}
+
+message StopSessionRequest {}
+
+message StopSessionResponse {
+  MutationResult result = 1;
+}
+
+// ---- US2 — Rendered viewer frames ----
+
+message StreamRenderFramesRequest {
+  string client_label = 1;
+  int32 target_hz = 2;
+  ImageFormat format = 3;
+  int32 viewport_width = 4;
+  int32 viewport_height = 5;
+  int32 jpeg_quality = 6;
+  bool close_on_session_end = 7;
+  bool emit_no_session_placeholder = 8;
+}
+
+message RenderFrameMessage {
+  bytes image_bytes = 1;
+  ImageFormat format = 2;
+  int64 rendered_at_unix_ms = 3;
+  int64 encoded_at_unix_ms = 4;
+  uint64 client_sequence = 5;
+  int32 viewport_width = 6;
+  int32 viewport_height = 7;
+  int32 quality = 8;
+  bool is_placeholder = 9;
+}
+
+message GetRenderFrameRequest {
+  ImageFormat format = 1;
+  int32 viewport_width = 2;
+  int32 viewport_height = 3;
+  int32 jpeg_quality = 4;
+}
+
+message GetRenderFrameResponse {
+  RenderFrameMessage frame = 1;
+}
+
+// ---- US3 — Viz + camera control ----
+
+message VizAttributeValue {
+  oneof value {
+    bool bool_value = 1;
+    int32 int_value = 2;
+    double float_value = 3;
+    string string_value = 4;
+    uint32 color_rgba = 5;
+    StringList string_list_value = 6;
+  }
+}
+
+message StringList {
+  repeated string values = 1;
+}
+
+message VizConfigWire {
+  map<string, VizAttributeValue> attributes = 1;
+}
+
+message SetVizConfigRequest {
+  VizConfigWire viz_config = 1;
+}
+
+message SetVizConfigResponse {
+  MutationResult result = 1;
+  repeated string unknown_keys = 2;
+  repeated string invalid_values = 3;
+}
+
+message SetVizAttributeRequest {
+  string key = 1;
+  VizAttributeValue value = 2;
+}
+
+message SetVizAttributeResponse {
+  MutationResult result = 1;
+}
+
+message ToggleOverlayRequest {
+  OverlayKey overlay = 1;
+  OverlayTargetState target = 2;
+}
+
+enum OverlayKey {
+  OVERLAY_KEY_UNSPECIFIED = 0;
+  OVERLAY_KEY_UNITS = 1;
+  OVERLAY_KEY_EVENTS = 2;
+  OVERLAY_KEY_GRID = 3;
+  OVERLAY_KEY_METAL_SPOTS = 4;
+  OVERLAY_KEY_ECONOMY_HUD = 5;
+  OVERLAY_KEY_WEAPON_RANGES = 6;
+  OVERLAY_KEY_SIGHT_RANGES = 7;
+  OVERLAY_KEY_COMMAND_QUEUE = 8;
+  OVERLAY_KEY_FULL_NAMES = 9;
+}
+
+enum OverlayTargetState {
+  OVERLAY_TARGET_STATE_UNSPECIFIED = 0;
+  OVERLAY_TARGET_STATE_TOGGLE = 1;
+  OVERLAY_TARGET_STATE_ON = 2;
+  OVERLAY_TARGET_STATE_OFF = 3;
+}
+
+message ToggleOverlayResponse {
+  MutationResult result = 1;
+  bool new_state = 2;
+}
+
+message SetCameraRequest {
+  ViewerCameraWire camera = 1;
+}
+
+message ViewerCameraWire {
+  float scale = 1;
+  float origin_x = 2;
+  float origin_y = 3;
+  bool auto_fit = 4;
+}
+
+message SetCameraResponse {
+  MutationResult result = 1;
+}
+
+message SetActiveTabRequest {
+  HubTab tab = 1;
+}
+
+message SetActiveTabResponse {
+  MutationResult result = 1;
+}
+
+// ---- US4 — Preset / encyclopedia / settings / proxy ----
+
+message ListPresetsRequest {}
+message ListPresetsResponse {
+  repeated PresetDescriptor presets = 1;
+}
+
+message PresetDescriptor {
+  string name = 1;
+  int64 modified_at_unix_ms = 2;
+}
+
+message SavePresetRequest {
+  string name = 1;
+  VizConfigWire viz_config = 2;
+}
+message SavePresetResponse {
+  MutationResult result = 1;
+}
+
+message LoadPresetRequest {
+  string name = 1;
+}
+message LoadPresetResponse {
+  MutationResult result = 1;
+  optional VizConfigWire viz_config = 2;
+}
+
+message DeletePresetRequest {
+  string name = 1;
+}
+message DeletePresetResponse {
+  MutationResult result = 1;
+}
+
+message ListUnitsRequest {
+  repeated string faction_filter = 1;
+}
+
+message ListUnitsResponse {
+  repeated EncyclopediaEntryWire entries = 1;
+}
+
+message EncyclopediaEntryWire {
+  int32 def_id = 1;
+  string internal_name = 2;
+  string subfolder = 3;
+  string faction = 4;
+  string tier = 5;
+  string shape = 6;
+  int32 metal_cost = 7;
+  int32 energy_cost = 8;
+  int32 build_time = 9;
+  int32 max_health = 10;
+  int32 footprint_x = 11;
+  int32 footprint_z = 12;
+  float sight_range_elmo = 13;
+  repeated float weapon_ranges_elmo = 14;
+}
+
+message SelectUnitRequest {
+  oneof selector {
+    int32 def_id = 1;
+    string internal_name = 2;
+  }
+}
+
+message SelectUnitResponse {
+  MutationResult result = 1;
+  optional EncyclopediaEntryWire entry = 2;
+}
+
+message GetHubSettingsRequest {}
+
+message GetHubSettingsResponse {
+  HubSettingsWire settings = 1;
+}
+
+message HubSettingsWire {
+  string bar_data_dir_override = 1;
+  string engine_version_override = 2;
+  int32 grpc_port = 3;
+  bool launch_graphical_viewer_default = 4;
+  bool start_paused_default = 5;
+  int32 max_render_frame_subscribers = 6;
+  int32 schema_version = 7;
+}
+
+message SetHubSettingsRequest {
+  HubSettingsWire settings = 1;
+}
+
+message SetHubSettingsResponse {
+  MutationResult result = 1;
+}
+
+message InstallProxyRequest {
+  bool force_reinstall = 1;
+}
+message InstallProxyResponse {
+  MutationResult result = 1;
+  optional string installed_version = 2;
+}
+
+message RefreshProxyStatusRequest {}
+message RefreshProxyStatusResponse {
+  string installed_version = 1;
+  string install_path = 2;
+  string health = 3;
+}
+
+// ---- US5 — Hub-wide state sync ----
+
+message GetHubStateRequest {}
+
+message HubStateSnapshot {
+  HubTab active_tab = 1;
+  VizConfigWire viz_config = 2;
+  ViewerCameraWire camera = 3;
+  LobbyConfigWire lobby = 4;
+  EncyclopediaSelectionWire encyclopedia = 5;
+  repeated PresetDescriptor presets = 6;
+  GetSessionStatusResponse session_status = 7;
+  HubSettingsWire hub_settings = 8;
+}
+
+message EncyclopediaSelectionWire {
+  repeated string faction_filter = 1;
+  optional int32 selected_def_id = 2;
+}
+
+message StreamHubStateEventsRequest {
+  string client_label = 1;
+}
+
+message HubStateEvent {
+  oneof change {
+    HubTab active_tab = 1;
+    VizConfigWire viz_config = 2;
+    VizAttributeChange viz_attribute = 3;
+    ViewerCameraWire camera = 4;
+    LobbyConfigWire lobby = 5;
+    EncyclopediaSelectionWire encyclopedia = 6;
+    PresetChange preset = 7;
+    GetSessionStatusResponse session_status = 8;
+    AdminChannelStatusInfo admin_channel_status = 9;
+    HubSettingsWire hub_settings = 10;
+    ProxyInstallProgress proxy_install_progress = 11;
+  }
+  int64 emitted_at_unix_ms = 12;
+  string source = 13;
+}
+
+message VizAttributeChange {
+  string key = 1;
+  VizAttributeValue old_value = 2;
+  VizAttributeValue new_value = 3;
+}
+
+message PresetChange {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_SAVED = 1;
+    KIND_DELETED = 2;
+    KIND_LOADED = 3;
+  }
+  Kind kind = 1;
+  string name = 2;
+}
+
+message ProxyInstallProgress {
+  string stage = 1;
+  int32 percent = 2;
+}
+
+// ---- US6 — Client-authored overlays ----
+
+enum CoordinateSpace {
+  COORDINATE_SPACE_UNSPECIFIED = 0;
+  COORDINATE_SPACE_WORLD = 1;
+  COORDINATE_SPACE_SCREEN = 2;
+}
+
+enum TextAlign {
+  TEXT_ALIGN_UNSPECIFIED = 0;
+  TEXT_ALIGN_LEFT = 1;
+  TEXT_ALIGN_CENTER = 2;
+  TEXT_ALIGN_RIGHT = 3;
+}
+
+message OverlayPoint {
+  float x = 1;
+  float y = 2;
+}
+
+message OverlayStyle {
+  uint32 stroke_color_rgba = 1;
+  float stroke_width = 2;
+  bool has_fill = 3;
+  uint32 fill_color_rgba = 4;
+  float opacity = 5;
+  repeated float dash = 6;
+}
+
+message PathVerb {
+  oneof verb {
+    OverlayPoint move_to = 1;
+    OverlayPoint line_to = 2;
+    CubicTo cubic_to = 3;
+    Close close = 4;
+  }
+}
+
+message CubicTo {
+  OverlayPoint c1 = 1;
+  OverlayPoint c2 = 2;
+  OverlayPoint p = 3;
+}
+
+message Close {}
+
+message LinePrimitive {
+  OverlayPoint from = 1;
+  OverlayPoint to = 2;
+}
+
+message PolylinePrimitive {
+  repeated OverlayPoint points = 1;
+}
+
+message PolygonPrimitive {
+  repeated OverlayPoint points = 1;
+}
+
+message RectanglePrimitive {
+  float x = 1;
+  float y = 2;
+  float width = 3;
+  float height = 4;
+  float corner_radius = 5;
+}
+
+message CirclePrimitive {
+  OverlayPoint center = 1;
+  float radius = 2;
+}
+
+message PathPrimitive {
+  repeated PathVerb verbs = 1;
+}
+
+message TextPrimitive {
+  OverlayPoint anchor = 1;
+  string text = 2;
+  float font_size = 3;
+  string font_family = 4;
+  TextAlign align = 5;
+}
+
+message ImagePrimitive {
+  OverlayPoint anchor = 1;
+  int32 width = 2;
+  int32 height = 3;
+  bytes bytes = 4;
+}
+
+message OverlayPrimitive {
+  CoordinateSpace space = 1;
+  OverlayStyle style = 2;
+  oneof primitive {
+    LinePrimitive line = 3;
+    PolylinePrimitive polyline = 4;
+    PolygonPrimitive polygon = 5;
+    RectanglePrimitive rectangle = 6;
+    CirclePrimitive circle = 7;
+    PathPrimitive path = 8;
+    TextPrimitive text = 9;
+    ImagePrimitive image = 10;
+  }
+}
+
+message OverlayLayerWire {
+  string name = 1;
+  int32 z_hint = 2;
+  repeated OverlayPrimitive primitives = 3;
+}
+
+message OverlayLayerDescriptor {
+  string name = 1;
+  int32 z_hint = 2;
+  int64 uploaded_at_unix_ms = 3;
+  int32 primitive_count = 4;
+}
+
+message PutLayerRequest {
+  OverlayLayerWire layer = 1;
+}
+message PutLayerResponse {
+  MutationResult result = 1;
+  repeated string validation_errors = 2;
+  string exceeded_cap = 3;
+}
+
+message DeleteLayerRequest {
+  string name = 1;
+}
+message DeleteLayerResponse {
+  MutationResult result = 1;
+}
+
+message ListLayersRequest {}
+message ListLayersResponse {
+  repeated OverlayLayerDescriptor layers = 1;
+}
+
+message ClearLayersRequest {}
+message ClearLayersResponse {
+  MutationResult result = 1;
+  int32 cleared_count = 2;
+}
