@@ -36,17 +36,19 @@ let ``Pause false encodes to /pause 0`` () =
     Assert.Equal("/pause 0", datagramText dg.[0])
 
 [<Fact>]
-let ``SetGameSpeed expands to setminspeed plus setmaxspeed`` () =
+let ``SetGameSpeed expands to setmaxspeed, setminspeed, setmaxspeed`` () =
     let dg = encodeCommandToDatagrams (SetGameSpeed 2.0f)
-    Assert.Equal(2, dg.Length)
-    Assert.Equal("/setminspeed 2", datagramText dg.[0])
-    Assert.Equal("/setmaxspeed 2", datagramText dg.[1])
+    Assert.Equal(3, dg.Length)
+    Assert.Equal("/setmaxspeed 2", datagramText dg.[0])
+    Assert.Equal("/setminspeed 2", datagramText dg.[1])
+    Assert.Equal("/setmaxspeed 2", datagramText dg.[2])
 
 [<Fact>]
 let ``SetGameSpeed fractional formats without trailing zeros`` () =
     let dg = encodeCommandToDatagrams (SetGameSpeed 0.5f)
-    Assert.Equal("/setminspeed 0.5", datagramText dg.[0])
-    Assert.Equal("/setmaxspeed 0.5", datagramText dg.[1])
+    Assert.Equal("/setmaxspeed 0.5", datagramText dg.[0])
+    Assert.Equal("/setminspeed 0.5", datagramText dg.[1])
+    Assert.Equal("/setmaxspeed 0.5", datagramText dg.[2])
 
 [<Fact>]
 let ``SayMessage emits raw text without slash prefix`` () =

@@ -68,13 +68,20 @@ module AdminChannel =
             // the wrong way after a hub-side state mismatch.
             [| toBytes (if paused then "/pause 1" else "/pause 0") |]
         | SetGameSpeed speed ->
-            // /setminspeed FIRST, /setmaxspeed SECOND — feature 041 R1.
-            // The engine accepts either order; emitting the floor first
-            // makes the effective speed observably monotonic for downward
-            // changes (no transient ceiling-lowered-but-floor-still-high
-            // state) and matches AdminChannelCodecTests' contract.
+            // The engine has no /setspeed — only /setminspeed + /setmaxspeed.
+            // Each caps the argument at the OTHER bound before assigning
+            // (setminspeed N → min = min(N, currentMax); setmaxspeed N →
+            // max = max(N, currentMin)), then calls UserSpeedChange which
+            // clamps current speed to the new [min, max] range.
+            //
+            // To raise speed past the current ceiling OR lower it below
+            // the current floor, we have to relax the blocking bound
+            // first. Sending three datagrams — setmaxspeed, setminspeed,
+            // setmaxspeed — is direction-agnostic and always collapses
+            // [min, max] to [N, N], clamping current speed to N.
             let s = sprintf "%g" speed
-            [| toBytes (sprintf "/setminspeed %s" s)
+            [| toBytes (sprintf "/setmaxspeed %s" s)
+               toBytes (sprintf "/setminspeed %s" s)
                toBytes (sprintf "/setmaxspeed %s" s) |]
         | SayMessage text -> [| toBytes text |]
 
