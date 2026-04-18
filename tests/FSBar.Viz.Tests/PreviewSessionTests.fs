@@ -9,7 +9,7 @@ open FSBar.Viz.Tests.VizEngineFixture
 
 [<Fact>]
 let ``startWithSnapshot opens and stops without exception`` () =
-    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 32; height = 32; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withFriendlyAt (100.0f, 0.0f, 100.0f)
@@ -26,7 +26,7 @@ let ``startWithSnapshot opens and stops without exception`` () =
 
 [<Fact>]
 let ``startWithMap works`` () =
-    let grid = SyntheticMapGrid.build {| width = 64; height = 64; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 64; height = 64; seed = None  }
     use handle = PreviewSession.startWithMap grid
     System.Threading.Thread.Sleep(2000)
 
@@ -35,7 +35,7 @@ let ``startPlayback with synthetic data runs and stops cleanly`` () =
     let synScene = FSBar.SyntheticData.Scenes.generate FSBar.SyntheticData.SceneId.SceneA
     let mapW = int synScene.MapWidth / 8
     let mapH = int synScene.MapHeight / 8
-    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = mapW; height = mapH; seed = None  }
     let snapshots =
         synScene.Frames
         |> Array.map (fun gs ->

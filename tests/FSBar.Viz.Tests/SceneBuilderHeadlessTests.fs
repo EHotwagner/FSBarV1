@@ -27,7 +27,7 @@ let ``buildSceneHeadless synthesises a scene when map is None`` () =
 [<Fact>]
 let ``buildSceneHeadless uses the provided MapGrid when Some`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 32; height = 32; seed = None  }
     let scene = SceneBuilder.buildSceneHeadless (emptyGameState ()) (Some grid) VizDefaults.defaultConfig
     let elements = collectElements scene
     Assert.True(List.exists isRect elements, "scene with real map should render a base-layer rect")
@@ -35,7 +35,7 @@ let ``buildSceneHeadless uses the provided MapGrid when Some`` () =
 [<Fact>]
 let ``buildSceneHeadless respects VizConfig.ActiveOverlays toggles`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let withGrid =
         { VizDefaults.defaultConfig with
             ActiveOverlays = Set.add OverlayKind.Grid VizDefaults.defaultConfig.ActiveOverlays
@@ -55,7 +55,7 @@ let ``buildSceneHeadless respects VizConfig.ActiveOverlays toggles`` () =
 [<Fact>]
 let ``buildSceneHeadless converts TrackedUnit positions into UnitState entries`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let units =
         [ 101, { UnitId = 101; DefId = 1; Position = (100.0f, 0.0f, 100.0f)
                  Health = 100.0f; MaxHealth = 100.0f
@@ -83,7 +83,7 @@ let private infoOf (defId: int) (name: string) : UnitDefInfo =
 [<Fact>]
 let ``buildSceneHeadlessSized with defCache=None falls back to legacy placeholder`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let units =
         [ 1, { UnitId = 1; DefId = 1; Position = (64.0f, 0.0f, 64.0f)
                Health = 100.0f; MaxHealth = 100.0f
@@ -97,7 +97,7 @@ let ``buildSceneHeadlessSized with defCache=None falls back to legacy placeholde
 [<Fact>]
 let ``buildSceneHeadlessSized with defCache=Some populates UnitDisplayAdapter path`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     // Pick a BarData-backed name so classification fires the non-fallback branch.
     let name =
         BarData.AllUnitDefs.all
@@ -119,7 +119,7 @@ let ``buildSceneHeadlessSized with defCache=Some populates UnitDisplayAdapter pa
 [<Fact>]
 let ``buildSceneHeadlessView with defCache matches adapter output`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let cache = UnitDefCache.ofSeq [ infoOf 1 "armcom" ]
     let tu =
         { UnitId = 1; DefId = 1; Position = (100.0f, 0.0f, 100.0f)

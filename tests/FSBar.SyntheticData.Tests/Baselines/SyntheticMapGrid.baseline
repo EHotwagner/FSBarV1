@@ -22,8 +22,18 @@ val withMetalSpot : grid: MapGrid -> x: int -> z: int -> value: int -> MapGrid
 /// z = height/2. Pass `gapCells = 0` for a fully sealed wall.
 val oneGapCorridor : width: int -> height: int -> gapCells: int -> MapGrid
 
-/// Build a MapGrid suitable for rendering tests. Parameters:
-/// - `width` / `height`: heightmap grid squares.
-/// - `seed`: `None` → deterministic gradient values (height/slope/resource gradients);
-///           `Some s` → gradient seeded with `s` (same deterministic formula per seed).
-val build : parameters: {| width: int; height: int; seed: int option |} -> MapGrid
+/// Parameters for `build`. A nominal record instead of an anonymous
+/// record so F# doesn't emit `<>f__AnonymousType…` into the XML doc
+/// member name (which trips fsdocs' XML parser at docs-generation time).
+type BuildParameters = {
+    /// Heightmap grid squares across (X).
+    width: int
+    /// Heightmap grid squares down (Z).
+    height: int
+    /// `None` → deterministic gradient values; `Some s` → same
+    /// deterministic formula keyed by `s`.
+    seed: int option
+}
+
+/// Build a MapGrid suitable for rendering tests.
+val build : parameters: BuildParameters -> MapGrid

@@ -13,7 +13,7 @@ open FSBar.Viz.Tests.VizEngineFixture
 [<Fact>]
 let ``buildScene with HeightMap returns Scene with Image element`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 32; height = 32; seed = None  }
     let snap = MockSnapshot.emptySnapshot grid
     let config = VizDefaults.defaultConfig
     let vs = VizDefaults.defaultViewState
@@ -24,7 +24,7 @@ let ``buildScene with HeightMap returns Scene with Image element`` () =
 [<Fact>]
 let ``switching LayerKind changes scene content`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap = MockSnapshot.emptySnapshot grid
     let vs = VizDefaults.defaultViewState
     let config1 = { VizDefaults.defaultConfig with BaseLayer = LayerKind.HeightMap }
@@ -56,7 +56,7 @@ let ``empty MapGrid produces Text element with No data`` () =
 [<Fact>]
 let ``Scene BackgroundColor matches VizConfig`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 8; height = 8; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 8; height = 8; seed = None  }
     let snap = MockSnapshot.emptySnapshot grid
     let customColor = SKColor(42uy, 84uy, 126uy)
     let config = { VizDefaults.defaultConfig with BackgroundColor = customColor }
@@ -72,7 +72,7 @@ let ``snapshot with units and Units overlay enabled produces glyph primitives`` 
     // glyph-emitted primitive (path + text label + triangle pip) and
     // just asserts the scene produced something per unit.
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 32; height = 32; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withFriendlyAt (100.0f, 0.0f, 100.0f)
@@ -89,7 +89,7 @@ let ``snapshot with units and Units overlay enabled produces glyph primitives`` 
 [<Fact>]
 let ``empty units produces no unit-specific primitives`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap = MockSnapshot.emptySnapshot grid
     let config = { VizDefaults.defaultConfig with ActiveOverlays = Set.ofList [ OverlayKind.Units ] }
     let scene = SceneBuilder.buildScene snap config VizDefaults.defaultViewState
@@ -100,7 +100,7 @@ let ``empty units produces no unit-specific primitives`` () =
 [<Fact>]
 let ``Units overlay not in ActiveOverlays produces no unit elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withFriendlyAt (100.0f, 0.0f, 100.0f)
@@ -115,7 +115,7 @@ let ``Units overlay not in ActiveOverlays produces no unit elements`` () =
 [<Fact>]
 let ``event at current frame produces event elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEvent EventKind.UnitCreated (100.0f, 0.0f, 100.0f) 0
@@ -130,7 +130,7 @@ let ``event at current frame produces event elements`` () =
 [<Fact>]
 let ``expired event produces no event elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEvent EventKind.UnitCreated (100.0f, 0.0f, 100.0f) 0
@@ -144,7 +144,7 @@ let ``expired event produces no event elements`` () =
 [<Fact>]
 let ``Combat event produces elements with shader`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEvent EventKind.Combat (100.0f, 0.0f, 100.0f) 0
@@ -164,7 +164,7 @@ let ``Combat event produces elements with shader`` () =
 [<Fact>]
 let ``economy HUD enabled produces Rect and Text elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEconomy 500.0f 10.0f 5.0f 1000.0f
@@ -180,7 +180,7 @@ let ``economy HUD enabled produces Rect and Text elements`` () =
 [<Fact>]
 let ``economy HUD not in overlays produces no HUD elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEconomy 500.0f 10.0f 5.0f 1000.0f
@@ -197,7 +197,7 @@ let ``economy HUD not in overlays produces no HUD elements`` () =
 [<Fact>]
 let ``low resource shows red-ish label color`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withEconomy 1.0f 0.5f 0.3f 1000.0f // very low
@@ -222,7 +222,7 @@ let ``low resource shows red-ish label color`` () =
 [<Fact>]
 let ``Grid enabled with ShowGridLines produces Line elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 32; height = 32; seed = None  }
     let snap = MockSnapshot.emptySnapshot grid
     let config =
         { VizDefaults.defaultConfig with
@@ -237,7 +237,7 @@ let ``Grid enabled with ShowGridLines produces Line elements`` () =
 [<Fact>]
 let ``Grid not in overlays produces no line elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap = MockSnapshot.emptySnapshot grid
     let config = { VizDefaults.defaultConfig with ActiveOverlays = Set.empty; ShowGridLines = true }
     let scene = SceneBuilder.buildScene snap config VizDefaults.defaultViewState
@@ -250,7 +250,7 @@ let ``Grid not in overlays produces no line elements`` () =
 [<Fact>]
 let ``MetalSpots enabled with spots produces Ellipse elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 32; height = 32; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 32; height = 32; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withMetalSpots [| (100.0f, 0.0f, 200.0f, 1.0f); (300.0f, 0.0f, 400.0f, 2.0f) |]
@@ -263,7 +263,7 @@ let ``MetalSpots enabled with spots produces Ellipse elements`` () =
 [<Fact>]
 let ``MetalSpots not in overlays produces no spot elements`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap =
         MockSnapshot.emptySnapshot grid
         |> MockSnapshot.withMetalSpots [| (100.0f, 0.0f, 200.0f, 1.0f) |]
@@ -278,7 +278,7 @@ let ``MetalSpots not in overlays produces no spot elements`` () =
 [<Fact>]
 let ``Connected false produces DISCONNECTED text`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap = { MockSnapshot.emptySnapshot grid with Connected = false }
     let scene = SceneBuilder.buildScene snap VizDefaults.defaultConfig VizDefaults.defaultViewState
     let elements = collectElements scene
@@ -289,7 +289,7 @@ let ``Connected false produces DISCONNECTED text`` () =
 [<Fact>]
 let ``Connected true produces no disconnected text`` () =
     LayerRenderer.invalidateAll ()
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let snap = MockSnapshot.emptySnapshot grid // Connected = true by default
     let scene = SceneBuilder.buildScene snap VizDefaults.defaultConfig VizDefaults.defaultViewState
     let elements = collectElements scene
