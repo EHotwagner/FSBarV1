@@ -3,6 +3,7 @@ namespace FSBar.Hub.App.Tabs
 open SkiaSharp
 open SkiaViewer
 open FSBar.Viz
+open FSBar.Hub
 
 module EncyclopediaTab =
 
@@ -13,14 +14,10 @@ module EncyclopediaTab =
 
     [<RequireQualifiedAccess>]
     type EncyclopediaTabAction =
-        | ToggleFaction of faction: FactionId
-        | SelectUnit of defId: int
         | ScrollList of offset: float32
 
     type EncyclopediaTabState = {
         Entries: UnitEntry list
-        FactionFilter: Set<FactionId>
-        Selected: int option
         ListScroll: float32
     }
 
@@ -28,9 +25,35 @@ module EncyclopediaTab =
 
     let init () : EncyclopediaTabState =
         { Entries = EncyclopediaData.buildFromBarData ()
-          FactionFilter = Set.empty
-          Selected = None
           ListScroll = 0.0f }
+
+    // Bidirectional map between the Viz-side FactionId (used in the
+    // list rendering + entry classification) and the Hub-side
+    // FactionFilterKey (the wire-aligned type stored in HubState).
+    let private factionIdToKey (f: FactionId) : FactionFilterKey =
+        match f with
+        | FactionId.Armada -> FactionFilterKey.Armada
+        | FactionId.Cortex -> FactionFilterKey.Cortex
+        | FactionId.Legion -> FactionFilterKey.Legion
+        | FactionId.Raptors -> FactionFilterKey.Raptors
+        | FactionId.Scavengers -> FactionFilterKey.Scavengers
+        | FactionId.Neutral -> FactionFilterKey.Neutral
+
+    let private factionKeyToId (k: FactionFilterKey) : FactionId =
+        match k with
+        | FactionFilterKey.Armada -> FactionId.Armada
+        | FactionFilterKey.Cortex -> FactionId.Cortex
+        | FactionFilterKey.Legion -> FactionId.Legion
+        | FactionFilterKey.Raptors -> FactionId.Raptors
+        | FactionFilterKey.Scavengers -> FactionId.Scavengers
+        | FactionFilterKey.Neutral -> FactionId.Neutral
+
+    let private filterFromStore (store: HubStateStore.T) : Set<FactionId> =
+        (HubStateStore.current store).Encyclopedia.FactionFilter
+        |> Set.map factionKeyToId
+
+    let private selectedFromStore (store: HubStateStore.T) : int option =
+        (HubStateStore.current store).Encyclopedia.SelectedDefId
 
     // --- Paints --------------------------------------------------------
 
@@ -97,12 +120,12 @@ module EncyclopediaTab =
 
     // --- Filter + lookup helpers ---------------------------------------
 
-    let private isFactionVisible (state: EncyclopediaTabState) (f: FactionId) =
-        Set.isEmpty state.FactionFilter || Set.contains f state.FactionFilter
+    let private isFactionVisible (filter: Set<FactionId>) (f: FactionId) =
+        Set.isEmpty filter || Set.contains f filter
 
-    let private visibleEntries (state: EncyclopediaTabState) : UnitEntry list =
+    let private visibleEntries (state: EncyclopediaTabState) (filter: Set<FactionId>) : UnitEntry list =
         state.Entries
-        |> List.filter (fun e -> isFactionVisible state e.Faction)
+        |> List.filter (fun e -> isFactionVisible filter e.Faction)
 
     let private findEntry (state: EncyclopediaTabState) (defId: int) : UnitEntry option =
         state.Entries |> List.tryFind (fun e -> e.DefId = defId)
@@ -110,20 +133,20 @@ module EncyclopediaTab =
     // --- Render --------------------------------------------------------
 
     let private renderChips
-            (state: EncyclopediaTabState) (contentX: float32) (contentY: float32)
+            (filter: Set<FactionId>) (contentX: float32) (contentY: float32)
             : Element list =
         let chipEls =
             chipRects contentX contentY
             |> List.collect (fun (f, (x, y, w, h)) ->
-                let active = Set.contains f state.FactionFilter
+                let active = Set.contains f filter
                 let bg = if active then chipActive else chipInactive
                 let paint = if active then headingText else bodyText
                 [ Scene.rect x y w h bg
                   Scene.text (chipLabel f) (x + 6.0f) (y + h * 0.68f) 13.0f paint ])
         let filterHint =
-            if Set.isEmpty state.FactionFilter then "(showing all factions)"
+            if Set.isEmpty filter then "(showing all factions)"
             else sprintf "(filter: %s)"
-                    (state.FactionFilter |> Set.toList |> List.map chipLabel |> String.concat ", ")
+                    (filter |> Set.toList |> List.map chipLabel |> String.concat ", ")
         chipEls @
         [ Scene.text filterHint
               (contentX + 410.0f) (chipsY contentY + chipHeight * 0.68f)
@@ -131,11 +154,13 @@ module EncyclopediaTab =
 
     let private renderList
             (state: EncyclopediaTabState)
+            (filter: Set<FactionId>)
+            (selected: int option)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : Element list =
         let (x, y, w, h) = listPanelRect contentX contentY contentW contentH
-        let visible = visibleEntries state
+        let visible = visibleEntries state filter
         let firstIdx = int (state.ListScroll / rowHeight)
         let visibleRows = int (h / rowHeight) + 2
         [ yield Scene.rect x y w h panelBg
@@ -144,7 +169,7 @@ module EncyclopediaTab =
               let e = visible.[i]
               let rowY = y + float32 (i - firstIdx) * rowHeight - (state.ListScroll - float32 firstIdx * rowHeight)
               if rowY + rowHeight < y || rowY > y + h then () else
-              let isSelected = state.Selected = Some e.DefId
+              let isSelected = selected = Some e.DefId
               let bg = if isSelected then rowActiveBg else rowBg
               yield Scene.rect (x + 4.0f) (rowY + 2.0f) (w - 8.0f) (rowHeight - 3.0f) bg
               let label =
@@ -155,6 +180,7 @@ module EncyclopediaTab =
 
     let private renderDetail
             (state: EncyclopediaTabState)
+            (selected: int option)
             (style: UnitGlyphStyle)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
@@ -163,7 +189,7 @@ module EncyclopediaTab =
         let header =
             [ Scene.rect x y w h panelBg
               Scene.text "Detail" (x + 8.0f) (y - 6.0f) 14.0f dimText ]
-        match state.Selected |> Option.bind (findEntry state) with
+        match selected |> Option.bind (findEntry state) with
         | None ->
             header @
             [ Scene.text "Select a unit on the left to see its details + glyph."
@@ -225,10 +251,14 @@ module EncyclopediaTab =
 
     let render
             (state: EncyclopediaTabState)
-            (style: UnitGlyphStyle)
+            (store: HubStateStore.T)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : Element list =
+        let snap = HubStateStore.current store
+        let filter = snap.Encyclopedia.FactionFilter |> Set.map factionKeyToId
+        let selected = snap.Encyclopedia.SelectedDefId
+        let style = snap.VizConfig.GlyphStyle
         let header =
             [ Scene.text "Units — BarData encyclopedia" (contentX + 8.0f) (contentY + 22.0f) 20.0f headingText
               Scene.text
@@ -236,9 +266,9 @@ module EncyclopediaTab =
                     state.Entries.Length)
                 (contentX + 8.0f) (contentY + 42.0f) 14.0f dimText ]
         header
-        @ renderChips state contentX contentY
-        @ renderList state contentX contentY contentW contentH
-        @ renderDetail state style contentX contentY contentW contentH
+        @ renderChips filter contentX contentY
+        @ renderList state filter selected contentX contentY contentW contentH
+        @ renderDetail state selected style contentX contentY contentW contentH
 
     // --- Input ---------------------------------------------------------
 
@@ -247,16 +277,28 @@ module EncyclopediaTab =
 
     let handleMouse
             (state: EncyclopediaTabState)
+            (store: HubStateStore.T)
             (x: float32) (y: float32)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : EncyclopediaTabAction option =
-        // Chip row?
+        // Chip row? Faction-filter mutations route directly through
+        // HubStateStore.setEncyclopedia (FR-019); the ScrollList action
+        // is the only thing that bubbles out for the entrypoint to apply.
         let chipHit =
             chipRects contentX contentY
             |> List.tryFind (fun (_, rect) -> hit rect x y)
         match chipHit with
-        | Some (f, _) -> Some (EncyclopediaTabAction.ToggleFaction f)
+        | Some (f, _) ->
+            let snap = HubStateStore.current store
+            let key = factionIdToKey f
+            let nextFilter =
+                if Set.contains key snap.Encyclopedia.FactionFilter then
+                    Set.remove key snap.Encyclopedia.FactionFilter
+                else Set.add key snap.Encyclopedia.FactionFilter
+            let updated = { snap.Encyclopedia with FactionFilter = nextFilter }
+            HubStateStore.setEncyclopedia store updated |> ignore
+            None
         | None ->
             let listR = listPanelRect contentX contentY contentW contentH
             if hit listR x y then
@@ -264,20 +306,29 @@ module EncyclopediaTab =
                 let firstIdx = int (state.ListScroll / rowHeight)
                 let localY = y - ly + (state.ListScroll - float32 firstIdx * rowHeight)
                 let rowIdx = firstIdx + int (localY / rowHeight)
-                let visible = visibleEntries state
+                let snap = HubStateStore.current store
+                let filter = snap.Encyclopedia.FactionFilter |> Set.map factionKeyToId
+                let visible = visibleEntries state filter
                 if rowIdx < 0 || rowIdx >= visible.Length then None
-                else Some (EncyclopediaTabAction.SelectUnit visible.[rowIdx].DefId)
+                else
+                    let updated =
+                        { snap.Encyclopedia with SelectedDefId = Some visible.[rowIdx].DefId }
+                    HubStateStore.setEncyclopedia store updated |> ignore
+                    None
             else None
 
     let handleScroll
             (state: EncyclopediaTabState)
+            (store: HubStateStore.T)
             (delta: float32) (x: float32) (y: float32)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : EncyclopediaTabAction option =
         let listR = listPanelRect contentX contentY contentW contentH
         if hit listR x y then
-            let visible = visibleEntries state
+            let snap = HubStateStore.current store
+            let filter = snap.Encyclopedia.FactionFilter |> Set.map factionKeyToId
+            let visible = visibleEntries state filter
             let totalH = float32 visible.Length * rowHeight
             let (_, _, _, lh) = listR
             let maxScroll = max 0.0f (totalH - lh)

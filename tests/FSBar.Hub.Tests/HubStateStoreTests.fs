@@ -103,7 +103,9 @@ let ``ViewerCamera.validate accepts defaults`` () =
     | Result.Error reason -> Assert.Fail(sprintf "unexpected rejection: %s" reason)
 
 [<Fact>]
-let ``setCamera rejects invalid camera without emitting`` () =
+let ``setCamera rejects invalid camera and emits a DiagnosticsLine Warning`` () =
+    // Feature 041 FR-023a / R7 — every Rejected mutator outcome publishes
+    // exactly one DiagnosticsLine Warning whose message names the mutator.
     let received = ConcurrentQueue<HubEvent>()
     let store = HubStateStore.create (collectingSink received) (freshInitialState ())
     let bad =
@@ -115,4 +117,40 @@ let ``setCamera rejects invalid camera without emitting`` () =
     | SubmitOutcome.Rejected _ -> ()
     | SubmitOutcome.Sent ->
         Assert.Fail("expected rejection for NaN scale")
-    Assert.Empty(received.ToArray())
+    let events = received.ToArray()
+    let diagnostics =
+        events
+        |> Array.choose (function
+            | DiagnosticsLine (sev, msg) -> Some (sev, msg)
+            | _ -> None)
+    Assert.Equal(1, diagnostics.Length)
+    let sev, msg = diagnostics.[0]
+    Assert.Equal(Warning, sev)
+    Assert.StartsWith("HubStateStore.setCamera rejected:", msg)
+    // No success-path events fired.
+    let nonDiagnostic =
+        events
+        |> Array.filter (function | DiagnosticsLine _ -> false | _ -> true)
+    Assert.Empty(nonDiagnostic)
+
+[<Fact>]
+let ``T029 — setCamera out-of-range scale emits HubStateStore.setCamera rejected warning`` () =
+    let received = ConcurrentQueue<HubEvent>()
+    let store = HubStateStore.create (collectingSink received) (freshInitialState ())
+    let outOfRange =
+        { Scale = 200.0f
+          OriginX = 0.0f
+          OriginY = 0.0f
+          AutoFit = false }
+    let outcome = HubStateStore.setCamera store outOfRange
+    match outcome with
+    | SubmitOutcome.Rejected _ -> ()
+    | SubmitOutcome.Sent ->
+        Assert.Fail("expected rejection for scale 200")
+    let warnings =
+        received.ToArray()
+        |> Array.choose (function
+            | DiagnosticsLine (Warning, msg)
+              when msg.StartsWith("HubStateStore.setCamera rejected:") -> Some msg
+            | _ -> None)
+    Assert.Equal(1, warnings.Length)

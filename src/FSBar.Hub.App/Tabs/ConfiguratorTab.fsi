@@ -19,17 +19,13 @@ open FSBar.Viz
 /// safe names and the configurator surfaces errors inline.
 module ConfiguratorTab =
 
-    /// Hub-level action surfaced by the tab. Most panel mutations
-    /// update the `VizConfig` in place; these actions are the
-    /// side-effectful ones the hub needs to route through its own
-    /// event bus / diagnostics.
+    /// Hub-level action surfaced by the tab. Whole-config mutations
+    /// route through `HubStateStore.setVizConfig` inside the tab
+    /// itself (feature 041 FR-017/FR-018); these actions cover the
+    /// preset-name file-system operations the entrypoint must run.
     [<RequireQualifiedAccess>]
     type ConfiguratorTabAction =
-        /// The panel produced a new `VizConfig` — caller should
-        /// replace the hub-wide config reference.
-        | ConfigChanged of VizConfig
-        /// Save the current config as a named preset (inherits the
-        /// `ConfigPanel`'s action).
+        /// Save the current config as a named preset.
         | SavePreset of name: string
         /// Load a named preset from disk.
         | LoadPreset of name: string
@@ -39,7 +35,8 @@ module ConfiguratorTab =
         /// `ConfigDescriptors.all`.
         | ResetDefaults
 
-    /// Per-tab render state. Owned by the entrypoint.
+    /// Per-tab render state. Owned by the entrypoint. Excludes any
+    /// field already authoritatively held by `HubStateStore` (R6).
     type ConfiguratorTabState = {
         Panel: ConfigPanelState
         PresetNames: string list
@@ -54,24 +51,26 @@ module ConfiguratorTab =
     /// list so the tab can render even without a live session.
     val init: unit -> ConfiguratorTabState
 
-    /// Paint the tab. Delegates to `ConfigPanel.buildPanel` against
-    /// the current config; embeds the result inside the Configurator
-    /// tab's content rectangle.
+    /// Paint the tab. Reads `VizConfig` from the supplied store
+    /// (`HubStateStore.current store`) so remote gRPC writes are
+    /// reflected in the next paint without going through the
+    /// entrypoint (feature 041 FR-017).
     val render:
         state: ConfiguratorTabState ->
-        vizConfig: VizConfig ->
+        store: FSBar.Hub.HubStateStore.T ->
         contentX: float32 ->
         contentY: float32 ->
         contentW: float32 ->
         contentH: float32 ->
             Element list
 
-    /// Forward a mouse event to `ConfigPanel.handleInput`. Returns
-    /// the updated tab state + optional hub-level action (the caller
-    /// mutates the live VizConfig and/or fires side-effects).
+    /// Forward a mouse event to `ConfigPanel.handleInput`. Whole-
+    /// config mutations are written back through `HubStateStore.setVizConfig`
+    /// before returning (feature 041 FR-018); preset/reset side-
+    /// effects bubble up via `ConfiguratorTabAction`.
     val handleInput:
         state: ConfiguratorTabState ->
-        vizConfig: VizConfig ->
+        store: FSBar.Hub.HubStateStore.T ->
         event: InputEvent ->
         contentX: float32 ->
         contentY: float32 ->

@@ -75,7 +75,7 @@ module private HeadlessOrchestrationFixtures =
                   Settings = HubSettings.defaults }
         let overlays = OverlayLayerStore.create bus.Sink
         let renderer =
-            HeadlessRenderer.create sm store overlays (fun () -> HubSettings.defaults)
+            HeadlessRenderer.create sm store overlays bus.Sink (fun () -> HubSettings.defaults)
         let svc =
             new ScriptingHub.ScriptingService(
                 sm, bus.Sink, bus.Events, unitDefs, install, makeBundled (), 5099,
@@ -118,68 +118,82 @@ module private HeadlessOrchestrationFixtures =
 [<Collection("HubSession")>]
 type LiveHeadlessOrchestrationTests() =
 
+    // Feature 041 T022 — extracted body so we can drive the same flow
+    // from both the original [SkippableFact] (T021a) and the new
+    // UiParity [SkippableTheory] over the 3 reference maps. Returns
+    // unit; throws on assertion failure (xUnit picks it up via the
+    // task wrapper).
+    static member private RunOrchestrationSmoke (mapName: string) (mapFile: string) =
+        task {
+            let install = HeadlessOrchestrationFixtures.requireBarInstall ()
+            HeadlessOrchestrationFixtures.requireMapInstalled install mapFile
+
+            let svc, sm, bus, _store = HeadlessOrchestrationFixtures.makeService install
+            try
+                let maps =
+                    (svc.ListMaps ListMapsRequest.empty
+                        HeadlessOrchestrationFixtures.nullContext).Result
+                Assert.NotEmpty(maps.Maps)
+
+                let wire = HeadlessOrchestrationFixtures.happyLobbyWire mapName
+                let cfgReq : ConfigureLobbyRequest = { Lobby = Some wire }
+                let cfgResp : ConfigureLobbyResponse =
+                    (svc.ConfigureLobby cfgReq
+                        HeadlessOrchestrationFixtures.nullContext).Result
+                match cfgResp.Result with
+                | Some r -> Assert.Equal(SubmitOutcome.Sent, r.Outcome)
+                | None ->
+                    Assert.Fail(sprintf "ConfigureLobby returned no MutationResult — errors: %A" cfgResp.ValidationErrors)
+
+                let launchReq : LaunchSessionRequest = {
+                    StartPaused = true
+                    LaunchGraphicalViewer = false
+                }
+                let launchResp : LaunchSessionResponse =
+                    (svc.LaunchSession launchReq
+                        HeadlessOrchestrationFixtures.nullContext).Result
+                match launchResp.Result with
+                | Some r -> Assert.Equal(SubmitOutcome.Sent, r.Outcome)
+                | None -> Assert.Fail("LaunchSession returned no MutationResult")
+
+                let running =
+                    HeadlessOrchestrationFixtures.waitUntil 40000 (fun () ->
+                        match sm.State with SessionManager.Running _ -> true | _ -> false)
+                Assert.True(running,
+                    sprintf "session did not reach Running in 40s on %s; final state = %A" mapName sm.State)
+
+                let stopResp : StopSessionResponse =
+                    (svc.StopSession StopSessionRequest.empty
+                        HeadlessOrchestrationFixtures.nullContext).Result
+                match stopResp.Result with
+                | Some r -> Assert.Equal(SubmitOutcome.Sent, r.Outcome)
+                | None -> Assert.Fail("StopSession returned no MutationResult")
+
+                let backToIdle =
+                    HeadlessOrchestrationFixtures.waitUntil 15000 (fun () ->
+                        sm.State = SessionManager.Idle)
+                Assert.True(backToIdle,
+                    sprintf "session did not return to Idle on %s; state = %A" mapName sm.State)
+            finally
+                try (svc :> IDisposable).Dispose() with _ -> ()
+                try (sm :> IDisposable).Dispose() with _ -> ()
+                try (bus :> IDisposable).Dispose() with _ -> ()
+        }
+
     [<SkippableFact>]
     [<Trait("Category", "UiParity")>]
-    member _.``T021a — full ConfigureLobby → LaunchSession → StopSession smoke on Avalanche``() = task {
-        let install = HeadlessOrchestrationFixtures.requireBarInstall ()
-        HeadlessOrchestrationFixtures.requireMapInstalled install "avalanche_3.4"
+    member _.``T021a — full ConfigureLobby → LaunchSession → StopSession smoke on Avalanche``() =
+        LiveHeadlessOrchestrationTests.RunOrchestrationSmoke "Avalanche 3.4" "avalanche_3.4"
 
-        let svc, sm, bus, _store = HeadlessOrchestrationFixtures.makeService install
-        try
-            // ListMaps must return at least one entry.
-            let maps =
-                (svc.ListMaps ListMapsRequest.empty
-                    HeadlessOrchestrationFixtures.nullContext).Result
-            Assert.NotEmpty(maps.Maps)
-
-            // ConfigureLobby with the canonical happy lobby.
-            let wire = HeadlessOrchestrationFixtures.happyLobbyWire "Avalanche 3.4"
-            let cfgReq : ConfigureLobbyRequest = { Lobby = Some wire }
-            let cfgResp : ConfigureLobbyResponse =
-                (svc.ConfigureLobby cfgReq
-                    HeadlessOrchestrationFixtures.nullContext).Result
-            match cfgResp.Result with
-            | Some r ->
-                Assert.Equal(SubmitOutcome.Sent, r.Outcome)
-            | None ->
-                Assert.Fail(sprintf "ConfigureLobby returned no MutationResult — errors: %A" cfgResp.ValidationErrors)
-
-            // LaunchSession(startPaused=true, launchGraphicalViewer=false).
-            let launchReq : LaunchSessionRequest = {
-                StartPaused = true
-                LaunchGraphicalViewer = false
-            }
-            let launchResp : LaunchSessionResponse =
-                (svc.LaunchSession launchReq
-                    HeadlessOrchestrationFixtures.nullContext).Result
-            match launchResp.Result with
-            | Some r ->
-                Assert.Equal(SubmitOutcome.Sent, r.Outcome)
-            | None ->
-                Assert.Fail("LaunchSession returned no MutationResult")
-
-            // Wait for Running within 40s (engine warmup on Avalanche is ~15-25s).
-            let running =
-                HeadlessOrchestrationFixtures.waitUntil 40000 (fun () ->
-                    match sm.State with SessionManager.Running _ -> true | _ -> false)
-            Assert.True(running,
-                sprintf "session did not reach Running in 40s; final state = %A" sm.State)
-
-            // StopSession returns to Idle.
-            let stopResp : StopSessionResponse =
-                (svc.StopSession StopSessionRequest.empty
-                    HeadlessOrchestrationFixtures.nullContext).Result
-            match stopResp.Result with
-            | Some r -> Assert.Equal(SubmitOutcome.Sent, r.Outcome)
-            | None -> Assert.Fail("StopSession returned no MutationResult")
-
-            let backToIdle =
-                HeadlessOrchestrationFixtures.waitUntil 15000 (fun () ->
-                    sm.State = SessionManager.Idle)
-            Assert.True(backToIdle,
-                sprintf "session did not return to Idle after StopSession; state = %A" sm.State)
-        finally
-            try (svc :> IDisposable).Dispose() with _ -> ()
-            try (sm :> IDisposable).Dispose() with _ -> ()
-            try (bus :> IDisposable).Dispose() with _ -> ()
-    }
+    // Feature 041 T022 — UiParity matrix over three reference maps.
+    // Spec calls for 20 launches per map; we run a single launch per
+    // map here (3 launches total, ~3-5 minutes wall-clock) so the
+    // matrix stays under the SC-004 20-minute budget. Stress-grade
+    // 19/20 sampling is deferred to a follow-up bot-driven harness.
+    [<SkippableTheory>]
+    [<InlineData("Avalanche 3.4", "avalanche_3.4")>]
+    [<InlineData("Red Comet Remake 1.8", "red_comet_remake_1.8")>]
+    [<InlineData("Titan v2", "titan_v2")>]
+    [<Trait("Category", "UiParity")>]
+    member _.``T022 — orchestration smoke over UiParity reference maps`` (mapName: string) (mapFile: string) =
+        LiveHeadlessOrchestrationTests.RunOrchestrationSmoke mapName mapFile

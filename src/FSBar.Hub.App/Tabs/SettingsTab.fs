@@ -117,10 +117,11 @@ module SettingsTab =
             (state: SettingsTabState)
             (install: BarInstall.BarInstall option)
             (bundled: BundledProxy.BundledProxyInfo option)
-            (settings: HubSettings.HubSettings)
+            (store: HubStateStore.T)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : Element list =
+        let settings = (HubStateStore.current store).Settings
         let headerY = contentY + 22.0f
         let mutable rowY = headerY + 52.0f
         let nextRow () =

@@ -56,13 +56,14 @@ let main _argv =
             Environment.SetEnvironmentVariable("FSBAR_ENGINE_WRAPPER", defaultWrapper)
 
     // --- Load settings + environment detection -----------------------------
-    // Settings is mutable so SetupTab toggles (Start paused, Launch
-    // graphical engine) can persist without a full reload.
-    let mutable settings = HubSettings.load ()
+    // Boot-time read of HubSettings; after `hubState` is constructed
+    // every read of settings goes through `getSettings ()` and every
+    // write through `HubStateStore.setSettings` (feature 041 R6 / FR-022).
+    let initialSettings = HubSettings.load ()
     let bus = HubEvents.create ()
 
     let barInstall, initialBanner =
-        match BarInstall.detect settings with
+        match BarInstall.detect initialSettings with
         | Ok install -> Some install, None
         | Result.Error err -> None, Some (BarInstall.formatError err)
 
@@ -76,17 +77,45 @@ let main _argv =
     // Feature 040: central state store for Hub UI. Tabs + gRPC handlers
     // both read/write through this so the local GUI and remote clients
     // never drift.
+    //
+    // FSBAR_HUB_INITIAL_TAB lets CI screenshots skip past Setup
+    // without driving a simulated tab click through the input
+    // pipeline; seed it into the store so the first paint reflects
+    // the env preference.
+    let initialActiveTab =
+        match Environment.GetEnvironmentVariable("FSBAR_HUB_INITIAL_TAB") with
+        | null | "" -> FSBar.Hub.HubTab.Setup
+        | "Viewer" -> FSBar.Hub.HubTab.Viewer
+        | "Configurator" | "Style" -> FSBar.Hub.HubTab.Style
+        | "Encyclopedia" | "Units" -> FSBar.Hub.HubTab.Units
+        | "Settings" | "Cfg" -> FSBar.Hub.HubTab.Cfg
+        | "Grpc" -> FSBar.Hub.HubTab.Grpc
+        | _ -> FSBar.Hub.HubTab.Setup
+
+    let initialEncyclopedia : EncyclopediaSelection =
+        match Environment.GetEnvironmentVariable("FSBAR_HUB_ENCYCLOPEDIA_SELECT") with
+        | null | "" -> { FactionFilter = Set.empty; SelectedDefId = None }
+        | name ->
+            let entries = FSBar.Viz.EncyclopediaData.buildFromBarData ()
+            match entries |> List.tryFind (fun (e: FSBar.Viz.EncyclopediaData.EncyclopediaEntry) -> e.InternalName = name) with
+            | Some e -> { FactionFilter = Set.empty; SelectedDefId = Some e.DefId }
+            | None -> { FactionFilter = Set.empty; SelectedDefId = None }
+
     let hubState =
         let initial : HubState =
-            { ActiveTab = FSBar.Hub.HubTab.Setup
+            { ActiveTab = initialActiveTab
               VizConfig = FSBar.Viz.VizDefaults.defaultConfig
               Camera = ViewerCamera.defaults
               Lobby = LobbyConfig.defaults
-              Encyclopedia =
-                  { FactionFilter = Set.empty; SelectedDefId = None }
+              Encyclopedia = initialEncyclopedia
               PresetList = []
-              Settings = settings }
+              Settings = initialSettings }
         HubStateStore.create bus.Sink initial
+
+    // Live reader for HubSettings; tabs and gRPC handlers both go
+    // through this so a remote `SetHubSettings` is reflected in the
+    // GUI within one render frame (FR-021).
+    let getSettings () = (HubStateStore.current hubState).Settings
 
     // Feature 040 US6: per-client overlay layer store. US2 renders the
     // base scene only; US6 will query this store to composite primitives.
@@ -101,25 +130,42 @@ let main _argv =
     let headlessRenderer =
         match sessions with
         | Some sm ->
-            Some (HeadlessRenderer.create sm hubState overlayStore (fun () -> settings))
+            Some (HeadlessRenderer.create sm hubState overlayStore bus.Sink getSettings)
         | None -> None
 
     // --- Render state (mutable; updated by input handler) ------------------
-    let mutable activeTab =
-        // FSBAR_HUB_INITIAL_TAB lets CI screenshots skip past Setup
-        // without driving a simulated tab click through the input
-        // pipeline.
-        match Environment.GetEnvironmentVariable("FSBAR_HUB_INITIAL_TAB") with
-        | null | "" -> HubTab.Setup
-        | "Viewer" -> HubTab.Viewer
-        | "Configurator" -> HubTab.Configurator
-        | "Encyclopedia" -> HubTab.Encyclopedia
-        | "Settings" -> HubTab.Settings
-        | "Grpc" -> HubTab.Grpc
-        | _ -> HubTab.Setup
+    // Feature 041 R6: ActiveTab lives authoritatively in HubStateStore.
+    // The chrome-side HubTab DU still distinguishes Configurator /
+    // Encyclopedia / Settings whereas the store uses Style / Units / Cfg
+    // for those three (wire-aligned naming). Local helpers translate
+    // both directions so the Program.fs render + input plumbing stays
+    // chrome-side.
+    let storeTabToChrome (t: FSBar.Hub.HubTab) : HubTab =
+        match t with
+        | FSBar.Hub.HubTab.Setup -> HubTab.Setup
+        | FSBar.Hub.HubTab.Viewer -> HubTab.Viewer
+        | FSBar.Hub.HubTab.Units -> HubTab.Encyclopedia
+        | FSBar.Hub.HubTab.Style -> HubTab.Configurator
+        | FSBar.Hub.HubTab.Cfg -> HubTab.Settings
+        | FSBar.Hub.HubTab.Grpc -> HubTab.Grpc
+
+    let chromeTabToStore (t: HubTab) : FSBar.Hub.HubTab =
+        match t with
+        | HubTab.Setup -> FSBar.Hub.HubTab.Setup
+        | HubTab.Viewer -> FSBar.Hub.HubTab.Viewer
+        | HubTab.Encyclopedia -> FSBar.Hub.HubTab.Units
+        | HubTab.Configurator -> FSBar.Hub.HubTab.Style
+        | HubTab.Settings -> FSBar.Hub.HubTab.Cfg
+        | HubTab.Grpc -> FSBar.Hub.HubTab.Grpc
+
+    let getActiveTab () = storeTabToChrome (HubStateStore.current hubState).ActiveTab
+    let setActiveTab (t: HubTab) =
+        HubStateStore.setActiveTab hubState (chromeTabToStore t) |> ignore
+    let getVizConfig () = (HubStateStore.current hubState).VizConfig
+
     let mutable windowWidth = 1280
     let mutable windowHeight = 800
-    let mutable currentSpeed = settings.LaunchGraphicalViewerDefault |> ignore; 1.0f
+    let mutable currentSpeed = (getSettings ()).LaunchGraphicalViewerDefault |> ignore; 1.0f
     let mutable currentPaused = false
     let mutable statusBanner : string option = initialBanner
 
@@ -142,7 +188,7 @@ let main _argv =
                 { initial with
                     Lobby =
                         { initial.Lobby with
-                            LaunchGraphicalViewer = settings.LaunchGraphicalViewerDefault } }
+                            LaunchGraphicalViewer = (getSettings ()).LaunchGraphicalViewerDefault } }
                 |> SetupTab.validate install
             // Seed the store with the validated lobby so the gRPC
             // ConfigureLobby handler / GetHubState snapshot see the same
@@ -150,10 +196,9 @@ let main _argv =
             HubStateStore.setLobby hubState seeded.Lobby |> ignore
             seeded)
 
-    // Live VizConfig shared by ViewerTab + ConfiguratorTab. Starts
-    // from VizDefaults.defaultConfig and mutates as the user edits
-    // swatches / sliders / toggles in the Configurator tab.
-    let mutable vizConfig = FSBar.Viz.VizDefaults.defaultConfig
+    // Feature 041 R6: VizConfig is owned by HubStateStore. Tabs that
+    // need it call `getVizConfig ()` (a single read of the cell) so the
+    // local GUI and remote gRPC writes converge per FR-017/FR-018.
     let mutable configuratorState = ConfiguratorTab.init ()
 
     // Viewer-tab camera. `AutoFit = true` makes ViewerTab.render
@@ -187,17 +232,11 @@ let main _argv =
 
     // Encyclopedia tab — eagerly computes the ~953 UnitEntry records
     // at startup so tab-switch is instant. Lives independently of
-    // session state.
+    // session state. FactionFilter + Selected live in HubStateStore
+    // (feature 041 FR-019); the env-var seed for FSBAR_HUB_ENCYCLOPEDIA_SELECT
+    // ran above when the store was constructed.
     let mutable encyclopediaState : EncyclopediaTab.EncyclopediaTabState =
-        let base0 = EncyclopediaTab.init ()
-        // FSBAR_HUB_ENCYCLOPEDIA_SELECT lets CI screenshots land on a
-        // specific unit name without driving a simulated click.
-        match Environment.GetEnvironmentVariable("FSBAR_HUB_ENCYCLOPEDIA_SELECT") with
-        | null | "" -> base0
-        | name ->
-            match base0.Entries |> List.tryFind (fun e -> e.InternalName = name) with
-            | Some e -> { base0 with Selected = Some e.DefId }
-            | None -> base0
+        EncyclopediaTab.init ()
 
     let mutable settingsTabState : SettingsTab.SettingsTabState option =
         match barInstall, bundled with
@@ -213,7 +252,7 @@ let main _argv =
     // Registered only when we have a real BAR install + SessionManager.
     // Hosted on a background Kestrel task so it doesn't block the main
     // UI thread. Bound to 127.0.0.1:<GrpcPort> with HTTP/2 cleartext.
-    let grpcEndpointUrl = sprintf "http://127.0.0.1:%d" settings.GrpcPort
+    let grpcEndpointUrl = sprintf "http://127.0.0.1:%d" (getSettings ()).GrpcPort
 
     let grpcService : ScriptingHub.ScriptingService option =
         match barInstall, sessions, headlessRenderer with
@@ -240,7 +279,7 @@ let main _argv =
                 | _ -> FSBar.Client.UnitDefCache.empty
             Some (new ScriptingHub.ScriptingService(
                     sm, bus.Sink, bus.Events, unitDefsThunk, install, bundleInfo,
-                    settings.GrpcPort, hubState, hr, overlayStore, ScriptingHub.defaults))
+                    (getSettings ()).GrpcPort, hubState, hr, overlayStore, ScriptingHub.defaults))
         | _ -> None
 
     let grpcHostTask : Task =
@@ -257,7 +296,7 @@ let main _argv =
                 webBuilder.Services.AddSingleton<ScriptingHub.ScriptingService>(svc)
                 |> ignore
                 webBuilder.WebHost.ConfigureKestrel(fun opts ->
-                    opts.ListenLocalhost(settings.GrpcPort, fun lo ->
+                    opts.ListenLocalhost((getSettings ()).GrpcPort, fun lo ->
                         lo.Protocols <- HttpProtocols.Http2))
                 |> ignore
                 let app = webBuilder.Build()
@@ -303,7 +342,7 @@ let main _argv =
               match bundled with
               | Some b -> yield sprintf "bundled proxy: %s" b.Version
               | None -> yield "bundled proxy: not resolved"
-              yield sprintf "gRPC port    : %d (scripting service not yet started)" settings.GrpcPort ]
+              yield sprintf "gRPC port    : %d (scripting service not yet started)" (getSettings ()).GrpcPort ]
         let placeholderBlock (heading: string) (subline: string) =
             [ yield Scene.text heading cx (cy + 18.0f) 18.0f headingText
               yield Scene.text subline cx (cy + 44.0f) 13.0f placeholderText
@@ -317,7 +356,7 @@ let main _argv =
         match tab with
         | HubTab.Setup ->
             match setupState with
-            | Some st -> SetupTab.render st settings cx cy cw ch
+            | Some st -> SetupTab.render st (getSettings ()) cx cy cw ch
             | None ->
                 placeholderBlock
                     "Setup — configure your next session"
@@ -330,14 +369,14 @@ let main _argv =
             let adminStatus =
                 sessions
                 |> Option.bind (fun sm -> sm.AdminStatus)
-            ViewerTab.render sessState vizConfig viewerViewState paused adminStatus cx cy cw ch
+            ViewerTab.render sessState (getVizConfig ()) viewerViewState paused adminStatus cx cy cw ch
         | HubTab.Configurator ->
-            ConfiguratorTab.render configuratorState vizConfig cx cy cw ch
+            ConfiguratorTab.render configuratorState hubState cx cy cw ch
         | HubTab.Encyclopedia ->
-            EncyclopediaTab.render encyclopediaState vizConfig.GlyphStyle cx cy cw ch
+            EncyclopediaTab.render encyclopediaState hubState cx cy cw ch
         | HubTab.Settings ->
             match settingsTabState with
-            | Some st -> SettingsTab.render st barInstall bundled settings cx cy cw ch
+            | Some st -> SettingsTab.render st barInstall bundled hubState cx cy cw ch
             | None ->
                 placeholderBlock
                     "Settings — BAR install, proxy, ports"
@@ -355,9 +394,9 @@ let main _argv =
               Paused = currentPaused
               Speed = currentSpeed }
         let chromeElements =
-            (TabBar.render activeTab windowHeight)
+            (TabBar.render (getActiveTab ()) windowHeight)
             @ (StatusBar.render statusState windowWidth windowHeight)
-        let tabElements = renderTabContent activeTab
+        let tabElements = renderTabContent (getActiveTab ())
         Scene.create contentBgColor (tabElements @ chromeElements)
 
     // --- Viewer wiring ----------------------------------------------------
@@ -389,7 +428,7 @@ let main _argv =
             if btn = MouseButton.Left then
                 // TabBar owns the left 56 px.
                 match TabBar.handleMouse x y with
-                | Some tab -> activeTab <- tab
+                | Some tab -> setActiveTab tab
                 | None ->
                     // StatusBar owns the bottom 24 px.
                     let sessState =
@@ -416,9 +455,9 @@ let main _argv =
                     | None ->
                         // Route to the active tab.
                         let (cx, cy, cw, ch) = contentRect ()
-                        match activeTab, setupState, barInstall with
+                        match getActiveTab (), setupState, barInstall with
                         | HubTab.Setup, Some st, Some install ->
-                            match SetupTab.handleMouse st settings x y cx cy cw ch with
+                            match SetupTab.handleMouse st (getSettings ()) x y cx cy cw ch with
                             | Some (SetupTab.SetupTabAction.SelectMap name) ->
                                 // Feature 040: route lobby mutation through
                                 // HubStateStore. The HubEvent.LobbyChanged
@@ -434,18 +473,20 @@ let main _argv =
                                     setupState <-
                                         Some { st with LastLaunchError = Some "no BAR install detected" }
                                 | Some sm ->
-                                    match sm.Launch(st.Lobby, settings.StartPausedDefault) with
+                                    match sm.Launch(st.Lobby, (getSettings ()).StartPausedDefault) with
                                     | Ok () ->
                                         setupState <- Some { st with LastLaunchError = None }
-                                        activeTab <- HubTab.Viewer
+                                        setActiveTab HubTab.Viewer
                                     | Result.Error msg ->
                                         setupState <- Some { st with LastLaunchError = Some msg }
                             | Some (SetupTab.SetupTabAction.ToggleStartPaused v) ->
-                                settings <- { settings with StartPausedDefault = v }
-                                HubSettings.save settings |> ignore
+                                let next = { getSettings () with StartPausedDefault = v }
+                                HubSettings.save next |> ignore
+                                HubStateStore.setSettings hubState next |> ignore
                             | Some (SetupTab.SetupTabAction.ToggleGraphicalEngine v) ->
-                                settings <- { settings with LaunchGraphicalViewerDefault = v }
-                                HubSettings.save settings |> ignore
+                                let next = { getSettings () with LaunchGraphicalViewerDefault = v }
+                                HubSettings.save next |> ignore
+                                HubStateStore.setSettings hubState next |> ignore
                                 let updated =
                                     { st with
                                         Lobby = { st.Lobby with LaunchGraphicalViewer = v } }
@@ -455,18 +496,15 @@ let main _argv =
                         | HubTab.Configurator, _, _ ->
                             let (ns, action) =
                                 ConfiguratorTab.handleInput
-                                    configuratorState vizConfig evt cx cy cw ch
+                                    configuratorState hubState evt cx cy cw ch
                             configuratorState <- ns
-                            // Apply ConfigChanged: the panel's handleInput
-                            // returns an UpdatedConfig on every slider
-                            // drag / color cycle. Here we re-dispatch
-                            // the event locally so the panel sees the
-                            // updated config on the next frame.
+                            // Whole-config mutations were already applied via
+                            // HubStateStore.setVizConfig inside the tab; here
+                            // we only handle the file-system side-effects.
                             match action with
-                            | Some (ConfiguratorTab.ConfiguratorTabAction.ConfigChanged nc) ->
-                                vizConfig <- nc
                             | Some (ConfiguratorTab.ConfiguratorTabAction.SavePreset name) ->
-                                let preset = FSBar.Viz.StylePreset.fromConfig name vizConfig
+                                let preset =
+                                    FSBar.Viz.StylePreset.fromConfig name (getVizConfig ())
                                 match FSBar.Viz.StylePreset.save preset with
                                 | Ok path ->
                                     configuratorState <-
@@ -480,7 +518,9 @@ let main _argv =
                             | Some (ConfiguratorTab.ConfiguratorTabAction.LoadPreset name) ->
                                 match FSBar.Viz.StylePreset.load name with
                                 | Ok preset ->
-                                    vizConfig <- FSBar.Viz.StylePreset.applyToConfig preset vizConfig
+                                    let next =
+                                        FSBar.Viz.StylePreset.applyToConfig preset (getVizConfig ())
+                                    HubStateStore.setVizConfig hubState next |> ignore
                                     configuratorState <-
                                         { configuratorState with
                                             ActivePreset = Some name
@@ -502,28 +542,14 @@ let main _argv =
                                     configuratorState <-
                                         { configuratorState with LastPresetResult = Some (Result.Error msg) }
                             | Some ConfiguratorTab.ConfiguratorTabAction.ResetDefaults ->
-                                vizConfig <- FSBar.Viz.VizDefaults.defaultConfig
+                                HubStateStore.setVizConfig hubState FSBar.Viz.VizDefaults.defaultConfig |> ignore
                                 configuratorState <-
                                     { configuratorState with
                                         ActivePreset = None
                                         LastPresetResult = Some (Ok "defaults restored") }
                             | None -> ()
                         | HubTab.Encyclopedia, _, _ ->
-                            match EncyclopediaTab.handleMouse encyclopediaState x y cx cy cw ch with
-                            | Some (EncyclopediaTab.EncyclopediaTabAction.ToggleFaction f) ->
-                                let flt =
-                                    if encyclopediaState.FactionFilter.Contains f then
-                                        encyclopediaState.FactionFilter.Remove f
-                                    else
-                                        encyclopediaState.FactionFilter.Add f
-                                encyclopediaState <-
-                                    { encyclopediaState with
-                                        FactionFilter = flt
-                                        // Reset scroll so filter changes don't strand the
-                                        // view past the end of the (shorter) visible list.
-                                        ListScroll = 0.0f }
-                            | Some (EncyclopediaTab.EncyclopediaTabAction.SelectUnit defId) ->
-                                encyclopediaState <- { encyclopediaState with Selected = Some defId }
+                            match EncyclopediaTab.handleMouse encyclopediaState hubState x y cx cy cw ch with
                             | Some (EncyclopediaTab.EncyclopediaTabAction.ScrollList off) ->
                                 encyclopediaState <- { encyclopediaState with ListScroll = off }
                             | None -> ()
@@ -592,7 +618,7 @@ let main _argv =
             trigger ()
         | InputEvent.MouseMove(x, y) ->
             match viewerDragStart, viewerDragOrigin with
-            | Some (sx, sy), Some (ox, oy) when activeTab = HubTab.Viewer ->
+            | Some (sx, sy), Some (ox, oy) when getActiveTab () = HubTab.Viewer ->
                 let vs = viewerViewState.Value
                 let scale = max 0.0001f vs.Scale
                 let dx = (x - sx) / scale
@@ -618,13 +644,12 @@ let main _argv =
             let toggle (k: FSBar.Viz.OverlayKind) =
                 HubStateStore.toggleOverlay hubState k FSBar.Hub.ToggleTarget.Toggle
                 |> ignore
-                vizConfig <- (HubStateStore.current hubState).VizConfig
             match key with
             | Key.W -> toggle FSBar.Viz.OverlayKind.WeaponRanges
             | Key.L -> toggle FSBar.Viz.OverlayKind.SightRanges
             | Key.C -> toggle FSBar.Viz.OverlayKind.CommandQueue
             | Key.N -> toggle FSBar.Viz.OverlayKind.FullNames
-            | Key.R when activeTab = HubTab.Viewer ->
+            | Key.R when getActiveTab () = HubTab.Viewer ->
                 // Reset the Viewer camera to auto-fit. ViewerTab.render
                 // recomputes Scale + zero Origin on the next frame.
                 viewerViewState.Value <-
@@ -634,7 +659,7 @@ let main _argv =
             trigger ()
         | InputEvent.MouseScroll(delta, x, y) ->
             let (cx, cy, cw, ch) = contentRect ()
-            match activeTab, setupState with
+            match getActiveTab (), setupState with
             | HubTab.Setup, Some st ->
                 match SetupTab.handleScroll st delta x y cx cy cw ch with
                 | Some (SetupTab.SetupTabAction.ScrollMapList off) ->
@@ -643,10 +668,10 @@ let main _argv =
             | HubTab.Configurator, _ ->
                 let (ns, _action) =
                     ConfiguratorTab.handleInput
-                        configuratorState vizConfig evt cx cy cw ch
+                        configuratorState hubState evt cx cy cw ch
                 configuratorState <- ns
             | HubTab.Encyclopedia, _ ->
-                match EncyclopediaTab.handleScroll encyclopediaState delta x y cx cy cw ch with
+                match EncyclopediaTab.handleScroll encyclopediaState hubState delta x y cx cy cw ch with
                 | Some (EncyclopediaTab.EncyclopediaTabAction.ScrollList off) ->
                     encyclopediaState <- { encyclopediaState with ListScroll = off }
                 | _ -> ()
@@ -708,27 +733,20 @@ let main _argv =
                                 Some (SetupTab.validate install { st with Lobby = lobby })
                             trigger ()
                         | _ -> ()
-                    | HubEvents.VizConfigChanged cfg ->
-                        vizConfig <- cfg
-                        trigger ()
+                    | HubEvents.VizConfigChanged _
                     | HubEvents.VizAttributeChanged _ ->
-                        // Refresh from store on any attr mutation.
-                        vizConfig <- (HubStateStore.current hubState).VizConfig
+                        // VizConfig is read directly from the store on
+                        // every tab render (feature 041 FR-017); just
+                        // poke a redraw so the new value is on screen.
                         trigger ()
-                    | HubEvents.ActiveTabChanged tab ->
-                        // Feature 040 T055: reflect remote SetActiveTab
-                        // writes in the GUI.
-                        let chromeTab =
-                            match tab with
-                            | FSBar.Hub.HubTab.Setup -> HubTab.Setup
-                            | FSBar.Hub.HubTab.Viewer -> HubTab.Viewer
-                            | FSBar.Hub.HubTab.Units -> HubTab.Encyclopedia
-                            | FSBar.Hub.HubTab.Style -> HubTab.Configurator
-                            | FSBar.Hub.HubTab.Cfg -> HubTab.Settings
-                            | FSBar.Hub.HubTab.Grpc -> HubTab.Grpc
-                        if activeTab <> chromeTab then
-                            activeTab <- chromeTab
-                            trigger ()
+                    | HubEvents.ActiveTabChanged _ ->
+                        // ActiveTab is read directly from the store on
+                        // every render via getActiveTab; just trigger
+                        // a redraw so the chrome reflects the new tab.
+                        trigger ()
+                    | HubEvents.EncyclopediaSelectionChanged _
+                    | HubEvents.HubSettingsChanged _ ->
+                        trigger ()
                     | HubEvents.CameraChanged cam ->
                         // Feature 040 T041: reflect remote gRPC SetCamera
                         // writes in the GUI. Guard against the drag/zoom
@@ -800,9 +818,9 @@ let main _argv =
             match setupState, sessions with
             | Some st, Some sm when st.Errors.IsEmpty ->
                 eprintfn "[hub] auto-launch: attempting Launch"
-                match sm.Launch(st.Lobby, settings.StartPausedDefault) with
+                match sm.Launch(st.Lobby, (getSettings ()).StartPausedDefault) with
                 | Ok () ->
-                    activeTab <- HubTab.Viewer
+                    setActiveTab HubTab.Viewer
                     trigger ()
                     // Wait up to 40s for Running.
                     let sw = System.Diagnostics.Stopwatch.StartNew()

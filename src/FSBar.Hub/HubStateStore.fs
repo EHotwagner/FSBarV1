@@ -59,8 +59,22 @@ module HubStateStore =
             : Result<HubState * HubState, string> =
         store.TryUpdate transform
 
+    // Feature 041 R7 / FR-023a — every Rejected outcome from a public
+    // mutator emits exactly one DiagnosticsLine Warning before returning,
+    // so callers can silently roll back with `HubStateStore.current` and
+    // operators still see the rejection in the diagnostics stream.
+    let private emitRejected (store: T) (mutator: string) (reason: string) : unit =
+        let msg = sprintf "HubStateStore.%s rejected: %s" mutator reason
+        try store.Events.Publish(HubEvents.DiagnosticsLine(HubEvents.Warning, msg))
+        with _ -> ()
+
+    let private rejectWith (store: T) (mutator: string) (reason: string) : SubmitOutcome =
+        emitRejected store mutator reason
+        Rejected reason
+
     let private commit
             (store: T)
+            (mutator: string)
             (transform: HubState -> Result<HubState, string>)
             (onSuccess: HubState -> HubState -> unit)
             : SubmitOutcome =
@@ -69,28 +83,29 @@ module HubStateStore =
             onSuccess before after
             Sent
         | Error reason ->
+            emitRejected store mutator reason
             Rejected reason
 
     let setActiveTab (store: T) (tab: HubTab) : SubmitOutcome =
-        commit store
+        commit store "setActiveTab"
             (fun s -> Ok { s with ActiveTab = tab })
             (fun _ after -> store.Events.Publish(HubEvents.ActiveTabChanged after.ActiveTab))
 
     let setCamera (store: T) (camera: ViewerCamera) : SubmitOutcome =
         match ViewerCamera.validate camera with
-        | Error reason -> Rejected reason
+        | Error reason -> rejectWith store "setCamera" reason
         | Ok validated ->
-            commit store
+            commit store "setCamera"
                 (fun s -> Ok { s with Camera = validated })
                 (fun _ after -> store.Events.Publish(HubEvents.CameraChanged after.Camera))
 
     let setLobby (store: T) (lobby: LobbyConfig.LobbyConfig) : SubmitOutcome =
-        commit store
+        commit store "setLobby"
             (fun s -> Ok { s with Lobby = lobby })
             (fun _ after -> store.Events.Publish(HubEvents.LobbyChanged after.Lobby))
 
     let setVizConfig (store: T) (config: VizConfig) : SubmitOutcome =
-        commit store
+        commit store "setVizConfig"
             (fun s -> Ok { s with VizConfig = config })
             (fun _ after -> store.Events.Publish(HubEvents.VizConfigChanged after.VizConfig))
 
@@ -124,10 +139,10 @@ module HubStateStore =
     let setVizAttribute
             (store: T) (key: string) (value: AttributeValue) : SubmitOutcome =
         match ConfigDescriptors.tryFind key with
-        | None -> Rejected (sprintf "unknown key: %s" key)
+        | None -> rejectWith store "setVizAttribute" (sprintf "unknown key: %s" key)
         | Some desc ->
             let rawValue = attributeValueToObj value
-            commit store
+            commit store "setVizAttribute"
                 (fun s ->
                     let updated = desc.Set rawValue s.VizConfig
                     Ok { s with VizConfig = updated })
@@ -159,7 +174,7 @@ module HubStateStore =
         let descriptorKey = overlayKeyToDescriptorKey key
         match ConfigDescriptors.tryFind descriptorKey with
         | None ->
-            Rejected (sprintf "unknown overlay key: %A" key), false
+            rejectWith store "toggleOverlay" (sprintf "unknown overlay key: %A" key), false
         | Some desc ->
             let before = store.Current()
             let currentRaw = desc.Get before.VizConfig
@@ -177,7 +192,7 @@ module HubStateStore =
 
     let setEncyclopedia
             (store: T) (selection: EncyclopediaSelection) : SubmitOutcome =
-        commit store
+        commit store "setEncyclopedia"
             (fun s -> Ok { s with Encyclopedia = selection })
             (fun _ after ->
                 store.Events.Publish(
@@ -197,6 +212,6 @@ module HubStateStore =
 
     let setSettings
             (store: T) (settings: HubSettings.HubSettings) : SubmitOutcome =
-        commit store
+        commit store "setSettings"
             (fun s -> Ok { s with Settings = settings })
             (fun _ after -> store.Events.Publish(HubEvents.HubSettingsChanged after.Settings))

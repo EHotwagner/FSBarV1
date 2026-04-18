@@ -3,12 +3,12 @@ namespace FSBar.Hub.App.Tabs
 open SkiaSharp
 open SkiaViewer
 open FSBar.Viz
+open FSBar.Hub
 
 module ConfiguratorTab =
 
     [<RequireQualifiedAccess>]
     type ConfiguratorTabAction =
-        | ConfigChanged of VizConfig
         | SavePreset of name: string
         | LoadPreset of name: string
         | DeletePreset of name: string
@@ -36,10 +36,11 @@ module ConfiguratorTab =
 
     let render
             (state: ConfiguratorTabState)
-            (vizConfig: VizConfig)
+            (store: HubStateStore.T)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : Element list =
+        let vizConfig = (HubStateStore.current store).VizConfig
         // `ConfigPanel.buildPanel` assumes its panel hugs the right
         // edge of the passed "window" rectangle. We trick it into
         // laying out against our content rectangle by treating the
@@ -100,11 +101,12 @@ module ConfiguratorTab =
 
     let handleInput
             (state: ConfiguratorTabState)
-            (vizConfig: VizConfig)
+            (store: HubStateStore.T)
             (event: InputEvent)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : ConfiguratorTabState * ConfiguratorTabAction option =
+        let vizConfig = (HubStateStore.current store).VizConfig
         let panelEvt = translateEvent event contentX contentY
         let result =
             ConfigPanel.handleInput
@@ -113,14 +115,18 @@ module ConfiguratorTab =
                 state.Panel
                 contentW
                 contentH
-        let newState0 = { state with Panel = result.PanelState }
-        // If the panel produced a new config, that's a hub-level
-        // ConfigChanged action so the entrypoint can replace its
-        // cached VizConfig.
-        let configAction =
-            result.UpdatedConfig |> Option.map ConfiguratorTabAction.ConfigChanged
-        // Map panel-level action DU onto the tab's DU.
-        let panelAction =
+        let newState = { state with Panel = result.PanelState }
+        // Whole-config mutations route directly through the store so
+        // remote gRPC clients see the same change in their next event
+        // stream tick (FR-018). Rejected outcomes silently roll back
+        // (FR-023a) — the next render will read the authoritative
+        // VizConfig back through `current store`.
+        match result.UpdatedConfig with
+        | Some nc -> HubStateStore.setVizConfig store nc |> ignore
+        | None -> ()
+        // Preset / reset side-effects bubble to the entrypoint for
+        // file-system handling.
+        let action =
             result.Action
             |> Option.map (fun a ->
                 match a with
@@ -128,18 +134,4 @@ module ConfiguratorTab =
                 | ConfigPanelAction.LoadPreset name -> ConfiguratorTabAction.LoadPreset name
                 | ConfigPanelAction.DeletePreset name -> ConfiguratorTabAction.DeletePreset name
                 | ConfigPanelAction.ResetDefaults -> ConfiguratorTabAction.ResetDefaults)
-        // Prefer the file-system action when both fire on the same
-        // click (SavePreset also emits a new VizConfig with the
-        // dirty flag cleared). We surface both in the tuple — the
-        // entrypoint applies ConfigChanged first, then the preset
-        // action.
-        let action =
-            match configAction, panelAction with
-            | Some _, Some p -> Some p
-            | Some c, None -> Some c
-            | None, p -> p
-        // Apply ConfigChanged side-effect to the tab state too so the
-        // next render picks up the new config without a round-trip
-        // through the entrypoint.
-        let newState = newState0
         newState, action

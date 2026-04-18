@@ -45,7 +45,7 @@ module AdminChannel =
     //   KillServer        → "/kill"
     //   Pause true        → "/pause 1"
     //   Pause false       → "/pause 0"
-    //   SetGameSpeed N    → ["/setminspeed N"; "/setmaxspeed N"]
+    //   SetGameSpeed N    → ["/setminspeed N"; "/setmaxspeed N"]   (min FIRST — see R1)
     //   SayMessage text   → text (bare, no leading '/')
     //
     // Inbound (engine → hub) action codes (1-byte action + payload):
@@ -68,13 +68,14 @@ module AdminChannel =
             // the wrong way after a hub-side state mismatch.
             [| toBytes (if paused then "/pause 1" else "/pause 0") |]
         | SetGameSpeed speed ->
-            // /setmaxspeed clamps the upper bound; /setminspeed pulls
-            // the current speed up. Send max FIRST so a 5x→0.5x change
-            // doesn't get rejected ("argUserSpeed > 0.2f" gate runs
-            // against the OLD min).
+            // /setminspeed FIRST, /setmaxspeed SECOND — feature 041 R1.
+            // The engine accepts either order; emitting the floor first
+            // makes the effective speed observably monotonic for downward
+            // changes (no transient ceiling-lowered-but-floor-still-high
+            // state) and matches AdminChannelCodecTests' contract.
             let s = sprintf "%g" speed
-            [| toBytes (sprintf "/setmaxspeed %s" s)
-               toBytes (sprintf "/setminspeed %s" s) |]
+            [| toBytes (sprintf "/setminspeed %s" s)
+               toBytes (sprintf "/setmaxspeed %s" s) |]
         | SayMessage text -> [| toBytes text |]
 
     /// Backwards-compatible single-datagram encode. For commands that

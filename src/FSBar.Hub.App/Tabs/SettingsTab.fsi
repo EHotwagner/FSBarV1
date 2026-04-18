@@ -64,11 +64,15 @@ module SettingsTab =
         result: Result<ProxyInstaller.ProxyInstallStatus, string list> ->
             SettingsTabState
 
+    /// Render the tab. Reads `HubSettings` from the supplied
+    /// `HubStateStore.T` (`HubStateStore.current store .Settings`)
+    /// so remote `SetHubSettings` writes appear in the next paint
+    /// without going through the entrypoint (feature 041 FR-021).
     val render:
         state: SettingsTabState ->
         install: BarInstall.BarInstall option ->
         bundled: BundledProxy.BundledProxyInfo option ->
-        settings: HubSettings.HubSettings ->
+        store: HubStateStore.T ->
         contentX: float32 ->
         contentY: float32 ->
         contentW: float32 ->

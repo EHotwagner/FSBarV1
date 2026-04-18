@@ -69,6 +69,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-18
 - Filesystem only — unchanged from pre-feature. `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (HubSettings), `viz-presets/*.json` (style presets), `bots/trainer/map-cache/*.json` (map analysis). `HubStateStore` and `HeadlessRenderer` are in-memory only. (040-grpc-full-hub-ui)
 - F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.** (040-grpc-full-hub-ui)
 - Filesystem only — unchanged from pre-feature. `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (HubSettings), `viz-presets/*.json` (style presets), `bots/trainer/map-cache/*.json` (map analysis). `HubStateStore` and `HeadlessRenderer` are in-memory only. (040-grpc-full-hub-ui)
+- F# 9 on .NET 10.0 (exclusive per Constitution + Existing in-repo only — `FSBar.Proto`, (041-hub-040-followups)
+- Filesystem only — unchanged from feature 040. Overlay (041-hub-040-followups)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -215,6 +217,33 @@ Regenerate the label table whenever `nupkg/BarData.*.nupkg` changes.
 Keep the `.fsi` for `UnitLabels.generated` stable — the generator only
 rewrites the `.fs`.
 
+## Hub state-store routing convention (feature 041)
+
+Every Hub-GUI tab reads its authoritative state through
+`HubStateStore.current store` and writes back via the typed
+mutators (`setVizConfig`, `setVizAttribute`, `setEncyclopedia`,
+`setSettings`, `setActiveTab`). The `Program.fs` entrypoint exposes
+two thunks — `getActiveTab ()` and `getVizConfig ()` — plus a
+`getSettings ()` reader. Tab call sites that previously held a
+`let mutable vizConfig` / `let mutable activeTab` mirror were
+removed in feature 041 (FR-017..FR-022).
+
+`HubStateStore.set*` mutators emit a single
+`HubEvent.DiagnosticsLine Warning` when they return
+`SubmitOutcome.Rejected reason` (FR-023a / R7). Format:
+`HubStateStore.<mutator> rejected: <reason>`. Callers silently
+roll back by reading `HubStateStore.current` again — they do NOT
+need to add their own warning emit.
+
+Adding a new tab that needs to participate in this routing:
+1. Take `store: HubStateStore.T` as a `render` / `handleInput`
+   parameter (not the cached value).
+2. Read every HubState-owned field through `(HubStateStore.current store).X`.
+3. Write back via the typed mutator; ignore the `SubmitOutcome` —
+   the next render reads the authoritative value anyway.
+4. Local presentation state (scroll positions, toasts, drag
+   anchors) stays in the per-tab `let mutable <Tab>State` record.
+
 ## gRPC parity for Hub UI (feature 040)
 
 Feature 040 exposes every Hub-GUI action through the
@@ -302,9 +331,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 041-hub-040-followups: Added F# 9 on .NET 10.0 (exclusive per Constitution + Existing in-repo only — `FSBar.Proto`,
 - 040-grpc-full-hub-ui: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
 - 040-grpc-full-hub-ui: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
-- 039-hub-admin-channel: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Client`, `FSBar.Hub`, `FSBar.Viz`, `FSBar.Proto`. BCL `System.Net.Sockets.UdpClient` + `System.Threading.Channels` for the autohost socket. `Grpc.AspNetCore 2.67.0` / `Grpc.Core.Api 2.67.0` already in the graph for scripting. `SkiaViewer` 1.1.3-dev for UI. `xUnit 2.9.x` for tests. **No new NuGet dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

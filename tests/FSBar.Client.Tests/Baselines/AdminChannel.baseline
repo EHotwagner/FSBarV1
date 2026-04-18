@@ -62,9 +62,16 @@ module AdminChannel =
         /// <summary>The socket is no longer usable. <c>reason</c> captures why.</summary>
         | Closed of reason: string
 
-    /// <summary>Encode an outbound command to the UDP datagram bytes the engine expects.
-    /// Exposed for unit testing; production callers should use
-    /// <see cref="M:FSBar.Client.AdminChannel.AdminChannel.Send"/>.</summary>
+    /// <summary>Encode an outbound command to one or more UDP text datagrams.
+    /// The engine treats inbound autohost datagrams as UTF-8 chat strings;
+    /// strings prefixed with <c>/</c> are dispatched as slash actions.
+    /// <see cref="T:FSBar.Client.AdminChannel.AdminCommandOut.SetGameSpeed"/>
+    /// expands to two datagrams (<c>/setminspeed</c> + <c>/setmaxspeed</c>)
+    /// to lock the engine's effective speed at the requested multiplier.</summary>
+    val encodeCommandToDatagrams: cmd: AdminCommandOut -> byte[][]
+
+    /// <summary>Backwards-compatible single-datagram encode; returns the
+    /// first datagram of <see cref="M:FSBar.Client.AdminChannel.encodeCommandToDatagrams"/>.</summary>
     val encodeCommand: cmd: AdminCommandOut -> byte[]
 
     /// <summary>Decode an inbound UDP datagram from the engine into an

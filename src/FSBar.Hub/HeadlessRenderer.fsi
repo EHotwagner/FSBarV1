@@ -61,13 +61,15 @@ module HeadlessRenderer =
     type T
 
     /// Allocate a new renderer. Retains the session manager, state
-    /// store, and overlay store (the latter queried each frame for
-    /// US6 layer composition; a skeleton `OverlayLayerStore` produces
-    /// no primitives, so US2 renders base-scene only).
+    /// store, overlay store, and event sink. Per-frame composite emits
+    /// a `HubEvent.DiagnosticsLine Warning` on the supplied sink when
+    /// the overlay-pass elapsed time exceeds the SC-002 5 ms budget
+    /// (feature 041 FR-006a / R2). The frame still ships unchanged.
     val create:
         sessions: SessionManager.SessionManager ->
         store:    HubStateStore.T ->
         overlays: OverlayLayerStore.T ->
+        events:   HubEvents.IHubEventSink ->
         settings: (unit -> HubSettings.HubSettings) ->
             T
 

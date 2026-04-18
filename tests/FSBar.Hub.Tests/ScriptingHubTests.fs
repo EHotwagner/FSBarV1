@@ -71,7 +71,7 @@ let private makeService (opts: ScriptingHub.ScriptingHubOptions) =
     let store = HubStateStore.create bus.Sink initialState
     let overlays = OverlayLayerStore.create bus.Sink
     let renderer =
-        HeadlessRenderer.create sessions store overlays (fun () -> HubSettings.defaults)
+        HeadlessRenderer.create sessions store overlays bus.Sink (fun () -> HubSettings.defaults)
     let service =
         new ScriptingHub.ScriptingService(
             sessions, bus.Sink, bus.Events, unitDefs, install, makeBundled (), 5021,
