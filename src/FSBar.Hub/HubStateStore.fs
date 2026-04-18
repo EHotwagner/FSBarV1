@@ -118,7 +118,9 @@ module HubStateStore =
         | IntValue i -> box i
         | FloatValue f -> box (float32 f)
         | StringValue s -> box s
-        | ColorRgbaValue c -> box c
+        | ColorRgbaValue c ->
+            // ConfigDescriptors.Set uses unbox<SKColor>; must convert uint32 RRGGBBAA → SKColor.
+            box (SkiaSharp.SKColor(byte (c >>> 24), byte (c >>> 16), byte (c >>> 8), byte c))
         | StringListValue xs -> box (xs |> List.toArray)
 
     let private objToAttributeValue (value: obj) : AttributeValue =

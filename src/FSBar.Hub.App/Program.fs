@@ -260,7 +260,15 @@ let main _argv =
     // Registered only when we have a real BAR install + SessionManager.
     // Hosted on a background Kestrel task so it doesn't block the main
     // UI thread. Bound to 127.0.0.1:<GrpcPort> with HTTP/2 cleartext.
-    let grpcEndpointUrl = sprintf "http://127.0.0.1:%d" (getSettings ()).GrpcPort
+    let grpcPort =
+        match System.Environment.GetEnvironmentVariable("FSBAR_HUB_GRPC_PORT") with
+        | null -> (getSettings ()).GrpcPort
+        | s ->
+            match System.Int32.TryParse(s) with
+            | true, p when p > 1023 && p <= 65535 -> p
+            | _ -> (getSettings ()).GrpcPort
+
+    let grpcEndpointUrl = sprintf "http://127.0.0.1:%d" grpcPort
 
     let grpcService : ScriptingHub.ScriptingService option =
         match barInstall, sessions, headlessRenderer with
@@ -287,7 +295,7 @@ let main _argv =
                 | _ -> FSBar.Client.UnitDefCache.empty
             Some (new ScriptingHub.ScriptingService(
                     sm, bus.Sink, bus.Events, unitDefsThunk, install, bundleInfo,
-                    (getSettings ()).GrpcPort, hubState, hr, overlayStore, hubLog,
+                    grpcPort, hubState, hr, overlayStore, hubLog,
                     ScriptingHub.defaults))
         | _ -> None
 
@@ -302,14 +310,16 @@ let main _argv =
                 webBuilder.Logging.ClearProviders() |> ignore
                 webBuilder.Logging.AddFilter(fun _ -> false) |> ignore
                 let dispatchTracer = DispatchTracer.DebugDispatchInterceptor(hubLog)
+                webBuilder.Services.AddSingleton<CorrelationId.ServerInterceptor>() |> ignore
+                webBuilder.Services.AddSingleton<DispatchTracer.DebugDispatchInterceptor>(dispatchTracer) |> ignore
                 webBuilder.Services.AddGrpc(fun o ->
                     o.Interceptors.Add<CorrelationId.ServerInterceptor>() |> ignore
-                    o.Interceptors.Add(dispatchTracer) |> ignore)
+                    o.Interceptors.Add<DispatchTracer.DebugDispatchInterceptor>() |> ignore)
                 |> ignore
                 webBuilder.Services.AddSingleton<ScriptingHub.ScriptingService>(svc)
                 |> ignore
                 webBuilder.WebHost.ConfigureKestrel(fun opts ->
-                    opts.ListenLocalhost((getSettings ()).GrpcPort, fun lo ->
+                    opts.ListenLocalhost(grpcPort, fun lo ->
                         lo.Protocols <- HttpProtocols.Http2))
                 |> ignore
                 let app = webBuilder.Build()

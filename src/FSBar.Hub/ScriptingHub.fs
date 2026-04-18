@@ -208,9 +208,9 @@ module ScriptingHub =
         | :? uint32 as c -> FSBar.Viz.ColorRgbaValue c
         | :? SkiaSharp.SKColor as sk ->
             let rgba =
-                (uint32 sk.Red) <<< 24
-                ||| (uint32 sk.Green) <<< 16
-                ||| (uint32 sk.Blue) <<< 8
+                ((uint32 sk.Red) <<< 24)
+                ||| ((uint32 sk.Green) <<< 16)
+                ||| ((uint32 sk.Blue) <<< 8)
                 ||| (uint32 sk.Alpha)
             FSBar.Viz.ColorRgbaValue rgba
         | :? (string array) as xs -> FSBar.Viz.StringListValue (List.ofArray xs)
@@ -809,6 +809,8 @@ module ScriptingHub =
 
         override _.SendAdminMessage request _context =
             task {
+                HubLog.emitSimple log HubLog.ScriptingHub HubLog.Debug (fun () ->
+                    sprintf "SendAdminMessage text: %s" request.Text)
                 let outcome = sessions.SendAdminMessage request.Text
                 let result = toSubmitResult outcome sessions.AdminStatus
                 return ({ Result = Some result } : SendAdminMessageResponse)
@@ -1658,6 +1660,8 @@ module ScriptingHub =
                     raise (Grpc.Core.RpcException(
                         Grpc.Core.Status(Grpc.Core.StatusCode.ResourceExhausted, reason)))
                 | HubLog.Attached sub ->
+                    HubLog.emitSimple log HubLog.ScriptingHub HubLog.Debug (fun () ->
+                        sprintf "log-stream subscribed: label=%s id=%s" label (sub.Id.ToString("N")))
                     try
                         // Start a background filter-update loop reading
                         // subsequent request messages.

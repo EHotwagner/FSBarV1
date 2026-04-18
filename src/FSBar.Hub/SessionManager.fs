@@ -308,24 +308,35 @@ module SessionManager =
             if Volatile.Read(&disposed) <> 0 then
                 Result.Error "session manager has been disposed"
             else
-                match this.State with
-                | Starting _ | Running _ | Ending _ ->
-                    Result.Error "a session is already active; call End first"
-                | Idle | Failed _ ->
-                    match LobbyConfig.validate install config with
-                    | Result.Error errs ->
-                        let msg =
-                            errs
-                            |> List.map LobbyConfig.formatError
-                            |> String.concat "; "
-                        Result.Error (sprintf "lobby validation failed: %s" msg)
-                    | Ok validated ->
-                        match LobbyConfig.toEngineConfig install validated with
-                        | Result.Error err ->
-                            Result.Error (sprintf "toEngineConfig failed: %s" (LobbyConfig.formatError err))
-                        | Ok engineCfg ->
-                            startPausedForNextLaunch <- startPaused
-                            transitionTo (Starting validated)
+                match LobbyConfig.validate install config with
+                | Result.Error errs ->
+                    let msg =
+                        errs
+                        |> List.map LobbyConfig.formatError
+                        |> String.concat "; "
+                    Result.Error (sprintf "lobby validation failed: %s" msg)
+                | Ok validated ->
+                    match LobbyConfig.toEngineConfig install validated with
+                    | Result.Error err ->
+                        Result.Error (sprintf "toEngineConfig failed: %s" (LobbyConfig.formatError err))
+                    | Ok engineCfg ->
+                        // Atomic claim: re-check state and transition under the
+                        // same lock so two concurrent callers cannot both pass
+                        // the Idle check before either flips to Starting.
+                        let claimed =
+                            lock sync (fun () ->
+                                match state with
+                                | Idle | Failed _ ->
+                                    startPausedForNextLaunch <- startPaused
+                                    state <- Starting validated
+                                    true
+                                | _ -> false)
+                        if not claimed then
+                            Result.Error "a session is already active; call End first"
+                        else
+                            events.Publish(HubEvents.StateChanged (stateTag (Starting validated)))
+                            emitLog HubLog.SessionManager HubLog.Info (fun () ->
+                                sprintf "session state Idle → Starting (via Launch)")
                             startSessionBackground validated engineCfg
                             Ok ()
 

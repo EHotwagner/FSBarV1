@@ -73,6 +73,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-18
 - Filesystem only — unchanged from feature 040. Overlay (041-hub-040-followups)
 - F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.** (042-grpc-log-stream)
 - Filesystem only — unchanged from feature 041. `HubSettings.MaxLogStreamSubscribers` persists in `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (schema v3, one-field bump from v2). `HubLog` subscriber state is in-memory only, released within 1 s of gRPC channel close (FR-013). (042-grpc-log-stream)
+- F# 9 / .NET 10.0 + `FSBar.Hub`, `FSBar.Hub.App`, `FSBar.Proto`, `FSBar.Client` (in-repo); `Grpc.AspNetCore 2.67.0`, `FsGrpc 1.0.6` (transitive via Hub); `Grpc.Net.Client 2.67.*` (new, explicit — needed for `GrpcChannel.ForAddress` in the fixture); `xUnit 2.9.x`, `Xunit.SkippableFact 1.4.13`, `Microsoft.NET.Test.Sdk 17.x` (043-grpc-hub-testsuite)
+- N/A — test-only; preset cleanup uses `test-043-*` prefix naming convention (043-grpc-hub-testsuite)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -333,9 +335,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 043-grpc-hub-testsuite: Added F# 9 / .NET 10.0 + `FSBar.Hub`, `FSBar.Hub.App`, `FSBar.Proto`, `FSBar.Client` (in-repo); `Grpc.AspNetCore 2.67.0`, `FsGrpc 1.0.6` (transitive via Hub); `Grpc.Net.Client 2.67.*` (new, explicit — needed for `GrpcChannel.ForAddress` in the fixture); `xUnit 2.9.x`, `Xunit.SkippableFact 1.4.13`, `Microsoft.NET.Test.Sdk 17.x`
 - 042-grpc-log-stream: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
 - 041-hub-040-followups: Added F# 9 on .NET 10.0 (exclusive per Constitution + Existing in-repo only — `FSBar.Proto`,
-- 040-grpc-full-hub-ui: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
 
 
 <!-- MANUAL ADDITIONS START -->

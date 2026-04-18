@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>FSBar.Hub.GrpcTests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="SkipGuards.fs" />
+    <Compile Include="LogStreamHarness.fs" />
+    <Compile Include="AdminRpcClient.fs" />
+    <Compile Include="HubTestFixture.fs" />
+    <Compile Include="AdminChannelTests.fs" />
+    <Compile Include="LogStreamTests.fs" />
+    <Compile Include="SessionLifecycleTests.fs" />
+    <Compile Include="VizConfigTests.fs" />
+    <Compile Include="OverlayLayerTests.fs" />
+    <Compile Include="StateEventStreamTests.fs" />
+    <Compile Include="PresetEncyclopediaTests.fs" />
+    <Compile Include="CorrelationIdTests.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/FSBar.Hub/FSBar.Hub.fsproj" />
+    <ProjectReference Include="../../src/FSBar.Hub.App/FSBar.Hub.App.fsproj" />
+    <ProjectReference Include="../../src/FSBar.Proto/FSBar.Proto.fsproj" />
+    <ProjectReference Include="../../src/FSBar.Client/FSBar.Client.fsproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.Net.Client" Version="2.67.*" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.*" />
+    <PackageReference Include="xunit" Version="2.9.*" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.*" PrivateAssets="all" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.4.13" />
+  </ItemGroup>
+
+</Project>
