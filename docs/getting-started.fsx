@@ -3,250 +3,103 @@
 title: Getting Started
 category: Overview
 categoryindex: 1
-index: 1
+index: 2
+description: Prerequisites, build, and first run.
 ---
 *)
 
 (**
 # Getting Started
 
-This guide walks you through installing FSBarV1, setting up prerequisites, and running your first headless game session.
-
-## Installation
-
-### From NuGet (when published)
-*)
-
-(*** do-not-eval ***)
-// In your .fsproj or via CLI:
-// dotnet add package FSBar.Client
-
-(**
-### Building from Source
-*)
-
-(*** do-not-eval ***)
-// Clone the repository and build:
-// git clone https://github.com/EHotwagner/FSBarV1.git
-// cd FSBarV1
-// dotnet build
-
-(**
-The solution produces two main assemblies:
-
-- **FSBar.Client** — the client library (references FSBar.Proto and BarData)
-- **FSBar.Proto** — generated protobuf types from the HighBar V2 `.proto` schema
-
 ## Prerequisites
 
-### BAR Engine
+- .NET 10.0 SDK
+- Linux (primary dev target). Other platforms work for library/unit tests, but live engine integration is Linux-only.
+- For live runs: Beyond All Reason installation with `spring-headless` (or `spring`) and the HighBar V2 proxy (`libSkirmishAI.so`). The Hub can install a bundled proxy for you.
 
-You need the Beyond All Reason (BAR) headless engine binary (`spring-headless`) installed locally.
-The engine is typically found at:
+Standard BAR data directory: `~/.local/state/Beyond All Reason`. Engines live under `engine/recoil_<YYYY.MM.DD>/` and are auto-detected by `FSBar.Client.EngineDiscovery`.
 
+## Build
+
+```bash
+git clone https://github.com/EHotwagner/FSBarV1.git
+cd FSBarV1
+dotnet tool restore
+dotnet build FSBarV1.slnx
 ```
-~/.local/state/Beyond All Reason/engine/<version>/spring-headless
+
+## Run the Hub GUI
+
+```bash
+XDG_RUNTIME_DIR=/tmp/runtime-developer DISPLAY=:0 \
+  dotnet run --project src/FSBar.Hub.App
 ```
 
-Install BAR from [https://www.beyondallreason.info/](https://www.beyondallreason.info/) to get the engine and game data.
+See [Hub GUI](hub.html) for the tab walkthrough.
 
-### Game Data
+## Run a headless script
 
-The engine needs access to the BAR game data directory. This is usually auto-detected, but you can
-override it via the `SpringDataDir` config option:
+```bash
+dotnet build tests/FSBar.Viz.Tests/
+dotnet fsi scripts/examples/Repl.fsx
+```
+
+`Repl.fsx` loads `FSBar.Client` + `FSBar.Viz` and exposes convenience helpers (`start`, `step`, `units`, `move`, `viz`, `economy`). Use it for interactive exploration.
+
+## Minimal library example
 *)
 
-(*** do-not-eval ***)
-open FSBar.Client
+(*** condition: prepare ***)
+#r "../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Proto.dll"
+#r "../tests/FSBar.Viz.Tests/bin/Debug/net10.0/FSBar.Client.dll"
 
-let config =
-    { EngineConfig.defaultConfig () with
-        EngineBin = "/path/to/spring-headless"
-        SpringDataDir = Some "/path/to/BAR/data" }
+(*** condition: fsx ***)
+#r "nuget: FSBar.Client"
 
 (**
-### HighBar V2 Proxy
-
-The HighBar V2 proxy is embedded as an AI module within the BAR engine. It is configured automatically
-via the game script that `ScriptGenerator` produces. No separate proxy process is needed.
-
-## First Headless Session
-
-The simplest way to start a game is with `BarClient.startHeadless`:
-*)
-
-(*** do-not-eval ***)
-open FSBar.Client
-
-// Start a headless engine with default settings
-let client = BarClient.startHeadless ()
-
-// The client is now connected. Handshake info is available:
-let hs = client.Handshake.Value
-printfn "Connected: engine=%s map=%s team=%d" hs.EngineVersion hs.MapName hs.TeamId
-
-(**
-## Basic Frame Loop
-
-The engine produces one `GameFrame` per simulation step. `BarClient` exposes two equivalent
-ways to consume those frames:
-
-- **`client.Frames : IObservable<GameFrame>`** — push-based, fully async, good for long-running
-  background subscribers and UI pipelines.
-- **`client.WaitFrames count handler`** — synchronous, blocks until exactly `count` frames have
-  been delivered to the handler. Good for REPL sessions, scripts, and linear tests.
-
-Commands are queued with `client.SendCommands` and sent to the engine with the next frame
-response — you can call it from inside either the observable or the `WaitFrames` handler.
-
-### Synchronous handler (REPL-friendly)
-*)
-
-(*** do-not-eval ***)
+```fsharp
 open FSBar.Client
 open FSBar.Client.Commands
 
-// Simple observation loop (no commands)
-client.WaitFrames 100 (fun frame ->
-    for evt in frame.Events do
-        match evt with
-        | GameEvent.UnitCreated(uid, _) -> printfn "Unit %d created" uid
-        | GameEvent.UnitFinished uid -> printfn "Unit %d finished" uid
-        | _ -> ())
+use client = BarClient.startHeadless ()
 
-(**
-### Handler that issues commands
+// Pull: block for 5 frames, inspecting each one.
+client.WaitFrames 5 (fun frame ->
+    printfn "Frame %d — %d events" frame.FrameNumber frame.Events.Length)
 
-Return nothing — queue commands with `SendCommands` instead. They are flushed with the
-frame response automatically:
-*)
+// Push: subscribe to the observable.
+use _ = client.Frames.Subscribe(fun frame ->
+    printfn "[obs] Frame %d" frame.FrameNumber)
 
-(*** do-not-eval ***)
-client.WaitFrames 500 (fun frame ->
-    let cmds =
-        frame.Events
-        |> List.choose (function
-            | GameEvent.UnitIdle uid ->
-                Some (PatrolCommand uid 2048.0f 100.0f 2048.0f)
-            | _ -> None)
-    if not cmds.IsEmpty then client.SendCommands cmds)
-
-(**
-### Observable subscription
-
-For long-running or UI-driven code, subscribe once and let frames push:
-*)
-
-(*** do-not-eval ***)
-use _ =
-    client.Frames.Subscribe(fun frame ->
-        printfn "Frame %d: %d events" frame.FrameNumber frame.Events.Length)
-
-// Now drive the session however you want — e.g. advance 1000 frames while
-// the subscriber above continues to receive events:
-client.WaitFrames 1000 (fun _ -> ())
-
-(**
-### Querying the GameState snapshot
-
-`client.GameState` is updated after every frame and always reflects the latest tracked
-units, enemies, and economy. You can read it from anywhere between frames:
-*)
-
-(*** do-not-eval ***)
-client.WaitFrames 500 (fun _ -> ())
-
+// Always-current snapshot.
 let state = client.GameState
-printfn "Tracked units: %d" state.Units.Count
-printfn "Metal: %.0f (+%.1f/s)" state.Metal.Current state.Metal.Income
-for KeyValue(uid, unit) in state.Units do
-    let (x, _, z) = unit.Position
-    printfn "  Unit %d @ (%.0f, %.0f) hp=%.0f" uid x z unit.Health
+printfn "%d tracked units, metal %.0f" state.TrackedUnits.Count state.Economy.Metal
+```
 
-(**
-## Cleanup
+## Container
 
-Always stop the client when done to clean up the engine process and socket file:
-*)
+A fully provisioned dev container (SDK, fsautocomplete, FSI MCP, native libs) is available:
 
-(*** do-not-eval ***)
-client.Stop()
+```bash
+podman build --build-arg GH_TOKEN=<token> -t fsbar-dev -f container/Containerfile container/
+podman run -it --rm \
+  -v "<path-to-BAR>:/home/developer/.local/state/Beyond All Reason" \
+  -p 5020:5020 fsbar-dev
+```
 
-// Or use `use` for automatic disposal:
-// use client = BarClient.startHeadless ()
-// ... client is disposed when it goes out of scope
+See [container/README.md](https://github.com/EHotwagner/FSBarV1/blob/master/container/README.md) for GPU passthrough and X11 forwarding.
 
-(**
-## Interactive REPL Sessions
+## Running tests
 
-The fastest way to explore the engine interactively is with the REPL scripts. These provide
-helper functions for stepping frames, querying units, issuing commands, and more.
+```bash
+./tests/run-all.sh --category unit   # unit tests, no engine
+./tests/run-all.sh                    # unit + live (requires BAR install)
+./tests/check-prerequisites.sh        # diagnose BAR + proxy setup
+```
 
-### Headless REPL
+## Next
 
-Start a headless engine session (no GUI, fast simulation):
-*)
-
-(*** do-not-eval ***)
-// From the repo root:
-//   dotnet build tests/FSBar.Viz.Tests/
-//   dotnet fsi scripts/examples/Repl.fsx
-
-// Or from FSI / MCP server:
-//   #load "scripts/examples/Repl.fsx"
-//   open Repl
-
-// start ()         — launch headless engine
-// step 100         — advance 100 frames
-// units ()         — list all tracked units
-// economy ()       — show metal/energy
-// move 25947 2000f 2000f  — move a unit
-// viz ()           — open live visualization window
-// stop ()          — shut down
-
-(**
-### Graphical REPL
-
-Start a full windowed BAR game with an opponent AI you can watch:
-*)
-
-(*** do-not-eval ***)
-// From the repo root:
-//   dotnet build tests/FSBar.Viz.Tests/
-//   DISPLAY=:0 dotnet fsi scripts/examples/ReplGraphical.fsx
-
-// Or from FSI / MCP server:
-//   #load "scripts/examples/ReplGraphical.fsx"
-//   open ReplGraphical
-
-// start ()         — launch windowed game (BARb opponent, 5x speed)
-// step 100         — advance 100 frames
-// units ()         — list all tracked units
-// move 25947 3000f 3000f  — move a unit
-// attack 25947 21640      — attack an enemy
-// economy ()       — show metal/energy
-// stop ()          — shut down
-
-(**
-Both REPL scripts run a 30-frame warmup on `start()` so your commander is immediately tracked.
-All helper functions (`step`, `move`, `attack`, `units`, `economy`, etc.) are available after
-`open Repl` or `open ReplGraphical`.
-
-## Configuration Options
-
-The `EngineConfig` record controls all session parameters:
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `Mode` | `Headless` | `Headless` or `Graphical` |
-| `SocketPath` | `/tmp/fsbar-<guid>.sock` | Unix socket path |
-| `MapName` | `"Avalanche 3.4"` | BAR map name |
-| `GameType` | `"Beyond All Reason test-29871-90f4bc1"` | Game version string |
-| `OpponentAI` | `"NullAI"` | Opponent AI name |
-| `OurSide` | `"Armada"` | Our faction |
-| `OpponentSide` | `"Cortex"` | Opponent faction |
-| `TimeoutMs` | `30000` | Connection accept timeout (ms) |
-| `EngineBin` | `"spring-headless"` | Engine binary path |
-| `GameSpeed` | `100` | Game speed multiplier |
-| `ReadTimeoutMs` | `None` | Socket read timeout override |
+- [Hub GUI](hub.html)
+- [Library](library.html)
+- [Architecture](architecture.html)
 *)
