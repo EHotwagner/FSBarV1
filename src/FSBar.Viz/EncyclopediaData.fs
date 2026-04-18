@@ -5,6 +5,7 @@ module EncyclopediaData =
     type EncyclopediaEntry = {
         DefId: int
         InternalName: string
+        HumanName: string option
         Subfolder: string
         Faction: FactionId
         Tier: Tier
@@ -58,6 +59,7 @@ module EncyclopediaData =
             | None -> []
         { DefId = idx
           InternalName = d.name
+          HumanName = d.printableName
           Subfolder = d.subfolder
           Faction = faction
           Tier = tier

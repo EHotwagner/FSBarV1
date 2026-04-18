@@ -272,9 +272,13 @@ module EncyclopediaTab =
                   let isSelected = selected = Some e.DefId
                   let bg = if isSelected then rowActiveBg else rowBg
                   yield Scene.rect (x + 4.0f) (rowY + 2.0f) (w - 8.0f) (rowHeight - 3.0f) bg
+                  let display =
+                      match e.HumanName with
+                      | Some n when n <> "" -> sprintf "%s  (%s)" n e.InternalName
+                      | _ -> e.InternalName
                   let label =
                       sprintf "%s   %A %A   %dm %de"
-                          e.InternalName e.Faction e.Tier e.MetalCost e.EnergyCost
+                          display e.Faction e.Tier e.MetalCost e.EnergyCost
                   let paint = if isSelected then headingText else bodyText
                   yield Scene.text label (x + 14.0f) (rowY + rowHeight - 8.0f) 13.0f paint ]
 
@@ -295,8 +299,12 @@ module EncyclopediaTab =
             [ Scene.text "Select a unit on the left to see its details + glyph."
                 (x + 14.0f) (y + 32.0f) 14.0f dimText ]
         | Some e ->
+            let title =
+                match e.HumanName with
+                | Some n when n <> "" -> sprintf "%s  [%s]" n e.InternalName
+                | _ -> e.InternalName
             let lines =
-                [ sprintf "%s  (%A %A %A)" e.InternalName e.Faction e.Tier e.Shape
+                [ sprintf "%s  (%A %A %A)" title e.Faction e.Tier e.Shape
                   sprintf "subfolder: %s" e.Subfolder
                   sprintf "cost: %d metal · %d energy · %d buildTime" e.MetalCost e.EnergyCost e.BuildTime
                   sprintf "health: %d" e.Health

@@ -62,10 +62,9 @@ module EncyclopediaFilter =
         || n.Contains "_com_"
 
     let humanName (entry: EncyclopediaData.EncyclopediaEntry) : string =
-        // The encyclopedia tab currently renders `InternalName`
-        // prominently. Mirror that so search over "human name"
-        // matches what the user sees.
-        entry.InternalName
+        match entry.HumanName with
+        | Some n when not (String.IsNullOrWhiteSpace n) -> n
+        | _ -> entry.InternalName
 
     let private containsCI (haystack: string) (needle: string) : bool =
         if String.IsNullOrEmpty haystack then false

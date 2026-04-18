@@ -13,6 +13,7 @@ let private mk
         : EncyclopediaData.EncyclopediaEntry =
     { DefId = abs (name.GetHashCode())
       InternalName = name
+      HumanName = None
       Subfolder = ""
       Faction = faction
       Tier = tier

@@ -354,6 +354,7 @@ let ``FacingTriangle: static preview (heading=0) identical to encyclopedia path 
     let entry : EncyclopediaData.EncyclopediaEntry =
         { DefId = 1
           InternalName = "armpw"
+          HumanName = None
           Subfolder = "Units/ARM"
           Faction = FactionId.Armada
           Tier = Tier.T1

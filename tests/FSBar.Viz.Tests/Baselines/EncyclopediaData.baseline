@@ -23,6 +23,10 @@ module EncyclopediaData =
         DefId: int
         /// BarData `name` — the canonical internal name (e.g. `"armcom"`).
         InternalName: string
+        /// BarData `printableName` — human-readable display name from the
+        /// BAR Lua `name` field (e.g. `"Armada Commander"`). `None` when
+        /// the source unit def didn't define one.
+        HumanName: string option
         /// BarData `subfolder` — used for faction derivation.
         Subfolder: string
         Faction: FactionId
