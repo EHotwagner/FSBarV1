@@ -33,5 +33,6 @@ let ``springsettings_always_forces_windowed_mode`` () =
                           { EngineConfig.defaultConfig () with AutohostPort = None }
     for text in [ withPort; withoutPort ] do
         Assert.Contains("Fullscreen=0", text)
-        Assert.Contains("XResolution=1280", text)
-        Assert.Contains("YResolution=720", text)
+        Assert.Contains("XResolutionWindowed=1980", text)
+        Assert.Contains("YResolutionWindowed=1024", text)
+        Assert.Contains("WindowBorderless=0", text)

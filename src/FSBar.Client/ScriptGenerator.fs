@@ -135,8 +135,14 @@ module ScriptGenerator =
     let generateSpringSettings (config: EngineConfig) : string =
         let sb = StringBuilder()
         sb.Append("Fullscreen=0\n") |> ignore
-        sb.Append("XResolution=1280\n") |> ignore
-        sb.Append("YResolution=720\n") |> ignore
+        sb.Append("WindowBorderless=0\n") |> ignore
+        sb.Append("WindowState=0\n") |> ignore
+        sb.Append("XResolutionWindowed=1980\n") |> ignore
+        sb.Append("YResolutionWindowed=1024\n") |> ignore
+        sb.Append("WindowPosX=0\n") |> ignore
+        sb.Append("WindowPosY=0\n") |> ignore
+        sb.Append("WindowedEdgeMove=0\n") |> ignore
+        sb.Append("FullscreenEdgeMove=0\n") |> ignore
         match config.AutohostPort with
         | Some port ->
             sb.Append("AutohostIP=127.0.0.1\n") |> ignore

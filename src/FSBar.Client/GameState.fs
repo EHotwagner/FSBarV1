@@ -138,13 +138,16 @@ module GameState =
             | None -> state
 
         | GameEvent.EnemyEnterRadar enemyId ->
+            let pos = Callbacks.getUnitPos stream enemyId
             match Map.tryFind enemyId state.Enemies with
-            | Some enemy -> { state with Enemies = Map.add enemyId { enemy with InRadar = true } state.Enemies }
+            | Some enemy ->
+                let newPos = if enemy.InLOS then enemy.Position else pos
+                { state with Enemies = Map.add enemyId { enemy with InRadar = true; Position = newPos } state.Enemies }
             | None ->
                 let enemy =
                     { EnemyId = enemyId
                       DefId = None
-                      Position = (0.0f, 0.0f, 0.0f)
+                      Position = pos
                       Health = None
                       InLOS = false
                       InRadar = true }
@@ -188,10 +191,24 @@ module GameState =
             let updatedUnits =
                 state.Units
                 |> Map.map (fun _id unit -> refreshUnit stream unit)
+            // Refresh enemy positions: in-LOS enemies get exact pos, in-radar-
+            // only get jittered radar pos from the engine. Once contact is lost
+            // (neither LOS nor radar), we keep the last-known position frozen.
+            let updatedEnemies =
+                state.Enemies
+                |> Map.map (fun _id enemy ->
+                    if enemy.InLOS || enemy.InRadar then
+                        let pos = Callbacks.getUnitPos stream enemy.EnemyId
+                        let health =
+                            if enemy.InLOS then Some (Callbacks.getUnitHealth stream enemy.EnemyId)
+                            else enemy.Health
+                        { enemy with Position = pos; Health = health }
+                    else enemy)
             let metal = refreshEconomy stream 0
             let energy = refreshEconomy stream 1
             { state with
                 Units = updatedUnits
+                Enemies = updatedEnemies
                 Metal = metal
                 Energy = energy }
 
