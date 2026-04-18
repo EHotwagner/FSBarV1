@@ -75,6 +75,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-18
 - Filesystem only — unchanged from feature 041. `HubSettings.MaxLogStreamSubscribers` persists in `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (schema v3, one-field bump from v2). `HubLog` subscriber state is in-memory only, released within 1 s of gRPC channel close (FR-013). (042-grpc-log-stream)
 - F# 9 / .NET 10.0 + `FSBar.Hub`, `FSBar.Hub.App`, `FSBar.Proto`, `FSBar.Client` (in-repo); `Grpc.AspNetCore 2.67.0`, `FsGrpc 1.0.6` (transitive via Hub); `Grpc.Net.Client 2.67.*` (new, explicit — needed for `GrpcChannel.ForAddress` in the fixture); `xUnit 2.9.x`, `Xunit.SkippableFact 1.4.13`, `Microsoft.NET.Test.Sdk 17.x` (043-grpc-hub-testsuite)
 - N/A — test-only; preset cleanup uses `test-043-*` prefix naming convention (043-grpc-hub-testsuite)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Hub`, `FSBar.Hub.App`, `FSBar.Viz` (`EncyclopediaData`, `UnitGlyph`, `UnitDisplayAdapter`), `SkiaViewer` 1.1.3-dev, `SkiaSharp` 2.88.6. **No new NuGet dependencies.** (044-encyclopedia-filters)
+- In-memory only — filter state lives on `HubState.Encyclopedia` for the Hub process lifetime. No disk persistence (FR-008). (044-encyclopedia-filters)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -221,6 +223,28 @@ Regenerate the label table whenever `nupkg/BarData.*.nupkg` changes.
 Keep the `.fsi` for `UnitLabels.generated` stable — the generator only
 rewrites the `.fs`.
 
+## Encyclopedia filters (feature 044)
+
+`EncyclopediaSelection` (in `src/FSBar.Hub/HubUiTypes.fs(i)`) now carries
+three filter sets (`FactionFilter`, `TierFilter`, `MobilityFilter`) plus
+a trimmed `SearchText` (cap 128 chars, enforced at
+`HubStateStore.setEncyclopedia`). Empty set per category = "pass all".
+Search matches case-insensitively over `InternalName` + human name.
+The pure predicate lives at `src/FSBar.Hub/EncyclopediaFilter.fs(i)`
+(`matches`, `apply`, `toTierKey`, `toMobilityKey`, `defaultSelection`)
+— shared by `EncyclopediaTab` and xUnit tests under
+`tests/FSBar.Hub.Tests/EncyclopediaFilterTests.fs`.
+
+`EncyclopediaData.EncyclopediaEntry` gained `MovementClass: string option`
+so the Amphib chip can identify A-prefixed BAR movement classes
+(ATANK / ABOT / AHOVER / ABOAT) that `MovementShape` flattens into
+Ground. `UnitGlyph.classifyTier` also now parses BarData's `"1.0"` /
+`"2.0"` / `"3.0"` techlevel strings — previously only bare `"1"` /
+`"2"` / `"3"` matched, so every real BAR unit fell through to T1 and
+the Tier chips never narrowed the list.
+
+Session-scoped only — filter state resets on Hub relaunch (FR-008).
+
 ## Hub state-store routing convention (feature 041)
 
 Every Hub-GUI tab reads its authoritative state through
@@ -335,9 +359,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 044-encyclopedia-filters: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Hub`, `FSBar.Hub.App`, `FSBar.Viz` (`EncyclopediaData`, `UnitGlyph`, `UnitDisplayAdapter`), `SkiaViewer` 1.1.3-dev, `SkiaSharp` 2.88.6. **No new NuGet dependencies.**
 - 043-grpc-hub-testsuite: Added F# 9 / .NET 10.0 + `FSBar.Hub`, `FSBar.Hub.App`, `FSBar.Proto`, `FSBar.Client` (in-repo); `Grpc.AspNetCore 2.67.0`, `FsGrpc 1.0.6` (transitive via Hub); `Grpc.Net.Client 2.67.*` (new, explicit — needed for `GrpcChannel.ForAddress` in the fixture); `xUnit 2.9.x`, `Xunit.SkippableFact 1.4.13`, `Microsoft.NET.Test.Sdk 17.x`
 - 042-grpc-log-stream: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
-- 041-hub-040-followups: Added F# 9 on .NET 10.0 (exclusive per Constitution + Existing in-repo only — `FSBar.Proto`,
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -53,7 +53,7 @@ let private makeRenderer (settings: HubSettings.HubSettings) =
           VizConfig = FSBar.Viz.VizDefaults.defaultConfig
           Camera = ViewerCamera.defaults
           Lobby = LobbyConfig.defaults
-          Encyclopedia = { FactionFilter = Set.empty; SelectedDefId = None }
+          Encyclopedia = EncyclopediaSelection.defaults
           PresetList = []
           Settings = settings }
     let store = HubStateStore.create bus.Sink initial

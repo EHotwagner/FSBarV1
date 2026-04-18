@@ -16,6 +16,7 @@
     <Compile Include="..\Common\SurfaceAreaHelper.fs" />
     <Compile Include="HubEventsTests.fs" />
     <Compile Include="HubStateStoreTests.fs" />
+    <Compile Include="EncyclopediaFilterTests.fs" />
     <Compile Include="AdminChannelHostTests.fs" />
     <Compile Include="HubSettingsTests.fs" />
     <Compile Include="HubSettingsLogStreamCapTests.fs" />

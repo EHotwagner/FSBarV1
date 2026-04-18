@@ -38,6 +38,11 @@ module EncyclopediaData =
         FootprintZ: int
         SightRangeElmo: float32
         WeaponRangesElmo: float32 list
+        /// BarData `movement.movementClass` (e.g. `"ATANK2"`, `"AHOVER1"`,
+        /// `"ABOAT1"`). `None` for buildings and air units. Used by the
+        /// Hub encyclopedia filter to identify amphibious units since
+        /// `MovementShape` lumps bot / vehicle under `Ground`.
+        MovementClass: string option
     }
 
     /// Materialises every `BarData.AllUnitDefs.all` entry into an

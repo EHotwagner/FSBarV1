@@ -94,12 +94,12 @@ let main _argv =
 
     let initialEncyclopedia : EncyclopediaSelection =
         match Environment.GetEnvironmentVariable("FSBAR_HUB_ENCYCLOPEDIA_SELECT") with
-        | null | "" -> { FactionFilter = Set.empty; SelectedDefId = None }
+        | null | "" -> EncyclopediaSelection.defaults
         | name ->
             let entries = FSBar.Viz.EncyclopediaData.buildFromBarData ()
             match entries |> List.tryFind (fun (e: FSBar.Viz.EncyclopediaData.EncyclopediaEntry) -> e.InternalName = name) with
-            | Some e -> { FactionFilter = Set.empty; SelectedDefId = Some e.DefId }
-            | None -> { FactionFilter = Set.empty; SelectedDefId = None }
+            | Some e -> { EncyclopediaSelection.defaults with SelectedDefId = Some e.DefId }
+            | None -> EncyclopediaSelection.defaults
 
     let hubState =
         let initial : HubState =
@@ -572,7 +572,10 @@ let main _argv =
                                         LastPresetResult = Some (Ok "defaults restored") }
                             | None -> ()
                         | HubTab.Encyclopedia, _, _ ->
-                            match EncyclopediaTab.handleMouse encyclopediaState hubState x y cx cy cw ch with
+                            let (newState, act) =
+                                EncyclopediaTab.handleMouse encyclopediaState hubState x y cx cy cw ch
+                            encyclopediaState <- newState
+                            match act with
                             | Some (EncyclopediaTab.EncyclopediaTabAction.ScrollList off) ->
                                 encyclopediaState <- { encyclopediaState with ListScroll = off }
                             | None -> ()
@@ -667,6 +670,16 @@ let main _argv =
             let toggle (k: FSBar.Viz.OverlayKind) =
                 HubStateStore.toggleOverlay hubState k FSBar.Hub.ToggleTarget.Toggle
                 |> ignore
+            // Feature 044: when the Units-tab search field is focused,
+            // consume alphanumeric / Backspace / Escape keys before the
+            // overlay-toggle path sees them.
+            let consumedBySearch =
+                if getActiveTab () = HubTab.Encyclopedia then
+                    let (ns, consumed) = EncyclopediaTab.handleKey encyclopediaState hubState key
+                    encyclopediaState <- ns
+                    consumed
+                else false
+            if consumedBySearch then () else
             match key with
             | Key.W -> toggle FSBar.Viz.OverlayKind.WeaponRanges
             | Key.L -> toggle FSBar.Viz.OverlayKind.SightRanges

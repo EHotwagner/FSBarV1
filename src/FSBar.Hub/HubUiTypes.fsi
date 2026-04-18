@@ -41,11 +41,37 @@ type FactionFilterKey =
     | Scavengers
     | Neutral
 
-/// Encyclopedia tab filter + selection combined. `SelectedDefId = None`
-/// means no unit is pinned.
+/// Tier chip keys for the encyclopedia filter. Empty set = "all tiers".
+type TierFilterKey =
+    | T1
+    | T2
+    | T3
+    | Commander
+
+/// Mobility chip keys for the encyclopedia filter. Empty set = "all mobilities".
+type MobilityFilterKey =
+    | Building
+    | Ground
+    | Hover
+    | Ship
+    | Air
+    | Amphib
+
+/// Encyclopedia tab filter + selection combined. All filter sets are
+/// empty = "pass all" by convention; `SearchText` is trimmed and
+/// length-capped at 128 chars by `HubStateStore.setEncyclopedia`.
+/// Session-scoped: lives on `HubState` for the Hub process lifetime
+/// and is NOT persisted to disk (feature 044 FR-008).
 type EncyclopediaSelection =
     { FactionFilter: Set<FactionFilterKey>
+      TierFilter: Set<TierFilterKey>
+      MobilityFilter: Set<MobilityFilterKey>
+      SearchText: string
       SelectedDefId: int option }
+
+module EncyclopediaSelection =
+    /// The canonical "no filters, no search, no pinned unit" snapshot.
+    val defaults: EncyclopediaSelection
 
 /// Return type for every mutating operation on the state stores.
 /// Mirrors the gRPC `MutationResult` wire shape.

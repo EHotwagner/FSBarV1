@@ -365,7 +365,7 @@ let ``FacingTriangle: static preview (heading=0) identical to encyclopedia path 
           FootprintX = 1
           FootprintZ = 1
           SightRangeElmo = 300.0f
-          WeaponRangesElmo = [ 200.0f ] }
+          WeaponRangesElmo = [ 200.0f ]; MovementClass = None }
     let preview = UnitDisplayAdapter.ofEncyclopediaEntry entry 32.0f
     Assert.Equal(0.0f, preview.HeadingRadians)
     Assert.Equal(MovementShape.Bot, preview.Shape)

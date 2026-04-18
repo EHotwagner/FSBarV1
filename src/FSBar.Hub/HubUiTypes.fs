@@ -22,9 +22,34 @@ type FactionFilterKey =
     | Scavengers
     | Neutral
 
+type TierFilterKey =
+    | T1
+    | T2
+    | T3
+    | Commander
+
+type MobilityFilterKey =
+    | Building
+    | Ground
+    | Hover
+    | Ship
+    | Air
+    | Amphib
+
 type EncyclopediaSelection =
     { FactionFilter: Set<FactionFilterKey>
+      TierFilter: Set<TierFilterKey>
+      MobilityFilter: Set<MobilityFilterKey>
+      SearchText: string
       SelectedDefId: int option }
+
+module EncyclopediaSelection =
+    let defaults: EncyclopediaSelection =
+        { FactionFilter = Set.empty
+          TierFilter = Set.empty
+          MobilityFilter = Set.empty
+          SearchText = ""
+          SelectedDefId = None }
 
 type SubmitOutcome =
     | Sent

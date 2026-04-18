@@ -115,7 +115,7 @@ let ``ofEncyclopediaEntry: pinned footprint propagates to UnitDisplay`` () =
           FootprintX = 4
           FootprintZ = 4
           SightRangeElmo = 500.0f
-          WeaponRangesElmo = [ 300.0f ] }
+          WeaponRangesElmo = [ 300.0f ]; MovementClass = None }
     let d = UnitDisplayAdapter.ofEncyclopediaEntry entry 768.0f
     Assert.Equal(768.0f, d.FootprintWidthElmo)
     Assert.Equal(768.0f, d.FootprintHeightElmo)
@@ -135,7 +135,7 @@ let ``ofEncyclopediaEntry: heading is zero for static previews (FR-010a)`` () =
           Shape = MovementShape.Bot
           MetalCost = 0; EnergyCost = 0; BuildTime = 0; Health = 100
           FootprintX = 1; FootprintZ = 1
-          SightRangeElmo = 0.0f; WeaponRangesElmo = [] }
+          SightRangeElmo = 0.0f; WeaponRangesElmo = []; MovementClass = None }
     let d = UnitDisplayAdapter.ofEncyclopediaEntry entry 32.0f
     Assert.Equal(0.0f, d.HeadingRadians)
 
