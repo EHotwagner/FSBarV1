@@ -61,10 +61,11 @@ module private TabRoutingFixtures =
         let overlays = OverlayLayerStore.create bus.Sink
         let renderer =
             HeadlessRenderer.create sm store overlays bus.Sink (fun () -> HubSettings.defaults)
+        let hubLog = HubLog.create bus.Sink (fun () -> HubSettings.defaults)
         let svc =
             new ScriptingHub.ScriptingService(
                 sm, bus.Sink, bus.Events, unitDefs, install, makeBundled (), 5099,
-                store, renderer, overlays, ScriptingHub.defaults)
+                store, renderer, overlays, hubLog, ScriptingHub.defaults)
         svc, sm, bus, store
 
     let nullContext : Grpc.Core.ServerCallContext = null

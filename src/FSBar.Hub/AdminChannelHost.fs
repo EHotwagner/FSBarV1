@@ -85,6 +85,14 @@ module AdminChannelHost =
         let mutable disposed = 0
         let fanOut = StatusFanOut()
 
+        // Feature 042: optional HubLog bus threaded in via AttachLog.
+        let mutable logBusOpt: HubLog.T option = None
+        let emitLog (severity: HubLog.LogSeverity) (build: unit -> string) =
+            match logBusOpt with
+            | Some bus ->
+                HubLog.emitSimple bus HubLog.AdminChannel severity build
+            | None -> ()
+
         let rejectReason (s: AdminChannelStatus) =
             match s with
             | HubEvents.Attached -> None
@@ -101,6 +109,8 @@ module AdminChannelHost =
             if publish then
                 fanOut.Publish(newStatus)
                 events.Publish(HubEvents.AdminChannelStatusChanged newStatus)
+                emitLog HubLog.Info (fun () ->
+                    sprintf "admin channel status → %A" newStatus)
 
         // Coalescing window pending commands. A same-kind command arriving
         // within 100 ms of an existing pending one drops the older and
@@ -251,6 +261,8 @@ module AdminChannelHost =
             fanOut :> IObservable<AdminChannelStatus>
 
         member this.Submit(cmd: AdminChannel.AdminCommandOut) : SubmitOutcome =
+            emitLog HubLog.Debug (fun () ->
+                sprintf "admin submit: %A" cmd)
             if Volatile.Read(&disposed) <> 0 then
                 Rejected "host disposed"
             else
@@ -259,6 +271,8 @@ module AdminChannelHost =
                 let currentStatus = this.Status
                 match currentStatus with
                 | HubEvents.Unavailable r | HubEvents.Lost r ->
+                    emitLog HubLog.Info (fun () ->
+                        sprintf "admin submit outcome: Rejected (%s)" r)
                     Rejected r
                 | HubEvents.Attached ->
                     // Serialize through the agent; wait briefly for the outcome.
@@ -273,14 +287,21 @@ module AdminChannelHost =
                     agent.Post (Enqueue qc)
                     // The coalesce window is 100 ms; allow ample slack.
                     let gotResult = tcs.Task.Wait(500)
-                    if gotResult then tcs.Task.Result
-                    else Rejected "submit timed out"
+                    let outcome =
+                        if gotResult then tcs.Task.Result
+                        else Rejected "submit timed out"
+                    emitLog HubLog.Info (fun () ->
+                        sprintf "admin submit outcome: %A" outcome)
+                    outcome
 
         member _.IsPaused =
             lock sync (fun () -> isPaused)
 
         member _.CurrentSpeed =
             lock sync (fun () -> currentSpeed)
+
+        member _.AttachLog(log: HubLog.T) =
+            logBusOpt <- Some log
 
         interface IDisposable with
             member _.Dispose() =

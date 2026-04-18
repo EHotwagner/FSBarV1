@@ -1,0 +1,138 @@
+// Feature 042 additive block to proto/hub/scripting.proto.
+//
+// Apply by appending this entire file to the existing scripting.proto:
+//   1. Add the `rpc StreamHubLog` line inside the existing
+//      `service ScriptingService { … }` block, right after
+//      `rpc ClearLayers` and before the closing `}`.
+//   2. Append every enum + message below at the end of the file.
+//
+// All additions are strictly additive — no existing RPC, message, field,
+// or enum is renumbered, removed, or repurposed (FR-017, SC-006).
+// Verified in CI by `buf breaking --against ./baselines/scripting-041.bin`.
+
+// -----------------------------------------------------------------------------
+// Service RPC (insert inside the existing service ScriptingService block)
+// -----------------------------------------------------------------------------
+
+// Bidirectional streaming RPC. The client sends an initial
+// StreamHubLogRequest carrying its desired filter; subsequent requests on
+// the same stream mutate the filter in-place (FR-006). The server emits
+// every matching LogEntryMessage immediately, plus one ack entry after
+// each filter update. Close the client-request side to stop sending
+// updates without tearing down delivery; close the call entirely (cancel
+// the CancellationToken) to detach.
+//
+// Capped at HubSettings.MaxLogStreamSubscribers (default 8, range 1–32)
+// concurrent subscribers. Excess attempts receive RESOURCE_EXHAUSTED
+// (FR-015a). Unknown category names on any request → INVALID_ARGUMENT
+// (FR-007). Empty category list + unspecified severity on the first
+// request → default filter = all categories, Info floor (FR-005a).
+rpc StreamHubLog(stream StreamHubLogRequest) returns (stream LogEntryMessage);
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum LogSeverity {
+  LOG_SEVERITY_UNSPECIFIED = 0;
+  LOG_SEVERITY_DEBUG       = 1;
+  LOG_SEVERITY_INFO        = 2;
+  LOG_SEVERITY_WARNING     = 3;
+  LOG_SEVERITY_ERROR       = 4;
+}
+
+// Exhaustive enumeration of the Hub subsystems that emit on the log
+// stream today (FR-004). Scope deliberately excludes engine-launcher
+// infolog.txt capture, map-analysis, synthetic-data, and viz-rendering
+// internals per the feature's Clarifications Q1.
+enum LogCategory {
+  LOG_CATEGORY_UNSPECIFIED        = 0;
+  LOG_CATEGORY_SESSION_MANAGER    = 1;
+  LOG_CATEGORY_ADMIN_CHANNEL      = 2;
+  LOG_CATEGORY_SCRIPTING_HUB      = 3;
+  LOG_CATEGORY_PROXY_INSTALL      = 4;
+  LOG_CATEGORY_HEADLESS_RENDERER  = 5;
+  LOG_CATEGORY_HUB_STATE_STORE    = 6;
+  LOG_CATEGORY_PRESET_PERSISTENCE = 7;
+  LOG_CATEGORY_LOBBY              = 8;
+  LOG_CATEGORY_SETTINGS           = 9;
+}
+
+// -----------------------------------------------------------------------------
+// Messages
+// -----------------------------------------------------------------------------
+
+// Client-side filter request. Sent as the first message (initial
+// subscription) and on every subsequent update.
+message LogFilterWire {
+  // Category whitelist. Empty list = "all categories", matching the
+  // default filter per FR-005a. Duplicates are deduped server-side.
+  // Presence of LOG_CATEGORY_UNSPECIFIED → INVALID_ARGUMENT.
+  repeated LogCategory categories = 1;
+
+  // Severity floor. LOG_SEVERITY_UNSPECIFIED = server default = INFO.
+  LogSeverity min_severity = 2;
+
+  // Optional hub-shipped preset name (e.g. "admin-channel",
+  // "session-lifecycle", "scripting-wire"). Empty string = no preset.
+  // When both preset_name and an explicit categories list are supplied,
+  // the explicit list overrides the preset (FR-5 / US5 AS2).
+  // Unknown preset name → INVALID_ARGUMENT.
+  string preset_name = 3;
+}
+
+message StreamHubLogRequest {
+  // Optional human-readable label for the connected client; appears in
+  // Hub-side diagnostics and the Settings-tab log-subscriber roster.
+  // Ignored on filter-update messages after the first request.
+  string client_label = 1;
+
+  // Effective filter. On the first message, the filter becomes the
+  // subscription's active policy. On subsequent messages, it replaces
+  // the policy atomically; the server emits one ack LogEntryMessage
+  // (severity DEBUG, category SCRIPTING_HUB) before the first entry
+  // under the new filter (R4).
+  LogFilterWire filter = 2;
+}
+
+message LogEntryMessage {
+  // Hub-local UTC timestamp, Unix ms.
+  int64 timestamp_unix_ms = 1;
+
+  // Severity. DEBUG only reaches clients that explicitly lowered the
+  // severity floor via filter (FR-005a).
+  LogSeverity severity = 2;
+
+  // Source subsystem.
+  LogCategory category = 3;
+
+  // Human-readable message. UTF-8, ≤ 8 KiB including a trailing
+  // " …[truncated N bytes]" marker on messages that were truncated
+  // at the Hub (FR-012a). Clients detect truncation by testing the
+  // marker suffix.
+  string message = 4;
+
+  // Correlation ID of the RPC that owns this entry (FR-009/009a).
+  // Empty string when the entry is not tied to any RPC (e.g. background
+  // proxy-install tick, unsolicited admin-channel inbound event).
+  string correlation_id = 5;
+
+  // Session ID when the entry is about a specific RunningSession
+  // (FR-010). Empty string otherwise.
+  string session_id = 6;
+
+  // Scripting-client ID when the entry is about a specific connected
+  // client (FR-010). Empty string otherwise.
+  string scripting_client_id = 7;
+
+  // Per-subscriber monotonic sequence number, starting at 1. Clients
+  // assert ordering and detect local gaps independent of the
+  // dropped_since_last field.
+  uint64 sequence = 8;
+
+  // Count of entries the server dropped to this subscriber since the
+  // last successful delivery (FR-012). Reset to 0 on every delivery.
+  // A non-zero value means a burst exceeded the per-client buffer
+  // (default 256, drop-oldest).
+  int32 dropped_since_last = 9;
+}

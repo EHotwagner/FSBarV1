@@ -71,6 +71,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-18
 - Filesystem only — unchanged from pre-feature. `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (HubSettings), `viz-presets/*.json` (style presets), `bots/trainer/map-cache/*.json` (map analysis). `HubStateStore` and `HeadlessRenderer` are in-memory only. (040-grpc-full-hub-ui)
 - F# 9 on .NET 10.0 (exclusive per Constitution + Existing in-repo only — `FSBar.Proto`, (041-hub-040-followups)
 - Filesystem only — unchanged from feature 040. Overlay (041-hub-040-followups)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.** (042-grpc-log-stream)
+- Filesystem only — unchanged from feature 041. `HubSettings.MaxLogStreamSubscribers` persists in `$XDG_CONFIG_HOME/fsbar-hub/settings.json` (schema v3, one-field bump from v2). `HubLog` subscriber state is in-memory only, released within 1 s of gRPC channel close (FR-013). (042-grpc-log-stream)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -331,8 +333,8 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 042-grpc-log-stream: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
 - 041-hub-040-followups: Added F# 9 on .NET 10.0 (exclusive per Constitution + Existing in-repo only — `FSBar.Proto`,
-- 040-grpc-full-hub-ui: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
 - 040-grpc-full-hub-ui: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints). + Existing in-repo only — `FSBar.Proto`, `FSBar.Client`, `FSBar.Viz`, `FSBar.Hub`, `FSBar.Hub.App`. NuGet: `Grpc.AspNetCore 2.67.0`, `Grpc.Core.Api 2.67.0`, `FsGrpc 1.0.6`, `SkiaSharp 2.88.6`, `SkiaViewer 1.1.3-dev` (local feed), `BarData` (local feed), `xUnit 2.9.x`, `Microsoft.NET.Test.Sdk 17.x`. **No new NuGet dependencies.**
 
 
@@ -435,6 +437,80 @@ Unit test coverage: `tests/FSBar.Client.Tests/AdminChannelCodecTests.fs`
 `LiveAdminMessageTests.fs` + `LiveScriptingAdminPauseTests.fs` +
 `LiveAdminChannelLossTests.fs` — all marked `[<Trait("Category", "AdminChannel")>]`
 so `dotnet test --filter "Category=AdminChannel"` runs the full live matrix.
+
+## Hub log stream (feature 042)
+
+`FSBar.Hub.HubLog` is the canonical in-process log-emit surface for
+the Hub. Every subsystem that wants to surface diagnostics beyond the
+`HubEventBus` (session lifecycle, admin-channel wire trace, RPC
+dispatch, proxy install steps, preset persistence, lobby validation,
+settings load/save, state-store mutations, headless-renderer ticks)
+calls `HubLog.emit` / `HubLog.emitSimple` / `HubLog.emitFromDiagnosticsLine`.
+
+The bus is constructed once per hub process in `Program.fs`:
+
+```fsharp
+let hubLog = HubLog.create bus.Sink getSettings
+sessions |> Option.iter (fun sm -> sm.AttachLog hubLog)
+```
+
+Emit is O(1) when no subscriber is attached — a volatile-read gate on
+subscriber count short-circuits before any `LogEntry` allocation or
+message formatting (R1 / FR-016).
+
+Log categories (closed F# DU, mirrored 1:1 by the proto enum):
+`SessionManager`, `AdminChannel`, `ScriptingHub`, `ProxyInstall`,
+`HeadlessRenderer`, `HubStateStore`, `PresetPersistence`, `Lobby`,
+`Settings`.
+
+Default filter (empty `LogFilterWire`): all categories, `Info` floor.
+`Debug` entries are only delivered to subscribers that explicitly
+lower the floor (FR-005a / Clarifications Q2).
+
+Shipped presets:
+
+| Preset name | Categories | MinSeverity |
+|-------------|------------|-------------|
+| `session-lifecycle` | SessionManager + AdminChannel + ProxyInstall | Info |
+| `admin-channel` | AdminChannel | Debug |
+| `scripting-wire` | ScriptingHub | Debug |
+
+Correlation IDs flow via `FSBar.Hub.CorrelationId.ServerInterceptor`
+— registered in `Program.fs` on the Kestrel gRPC pipeline — which
+reads the request-metadata header `x-fsbar-correlation-id` (optional,
+≤ 64 UTF-8 bytes), assigns a fresh `Guid.NewGuid().ToString("N")`
+when absent, stores the effective ID in `AsyncLocal<_>`, and echoes
+it on the response trailer. Background tasks in RPC handlers should
+capture `CorrelationId.current ()` outside the task and re-scope with
+`use _ = CorrelationId.withScope cid` inside.
+
+`FSBar.Hub.DispatchTracer.DebugDispatchInterceptor` runs after the
+correlation interceptor and emits one `ScriptingHub`/`Debug` entry
+on RPC entry and another on completion (with elapsed ms).
+
+Subscriber cap: `HubSettings.MaxLogStreamSubscribers` (default `8`,
+range `[1, 32]`, schema v3). Overflow attempts receive gRPC
+`ResourceExhausted` with the cap named in the reason (FR-015a).
+
+Per-subscriber buffer: `BoundedChannel<LogEntry>` capacity 256 with
+`BoundedChannelFullMode.DropOldest`. Drop counts are carried on the
+next delivered entry's `dropped_since_last` field (FR-012).
+
+Per-entry message cap: 8 KiB UTF-8 including the trailing marker
+` …[truncated N bytes]` (FR-012a / R6). Truncation happens once
+per emit (before fan-out) so every subscriber sees byte-identical
+content.
+
+`FSBar.Client.SessionManager.AttachLog` and
+`FSBar.Hub.AdminChannelHost.AdminChannelHost.AttachLog` plug the log
+bus into the session and admin-channel host so state transitions and
+wire-level events surface on the stream. `SessionManager` propagates
+the bus down to its per-session `AdminChannelHost` on every Launch.
+
+Example walkthrough: `scripts/examples/22-hub-log-stream.fsx`.
+Live coverage: `tests/FSBar.Hub.LiveTests/LiveAdminChannelLogStreamTests.fs`
+tagged `[<Trait("Category", "LogStream")>]`; run the full live matrix
+via `dotnet test --filter "Category=LogStream"`.
 
 ## Hub scripting proto regeneration
 

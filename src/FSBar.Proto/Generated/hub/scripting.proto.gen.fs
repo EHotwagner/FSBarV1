@@ -74,6 +74,33 @@ type TextAlign =
 | [<FsGrpc.Protobuf.ProtobufName("TEXT_ALIGN_CENTER")>] Center = 2
 | [<FsGrpc.Protobuf.ProtobufName("TEXT_ALIGN_RIGHT")>] Right = 3
 
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.EnumConverter<LogSeverity>>)>]
+type LogSeverity =
+| [<FsGrpc.Protobuf.ProtobufName("LOG_SEVERITY_UNSPECIFIED")>] Unspecified = 0
+| [<FsGrpc.Protobuf.ProtobufName("LOG_SEVERITY_DEBUG")>] Debug = 1
+| [<FsGrpc.Protobuf.ProtobufName("LOG_SEVERITY_INFO")>] Info = 2
+| [<FsGrpc.Protobuf.ProtobufName("LOG_SEVERITY_WARNING")>] Warning = 3
+| [<FsGrpc.Protobuf.ProtobufName("LOG_SEVERITY_ERROR")>] Error = 4
+
+/// <summary>
+/// Exhaustive enumeration of the Hub subsystems that emit on the log
+/// stream today (FR-004). Scope deliberately excludes engine-launcher
+/// infolog.txt capture, map-analysis, synthetic-data, and viz-rendering
+/// internals per feature 042 Clarifications Q1.
+/// </summary>
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.EnumConverter<LogCategory>>)>]
+type LogCategory =
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_UNSPECIFIED")>] Unspecified = 0
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_SESSION_MANAGER")>] SessionManager = 1
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_ADMIN_CHANNEL")>] AdminChannel = 2
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_SCRIPTING_HUB")>] ScriptingHub = 3
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_PROXY_INSTALL")>] ProxyInstall = 4
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_HEADLESS_RENDERER")>] HeadlessRenderer = 5
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_HUB_STATE_STORE")>] HubStateStore = 6
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_PRESET_PERSISTENCE")>] PresetPersistence = 7
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_LOBBY")>] Lobby = 8
+| [<FsGrpc.Protobuf.ProtobufName("LOG_CATEGORY_SETTINGS")>] Settings = 9
+
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module StreamGameFramesRequest =
 
@@ -8863,6 +8890,368 @@ type ClearLayersResponse = {
     static member empty
         with get() = Fsbar.Hub.Scripting.V1._ClearLayersResponse.Proto.Value.Empty
 
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module LogFilterWire =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Categories: RepeatedBuilder<Fsbar.Hub.Scripting.V1.LogCategory> // (1)
+            val mutable MinSeverity: Fsbar.Hub.Scripting.V1.LogSeverity // (2)
+            val mutable PresetName: string // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Categories.AddRange ((ValueCodec.Packed ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogCategory>).ReadValue reader)
+            | 2 -> x.MinSeverity <- ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogSeverity>.ReadValue reader
+            | 3 -> x.PresetName <- ValueCodec.String.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.LogFilterWire = {
+            Categories = x.Categories.Build
+            MinSeverity = x.MinSeverity
+            PresetName = x.PresetName |> orEmptyString
+            }
+
+/// <summary>
+/// Client-side filter request. Sent as the first message (initial
+/// subscription) and on every subsequent update.
+/// </summary>
+type private _LogFilterWire = LogFilterWire
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type LogFilterWire = {
+    // Field Declarations
+    /// <summary>
+    /// Category whitelist. Empty list = "all categories" per the default
+    /// filter (FR-005a). Presence of LOG_CATEGORY_UNSPECIFIED →
+    /// INVALID_ARGUMENT (FR-007).
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("categories")>] Categories: Fsbar.Hub.Scripting.V1.LogCategory list // (1)
+    /// <summary>Severity floor. LOG_SEVERITY_UNSPECIFIED = server default = INFO.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("minSeverity")>] MinSeverity: Fsbar.Hub.Scripting.V1.LogSeverity // (2)
+    /// <summary>
+    /// Optional hub-shipped preset name (e.g. "admin-channel",
+    /// "session-lifecycle", "scripting-wire"). Empty string = no preset.
+    /// When both preset_name and an explicit categories list are supplied,
+    /// the explicit list overrides the preset (US5 AS2).
+    /// Unknown preset name → INVALID_ARGUMENT.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("presetName")>] PresetName: string // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<LogFilterWire>> =
+        lazy
+        // Field Definitions
+        let Categories = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogCategory>) (1, "categories")
+        let MinSeverity = FieldCodec.Primitive ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogSeverity> (2, "minSeverity")
+        let PresetName = FieldCodec.Primitive ValueCodec.String (3, "presetName")
+        // Proto Definition Implementation
+        { // ProtoDef<LogFilterWire>
+            Name = "LogFilterWire"
+            Empty = {
+                Categories = Categories.GetDefault()
+                MinSeverity = MinSeverity.GetDefault()
+                PresetName = PresetName.GetDefault()
+                }
+            Size = fun (m: LogFilterWire) ->
+                0
+                + Categories.CalcFieldSize m.Categories
+                + MinSeverity.CalcFieldSize m.MinSeverity
+                + PresetName.CalcFieldSize m.PresetName
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: LogFilterWire) ->
+                Categories.WriteField w m.Categories
+                MinSeverity.WriteField w m.MinSeverity
+                PresetName.WriteField w m.PresetName
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.LogFilterWire.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeCategories = Categories.WriteJsonField o
+                let writeMinSeverity = MinSeverity.WriteJsonField o
+                let writePresetName = PresetName.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: LogFilterWire) =
+                    writeCategories w m.Categories
+                    writeMinSeverity w m.MinSeverity
+                    writePresetName w m.PresetName
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : LogFilterWire =
+                    match kvPair.Key with
+                    | "categories" -> { value with Categories = Categories.ReadJsonField kvPair.Value }
+                    | "minSeverity" -> { value with MinSeverity = MinSeverity.ReadJsonField kvPair.Value }
+                    | "presetName" -> { value with PresetName = PresetName.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _LogFilterWire.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._LogFilterWire.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module StreamHubLogRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable ClientLabel: string // (1)
+            val mutable Filter: OptionBuilder<Fsbar.Hub.Scripting.V1.LogFilterWire> // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.ClientLabel <- ValueCodec.String.ReadValue reader
+            | 2 -> x.Filter.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.LogFilterWire>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.StreamHubLogRequest = {
+            ClientLabel = x.ClientLabel |> orEmptyString
+            Filter = x.Filter.Build
+            }
+
+type private _StreamHubLogRequest = StreamHubLogRequest
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type StreamHubLogRequest = {
+    // Field Declarations
+    /// <summary>
+    /// Optional human-readable label for the connected client; surfaces in
+    /// Hub-side diagnostics. Ignored on filter-update messages after the
+    /// first request.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("clientLabel")>] ClientLabel: string // (1)
+    /// <summary>
+    /// Effective filter. On the first message, the filter becomes the
+    /// subscription's active policy. On subsequent messages, it replaces
+    /// the policy atomically.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("filter")>] Filter: Fsbar.Hub.Scripting.V1.LogFilterWire option // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<StreamHubLogRequest>> =
+        lazy
+        // Field Definitions
+        let ClientLabel = FieldCodec.Primitive ValueCodec.String (1, "clientLabel")
+        let Filter = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.LogFilterWire> (2, "filter")
+        // Proto Definition Implementation
+        { // ProtoDef<StreamHubLogRequest>
+            Name = "StreamHubLogRequest"
+            Empty = {
+                ClientLabel = ClientLabel.GetDefault()
+                Filter = Filter.GetDefault()
+                }
+            Size = fun (m: StreamHubLogRequest) ->
+                0
+                + ClientLabel.CalcFieldSize m.ClientLabel
+                + Filter.CalcFieldSize m.Filter
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: StreamHubLogRequest) ->
+                ClientLabel.WriteField w m.ClientLabel
+                Filter.WriteField w m.Filter
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.StreamHubLogRequest.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeClientLabel = ClientLabel.WriteJsonField o
+                let writeFilter = Filter.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: StreamHubLogRequest) =
+                    writeClientLabel w m.ClientLabel
+                    writeFilter w m.Filter
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : StreamHubLogRequest =
+                    match kvPair.Key with
+                    | "clientLabel" -> { value with ClientLabel = ClientLabel.ReadJsonField kvPair.Value }
+                    | "filter" -> { value with Filter = Filter.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _StreamHubLogRequest.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._StreamHubLogRequest.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module LogEntryMessage =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable TimestampUnixMs: int64 // (1)
+            val mutable Severity: Fsbar.Hub.Scripting.V1.LogSeverity // (2)
+            val mutable Category: Fsbar.Hub.Scripting.V1.LogCategory // (3)
+            val mutable Message: string // (4)
+            val mutable CorrelationId: string // (5)
+            val mutable SessionId: string // (6)
+            val mutable ScriptingClientId: string // (7)
+            val mutable Sequence: uint64 // (8)
+            val mutable DroppedSinceLast: int // (9)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.TimestampUnixMs <- ValueCodec.Int64.ReadValue reader
+            | 2 -> x.Severity <- ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogSeverity>.ReadValue reader
+            | 3 -> x.Category <- ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogCategory>.ReadValue reader
+            | 4 -> x.Message <- ValueCodec.String.ReadValue reader
+            | 5 -> x.CorrelationId <- ValueCodec.String.ReadValue reader
+            | 6 -> x.SessionId <- ValueCodec.String.ReadValue reader
+            | 7 -> x.ScriptingClientId <- ValueCodec.String.ReadValue reader
+            | 8 -> x.Sequence <- ValueCodec.UInt64.ReadValue reader
+            | 9 -> x.DroppedSinceLast <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.LogEntryMessage = {
+            TimestampUnixMs = x.TimestampUnixMs
+            Severity = x.Severity
+            Category = x.Category
+            Message = x.Message |> orEmptyString
+            CorrelationId = x.CorrelationId |> orEmptyString
+            SessionId = x.SessionId |> orEmptyString
+            ScriptingClientId = x.ScriptingClientId |> orEmptyString
+            Sequence = x.Sequence
+            DroppedSinceLast = x.DroppedSinceLast
+            }
+
+type private _LogEntryMessage = LogEntryMessage
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type LogEntryMessage = {
+    // Field Declarations
+    /// <summary>Hub-local UTC timestamp, Unix ms.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("timestampUnixMs")>] TimestampUnixMs: int64 // (1)
+    /// <summary>
+    /// Severity. DEBUG only reaches clients that explicitly lowered the
+    /// severity floor via filter (FR-005a).
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("severity")>] Severity: Fsbar.Hub.Scripting.V1.LogSeverity // (2)
+    /// <summary>Source subsystem.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("category")>] Category: Fsbar.Hub.Scripting.V1.LogCategory // (3)
+    /// <summary>
+    /// Human-readable message. UTF-8, ≤ 8 KiB including a trailing
+    /// " …[truncated N bytes]" marker on messages that were truncated
+    /// at the Hub (FR-012a).
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("message")>] Message: string // (4)
+    /// <summary>
+    /// Correlation ID of the RPC that owns this entry (FR-009/009a).
+    /// Empty string when the entry is not tied to any RPC.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("correlationId")>] CorrelationId: string // (5)
+    /// <summary>
+    /// Session ID when the entry is about a specific RunningSession
+    /// (FR-010). Empty string otherwise.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("sessionId")>] SessionId: string // (6)
+    /// <summary>
+    /// Scripting-client ID when the entry is about a specific connected
+    /// client (FR-010). Empty string otherwise.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("scriptingClientId")>] ScriptingClientId: string // (7)
+    /// <summary>Per-subscriber monotonic sequence number, starting at 1.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("sequence")>] Sequence: uint64 // (8)
+    /// <summary>
+    /// Count of entries the server dropped to this subscriber since the
+    /// last successful delivery (FR-012). Reset to 0 on every delivery.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("droppedSinceLast")>] DroppedSinceLast: int // (9)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<LogEntryMessage>> =
+        lazy
+        // Field Definitions
+        let TimestampUnixMs = FieldCodec.Primitive ValueCodec.Int64 (1, "timestampUnixMs")
+        let Severity = FieldCodec.Primitive ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogSeverity> (2, "severity")
+        let Category = FieldCodec.Primitive ValueCodec.Enum<Fsbar.Hub.Scripting.V1.LogCategory> (3, "category")
+        let Message = FieldCodec.Primitive ValueCodec.String (4, "message")
+        let CorrelationId = FieldCodec.Primitive ValueCodec.String (5, "correlationId")
+        let SessionId = FieldCodec.Primitive ValueCodec.String (6, "sessionId")
+        let ScriptingClientId = FieldCodec.Primitive ValueCodec.String (7, "scriptingClientId")
+        let Sequence = FieldCodec.Primitive ValueCodec.UInt64 (8, "sequence")
+        let DroppedSinceLast = FieldCodec.Primitive ValueCodec.Int32 (9, "droppedSinceLast")
+        // Proto Definition Implementation
+        { // ProtoDef<LogEntryMessage>
+            Name = "LogEntryMessage"
+            Empty = {
+                TimestampUnixMs = TimestampUnixMs.GetDefault()
+                Severity = Severity.GetDefault()
+                Category = Category.GetDefault()
+                Message = Message.GetDefault()
+                CorrelationId = CorrelationId.GetDefault()
+                SessionId = SessionId.GetDefault()
+                ScriptingClientId = ScriptingClientId.GetDefault()
+                Sequence = Sequence.GetDefault()
+                DroppedSinceLast = DroppedSinceLast.GetDefault()
+                }
+            Size = fun (m: LogEntryMessage) ->
+                0
+                + TimestampUnixMs.CalcFieldSize m.TimestampUnixMs
+                + Severity.CalcFieldSize m.Severity
+                + Category.CalcFieldSize m.Category
+                + Message.CalcFieldSize m.Message
+                + CorrelationId.CalcFieldSize m.CorrelationId
+                + SessionId.CalcFieldSize m.SessionId
+                + ScriptingClientId.CalcFieldSize m.ScriptingClientId
+                + Sequence.CalcFieldSize m.Sequence
+                + DroppedSinceLast.CalcFieldSize m.DroppedSinceLast
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: LogEntryMessage) ->
+                TimestampUnixMs.WriteField w m.TimestampUnixMs
+                Severity.WriteField w m.Severity
+                Category.WriteField w m.Category
+                Message.WriteField w m.Message
+                CorrelationId.WriteField w m.CorrelationId
+                SessionId.WriteField w m.SessionId
+                ScriptingClientId.WriteField w m.ScriptingClientId
+                Sequence.WriteField w m.Sequence
+                DroppedSinceLast.WriteField w m.DroppedSinceLast
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.LogEntryMessage.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeTimestampUnixMs = TimestampUnixMs.WriteJsonField o
+                let writeSeverity = Severity.WriteJsonField o
+                let writeCategory = Category.WriteJsonField o
+                let writeMessage = Message.WriteJsonField o
+                let writeCorrelationId = CorrelationId.WriteJsonField o
+                let writeSessionId = SessionId.WriteJsonField o
+                let writeScriptingClientId = ScriptingClientId.WriteJsonField o
+                let writeSequence = Sequence.WriteJsonField o
+                let writeDroppedSinceLast = DroppedSinceLast.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: LogEntryMessage) =
+                    writeTimestampUnixMs w m.TimestampUnixMs
+                    writeSeverity w m.Severity
+                    writeCategory w m.Category
+                    writeMessage w m.Message
+                    writeCorrelationId w m.CorrelationId
+                    writeSessionId w m.SessionId
+                    writeScriptingClientId w m.ScriptingClientId
+                    writeSequence w m.Sequence
+                    writeDroppedSinceLast w m.DroppedSinceLast
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : LogEntryMessage =
+                    match kvPair.Key with
+                    | "timestampUnixMs" -> { value with TimestampUnixMs = TimestampUnixMs.ReadJsonField kvPair.Value }
+                    | "severity" -> { value with Severity = Severity.ReadJsonField kvPair.Value }
+                    | "category" -> { value with Category = Category.ReadJsonField kvPair.Value }
+                    | "message" -> { value with Message = Message.ReadJsonField kvPair.Value }
+                    | "correlationId" -> { value with CorrelationId = CorrelationId.ReadJsonField kvPair.Value }
+                    | "sessionId" -> { value with SessionId = SessionId.ReadJsonField kvPair.Value }
+                    | "scriptingClientId" -> { value with ScriptingClientId = ScriptingClientId.ReadJsonField kvPair.Value }
+                    | "sequence" -> { value with Sequence = Sequence.ReadJsonField kvPair.Value }
+                    | "droppedSinceLast" -> { value with DroppedSinceLast = DroppedSinceLast.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _LogEntryMessage.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._LogEntryMessage.Proto.Value.Empty
+
 module ScriptingService =
     let private __Marshaller__fsbar_hub_scripting_v1_GameFrameMessage = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.GameFrameMessage) -> FsGrpc.Protobuf.encode x),
@@ -9012,6 +9401,10 @@ module ScriptingService =
         (fun (x: Fsbar.Hub.Scripting.V1.ClearLayersResponse) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
     )
+    let private __Marshaller__fsbar_hub_scripting_v1_LogEntryMessage = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.LogEntryMessage) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
     let private __Marshaller__fsbar_hub_scripting_v1_StreamGameFramesRequest = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.StreamGameFramesRequest) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
@@ -9158,6 +9551,10 @@ module ScriptingService =
     )
     let private __Marshaller__fsbar_hub_scripting_v1_ClearLayersRequest = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.ClearLayersRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_StreamHubLogRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.StreamHubLogRequest) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
     )
     let private __Method_StreamGameFrames =
@@ -9456,6 +9853,14 @@ module ScriptingService =
             __Marshaller__fsbar_hub_scripting_v1_ClearLayersRequest,
             __Marshaller__fsbar_hub_scripting_v1_ClearLayersResponse
         )
+    let private __Method_StreamHubLog =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.StreamHubLogRequest,Fsbar.Hub.Scripting.V1.LogEntryMessage>(
+            Grpc.Core.MethodType.DuplexStreaming,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "StreamHubLog",
+            __Marshaller__fsbar_hub_scripting_v1_StreamHubLogRequest,
+            __Marshaller__fsbar_hub_scripting_v1_LogEntryMessage
+        )
     [<AbstractClass>]
     [<Grpc.Core.BindServiceMethod(typeof<ServiceBase>, "BindService")>]
     type ServiceBase() = 
@@ -9496,6 +9901,7 @@ module ScriptingService =
         abstract member DeleteLayer : Fsbar.Hub.Scripting.V1.DeleteLayerRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.DeleteLayerResponse>
         abstract member ListLayers : Fsbar.Hub.Scripting.V1.ListLayersRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.ListLayersResponse>
         abstract member ClearLayers : Fsbar.Hub.Scripting.V1.ClearLayersRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.ClearLayersResponse>
+        abstract member StreamHubLog : Grpc.Core.IAsyncStreamReader<Fsbar.Hub.Scripting.V1.StreamHubLogRequest> -> Grpc.Core.IServerStreamWriter<Fsbar.Hub.Scripting.V1.LogEntryMessage> -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task
         static member BindService (serviceBinder: Grpc.Core.ServiceBinderBase) (serviceImpl: ServiceBase) =
             let serviceMethodOrNull =
                 match box serviceImpl with
@@ -9682,6 +10088,11 @@ module ScriptingService =
                 | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ClearLayersRequest,Fsbar.Hub.Scripting.V1.ClearLayersResponse>>
                 | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ClearLayersRequest,Fsbar.Hub.Scripting.V1.ClearLayersResponse>(serviceImpl.ClearLayers)
             serviceBinder.AddMethod(__Method_ClearLayers, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.DuplexStreamingServerMethod<Fsbar.Hub.Scripting.V1.StreamHubLogRequest,Fsbar.Hub.Scripting.V1.LogEntryMessage>>
+                | _ -> Grpc.Core.DuplexStreamingServerMethod<Fsbar.Hub.Scripting.V1.StreamHubLogRequest,Fsbar.Hub.Scripting.V1.LogEntryMessage>(serviceImpl.StreamHubLog)
+            serviceBinder.AddMethod(__Method_StreamHubLog, serviceMethodOrNull) |> ignore
     type Client = 
         inherit Grpc.Core.ClientBase<Client>
         new () = { inherit Grpc.Core.ClientBase<Client>() }
@@ -9831,3 +10242,5 @@ module ScriptingService =
             this.CallInvoker.BlockingUnaryCall(__Method_ClearLayers, Unchecked.defaultof<string>, callOptions, request)
         member this.ClearLayersAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ClearLayersRequest) =
             this.CallInvoker.AsyncUnaryCall(__Method_ClearLayers, Unchecked.defaultof<string>, callOptions, request)
+        member this.StreamHubLogAsync (callOptions: Grpc.Core.CallOptions) =
+            this.CallInvoker.AsyncDuplexStreamingCall(__Method_StreamHubLog, Unchecked.defaultof<string>, callOptions)

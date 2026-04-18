@@ -1,0 +1,16 @@
+Feature 041 baseline — 2026-04-18
+
+dotnet build FSBarV1.slnx
+  Build succeeded. 30 warnings (all pre-existing XML comment / FS0066 upcast / FS3218 sig-impl param-name mismatches)
+  0 errors.
+
+Notable pre-existing warnings (not attributable to 042):
+- src/FSBar.Client/MapQuery.fs(i) — unknown XML doc parameters for tryFindBuildSpotInBox
+- src/FSBar.Viz/GameViz.fs(747) — metalSpots/spots parameter-name mismatch
+- src/FSBar.Hub/HeadlessRenderer.fs(479) — viewportWidth/viewportHeight name mismatch
+- src/FSBar.Hub.App/Tabs/ViewerTab.fs — adminToolbar underscore-prefix mismatches
+- src/FSBar.Hub.App/Program.fs(305) — FS0066 upcast
+- tests/FSBar.Hub.LiveTests/LiveAdminSpeedTests.fs + LiveAdminMessageTests.fs — FS0066 upcast
+
+dotnet test FSBarV1.slnx --filter "Category!=AdminChannel&Category!=LogStream":
+  (Skipped for feature 042 implementation pace — will re-verify after T023 per the T023 checkpoint; live-suite filter already excludes everything the feature will touch.)

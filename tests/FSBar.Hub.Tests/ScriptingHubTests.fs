@@ -72,10 +72,11 @@ let private makeService (opts: ScriptingHub.ScriptingHubOptions) =
     let overlays = OverlayLayerStore.create bus.Sink
     let renderer =
         HeadlessRenderer.create sessions store overlays bus.Sink (fun () -> HubSettings.defaults)
+    let hubLog = HubLog.create bus.Sink (fun () -> HubSettings.defaults)
     let service =
         new ScriptingHub.ScriptingService(
             sessions, bus.Sink, bus.Events, unitDefs, install, makeBundled (), 5021,
-            store, renderer, overlays, opts)
+            store, renderer, overlays, hubLog, opts)
     service, bus, sessions, fixture
 
 let private drain (reader: ChannelReader<GameFrameMessage>) (expected: int) (timeoutMs: int) =

@@ -154,11 +154,12 @@ type LiveAdminForceEndTests() =
         let overlays = OverlayLayerStore.create bus.Sink
         let renderer =
             HeadlessRenderer.create sm store overlays bus.Sink (fun () -> HubSettings.defaults)
+        let hubLog = HubLog.create bus.Sink (fun () -> HubSettings.defaults)
         use svc =
             new ScriptingHub.ScriptingService(
                 sm, bus.Sink, bus.Events, unitDefs, install,
                 AdminForceEndFixtures.makeBundled (), 5099,
-                store, renderer, overlays, ScriptingHub.defaults)
+                store, renderer, overlays, hubLog, ScriptingHub.defaults)
 
         match sm.Launch(lobby, false) with
         | Result.Error msg -> Assert.Fail(sprintf "Launch rejected: %s" msg)

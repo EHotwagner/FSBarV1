@@ -19,6 +19,7 @@
     <Compile Include="LiveAdminMessageTests.fs" />
     <Compile Include="LiveHeadlessOrchestrationTests.fs" />
     <Compile Include="LiveTabStateRoutingTests.fs" />
+    <Compile Include="LiveAdminChannelLogStreamTests.fs" />
     <Compile Include="PlaceholderTests.fs" />
   </ItemGroup>
 

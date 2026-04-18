@@ -1,0 +1,33 @@
+Feature 042 live-test runtime note — 2026-04-18
+
+The LogStream live suite (`tests/FSBar.Hub.LiveTests/LiveAdminChannelLogStreamTests.fs`)
+was authored as part of feature 042. All three test methods are
+[<SkippableFact>] that require:
+
+  - A BAR data dir at ~/.local/state/Beyond All Reason
+  - `spring-headless` binary under the active engine
+  - HighBarV2 + BARb skirmish AIs installed
+  - `avalanche_3.4.sd7` present in the maps directory
+
+In this development environment, the engine binaries and AIs are not
+bundled. The skippable pattern short-circuits with a `SkipException`
+rather than failing, matching the feature-039 LiveAdmin* suite.
+
+Expected wall-clock per test on a real engine (extrapolating from
+LiveAdminPauseTests runtime baselines in feature 039):
+
+  - LaunchSessionEmitsAdminChannelTrace: ~45 s (30 s launch + 4 s collect + 10 s teardown)
+  - FilterMutationTakesEffectMidSession: ~50 s
+  - PauseRpcLogsCarryCorrelationId: ~45 s
+
+Total full matrix: ~2.5 min. Within the SC-002 "no measurable
+overhead" budget — the log stream's post-gate cost only materialises
+when a subscriber is attached, which these tests explicitly do.
+
+SC-003 (10-minute slow-subscriber soak — T072a) is intentionally
+carved out under `[<Trait("Category", "LogStreamSoak")>]` and not
+implemented in this pass; the unit-side `HubLogFanOutTests.
+slow subscriber drops oldest and reports count` and
+`HubLogFanOutTests.dispose releases per subscriber state within 1s`
+cover the structural properties (DropOldest, 1 s detach), with the
+full-session soak deferred to a follow-up measurement run.

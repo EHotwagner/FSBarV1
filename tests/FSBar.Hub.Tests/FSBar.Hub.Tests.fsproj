@@ -18,6 +18,12 @@
     <Compile Include="HubStateStoreTests.fs" />
     <Compile Include="AdminChannelHostTests.fs" />
     <Compile Include="HubSettingsTests.fs" />
+    <Compile Include="HubSettingsLogStreamCapTests.fs" />
+    <Compile Include="HubLogTests.fs" />
+    <Compile Include="HubLogFanOutTests.fs" />
+    <Compile Include="HubLogFilterTests.fs" />
+    <Compile Include="HubLogTruncationTests.fs" />
+    <Compile Include="CorrelationIdInterceptorTests.fs" />
     <Compile Include="BundledProxyTests.fs" />
     <Compile Include="BarInstallTests.fs" />
     <Compile Include="LobbyConfigTests.fs" />

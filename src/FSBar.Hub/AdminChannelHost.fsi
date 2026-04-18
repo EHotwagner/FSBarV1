@@ -48,6 +48,11 @@ module AdminChannelHost =
         member IsPaused: bool
         /// <summary>Hub's last-issued game speed; defaults to <c>1.0f</c>.</summary>
         member CurrentSpeed: float32
+        /// Feature 042: plug in a `HubLog` bus so status transitions and
+        /// SubmitOutcomes emit onto the gRPC log stream. Safe to call
+        /// at most once per host. Before attachment, emit sites are
+        /// no-ops.
+        member AttachLog: log: HubLog.T -> unit
         interface System.IDisposable
 
     /// <summary>Attach to an already-bound <see cref="T:FSBar.Client.AdminChannel.AdminChannel"/>

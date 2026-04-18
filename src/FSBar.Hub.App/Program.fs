@@ -248,6 +248,14 @@ let main _argv =
                   LastInstallResult = None
                   InstallInFlight = false }
 
+    // --- Feature 042: Hub log bus ------------------------------------------
+    // Construct one HubLog bus at startup so the gRPC service's
+    // StreamHubLog handler + every emit site can address the same
+    // subscriber list. Disposed on shutdown after SessionManager and
+    // ScriptingService.
+    let hubLog = HubLog.create bus.Sink getSettings
+    sessions |> Option.iter (fun sm -> sm.AttachLog hubLog)
+
     // --- gRPC scripting service (T063/T064) -------------------------------
     // Registered only when we have a real BAR install + SessionManager.
     // Hosted on a background Kestrel task so it doesn't block the main
@@ -279,7 +287,8 @@ let main _argv =
                 | _ -> FSBar.Client.UnitDefCache.empty
             Some (new ScriptingHub.ScriptingService(
                     sm, bus.Sink, bus.Events, unitDefsThunk, install, bundleInfo,
-                    (getSettings ()).GrpcPort, hubState, hr, overlayStore, ScriptingHub.defaults))
+                    (getSettings ()).GrpcPort, hubState, hr, overlayStore, hubLog,
+                    ScriptingHub.defaults))
         | _ -> None
 
     let grpcHostTask : Task =
@@ -292,7 +301,11 @@ let main _argv =
                 // own stderr diagnostics stay readable.
                 webBuilder.Logging.ClearProviders() |> ignore
                 webBuilder.Logging.AddFilter(fun _ -> false) |> ignore
-                webBuilder.Services.AddGrpc() |> ignore
+                let dispatchTracer = DispatchTracer.DebugDispatchInterceptor(hubLog)
+                webBuilder.Services.AddGrpc(fun o ->
+                    o.Interceptors.Add<CorrelationId.ServerInterceptor>() |> ignore
+                    o.Interceptors.Add(dispatchTracer) |> ignore)
+                |> ignore
                 webBuilder.Services.AddSingleton<ScriptingHub.ScriptingService>(svc)
                 |> ignore
                 webBuilder.WebHost.ConfigureKestrel(fun opts ->
@@ -875,6 +888,7 @@ let main _argv =
     sessions |> Option.iter (fun sm ->
         try sm.End() with _ -> ()
         try (sm :> IDisposable).Dispose() with _ -> ())
+    try (hubLog :> IDisposable).Dispose() with _ -> ()
     (bus :> IDisposable).Dispose()
 
     0

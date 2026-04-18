@@ -92,12 +92,38 @@ module SessionManager =
         let mutable startPausedForNextLaunch: bool = false
         let mutable startPausedSubscription: IDisposable option = None
 
+        // Feature 042: optional HubLog bus threaded in via AttachLog.
+        // Emit sites fire only when this is `Some` — tests that never
+        // call AttachLog observe the legacy no-log behaviour.
+        let mutable logBusOpt: HubLog.T option = None
+
+        let currentSessionId () : Guid option =
+            match state with
+            | Running rs -> Some rs.Id
+            | Ending rs -> Some rs.Id
+            | _ -> None
+
+        let emitLog (category: HubLog.LogCategory) (severity: HubLog.LogSeverity) (build: unit -> string) =
+            match logBusOpt with
+            | Some bus ->
+                HubLog.emit bus category severity (currentSessionId ()) None build
+            | None -> ()
+
         let transitionTo (newState: SessionState) =
+            let priorTag = stateTag state
             lock sync (fun () -> state <- newState)
-            events.Publish(HubEvents.StateChanged (stateTag newState))
+            let newTag = stateTag newState
+            events.Publish(HubEvents.StateChanged newTag)
+            emitLog HubLog.SessionManager HubLog.Info (fun () ->
+                sprintf "session state %A → %A" priorTag newTag)
 
         let publishDiagnostic (severity: HubEvents.Severity) (msg: string) =
             events.Publish(HubEvents.DiagnosticsLine(severity, msg))
+            match logBusOpt with
+            | Some bus ->
+                HubLog.emitFromDiagnosticsLine bus HubLog.SessionManager severity
+                    (currentSessionId ()) None msg
+            | None -> ()
 
         let detachFrames () =
             match currentSubscription with
@@ -150,7 +176,15 @@ module SessionManager =
             adminChannel <- None
 
         let startSessionBackground (lobby: LobbyConfig.LobbyConfig) (engineCfg: EngineConfig) =
+            // Feature 042 R3: capture the caller's correlation ID so
+            // background work (admin-channel bind, engine spawn, frame
+            // wiring) retains attribution in any `HubLog.emit` calls
+            // they issue. `AsyncLocal` flows across Task.Run only while
+            // the parent scope is still live — by capturing + re-scoping
+            // we make propagation survive even if the handler returns.
+            let cid = CorrelationId.current ()
             ignore (System.Threading.Tasks.Task.Run(fun () ->
+                use _scope = CorrelationId.withScope cid
                 try
                     // Feature 039: bind the admin channel BEFORE the
                     // engine is spawned so the engine's autohost client
@@ -165,13 +199,18 @@ module SessionManager =
                             let port =
                                 ch.LocalPort |> Option.defaultValue 0
                             adminChannel <- Some ch
-                            adminHost <-
-                                Some (AdminChannelHost.attach(ch, events))
+                            let h = AdminChannelHost.attach(ch, events)
+                            // Feature 042: propagate the hub log bus to
+                            // the per-session admin host so wire-level
+                            // emit sites light up for its lifetime.
+                            logBusOpt |> Option.iter (fun bus -> h.AttachLog bus)
+                            adminHost <- Some h
                             { engineCfg with AutohostPort = Some port }
                         | Result.Error reason ->
                             adminChannel <- None
-                            adminHost <-
-                                Some (AdminChannelHost.unavailable(reason, events))
+                            let h = AdminChannelHost.unavailable(reason, events)
+                            logBusOpt |> Option.iter (fun bus -> h.AttachLog bus)
+                            adminHost <- Some h
                             publishDiagnostic HubEvents.Warning
                                 (sprintf "admin channel unavailable: %s" reason)
                             { engineCfg with AutohostPort = None }
@@ -294,6 +333,8 @@ module SessionManager =
             events.Publish(HubEvents.EngineSpeedChanged speed)
 
         member _.SetEngineSpeed(speed: float32) : AdminChannelHost.SubmitOutcome =
+            emitLog HubLog.SessionManager HubLog.Info (fun () ->
+                sprintf "admin dispatch: SetEngineSpeed %f" speed)
             if Single.IsNaN(speed) || Single.IsInfinity(speed) || speed <= 0.0f then
                 AdminChannelHost.Rejected "engine speed must be a positive finite number"
             else
@@ -308,6 +349,8 @@ module SessionManager =
                 | None -> AdminChannelHost.Rejected "no active session"
 
         member this.ForceEnd() : AdminChannelHost.SubmitOutcome =
+            emitLog HubLog.SessionManager HubLog.Info (fun () ->
+                "admin dispatch: ForceEnd")
             match adminHost with
             | Some h ->
                 let outcome = h.Submit(AdminChannel.KillServer)
@@ -315,7 +358,9 @@ module SessionManager =
                 | AdminChannelHost.Sent ->
                     // Arm the escalation watchdog on a background task.
                     // Per research.md §R8: SIGTERM at 5s, SIGKILL at 8s.
+                    let cid = CorrelationId.current ()
                     ignore (System.Threading.Tasks.Task.Run(fun () ->
+                        use _scope = CorrelationId.withScope cid
                         Thread.Sleep(5000)
                         if this.State <> Idle then
                             match this.State with
@@ -340,6 +385,8 @@ module SessionManager =
             | None -> AdminChannelHost.Rejected "no active session"
 
         member _.SendAdminMessage(text: string) : AdminChannelHost.SubmitOutcome =
+            emitLog HubLog.SessionManager HubLog.Info (fun () ->
+                sprintf "admin dispatch: SendAdminMessage (%d chars)" text.Length)
             if String.IsNullOrWhiteSpace(text) then
                 AdminChannelHost.Rejected "empty message"
             else
@@ -370,6 +417,7 @@ module SessionManager =
             | _ -> ()
 
         member this.Pause() : AdminChannelHost.SubmitOutcome =
+            emitLog HubLog.SessionManager HubLog.Info (fun () -> "admin dispatch: Pause")
             match adminHost with
             | Some h ->
                 // Disarm the frame-loop timeout BEFORE the engine pauses
@@ -389,6 +437,7 @@ module SessionManager =
                 AdminChannelHost.Rejected "no active session"
 
         member this.Resume() : AdminChannelHost.SubmitOutcome =
+            emitLog HubLog.SessionManager HubLog.Info (fun () -> "admin dispatch: Resume")
             match adminHost with
             | Some h ->
                 let outcome = h.Submit(AdminChannel.Pause false)
@@ -431,6 +480,9 @@ module SessionManager =
                 disposeAdminChannel ()
                 transitionTo Idle
             | Ending _ | Idle | Failed _ | Starting _ -> ()
+
+        member _.AttachLog(log: HubLog.T) =
+            logBusOpt <- Some log
 
         member this.Stop() : SubmitOutcome =
             match this.State with

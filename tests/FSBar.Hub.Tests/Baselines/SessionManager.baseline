@@ -127,6 +127,13 @@ module SessionManager =
         /// Does not exit the hub process or close gRPC clients.
         member End: unit -> unit
 
+        /// Feature 042: plug in a `HubLog` bus so state transitions,
+        /// admin dispatches, and diagnostics emit onto the gRPC log
+        /// stream. Safe to call at most once; later calls replace the
+        /// previously-attached bus. Before attachment, emit sites are
+        /// no-ops.
+        member AttachLog: log: HubLog.T -> unit
+
         // ---------------- Feature 040 additions ----------------
 
         /// Abort the currently-running or starting session via `End`.

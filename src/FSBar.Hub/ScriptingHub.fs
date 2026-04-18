@@ -420,6 +420,72 @@ module ScriptingHub =
           Quality = msg.Quality
           IsPlaceholder = msg.IsPlaceholder }
 
+    // --- Feature 042 — log stream wire ↔ F# mapping ------------------
+
+    let private wireToLogSeverity (s: LogSeverity) : HubLog.LogSeverity option =
+        match s with
+        | LogSeverity.Debug -> Some HubLog.Debug
+        | LogSeverity.Info -> Some HubLog.Info
+        | LogSeverity.Warning -> Some HubLog.Warning
+        | LogSeverity.Error -> Some HubLog.Error
+        | LogSeverity.Unspecified | _ -> None
+
+    let private wireToLogCategory (c: LogCategory) : Result<HubLog.LogCategory, string> =
+        match c with
+        | LogCategory.SessionManager -> Ok HubLog.SessionManager
+        | LogCategory.AdminChannel -> Ok HubLog.AdminChannel
+        | LogCategory.ScriptingHub -> Ok HubLog.ScriptingHub
+        | LogCategory.ProxyInstall -> Ok HubLog.ProxyInstall
+        | LogCategory.HeadlessRenderer -> Ok HubLog.HeadlessRenderer
+        | LogCategory.HubStateStore -> Ok HubLog.HubStateStore
+        | LogCategory.PresetPersistence -> Ok HubLog.PresetPersistence
+        | LogCategory.Lobby -> Ok HubLog.Lobby
+        | LogCategory.Settings -> Ok HubLog.Settings
+        | LogCategory.Unspecified -> Result.Error "LogCategory.Unspecified is not a valid filter category"
+        | other -> Result.Error (sprintf "unknown log category: %A" other)
+
+    let private logSeverityToWire (s: HubLog.LogSeverity) : LogSeverity =
+        match s with
+        | HubLog.Debug -> LogSeverity.Debug
+        | HubLog.Info -> LogSeverity.Info
+        | HubLog.Warning -> LogSeverity.Warning
+        | HubLog.Error -> LogSeverity.Error
+
+    let private logCategoryToWire (c: HubLog.LogCategory) : LogCategory =
+        match c with
+        | HubLog.SessionManager -> LogCategory.SessionManager
+        | HubLog.AdminChannel -> LogCategory.AdminChannel
+        | HubLog.ScriptingHub -> LogCategory.ScriptingHub
+        | HubLog.ProxyInstall -> LogCategory.ProxyInstall
+        | HubLog.HeadlessRenderer -> LogCategory.HeadlessRenderer
+        | HubLog.HubStateStore -> LogCategory.HubStateStore
+        | HubLog.PresetPersistence -> LogCategory.PresetPersistence
+        | HubLog.Lobby -> LogCategory.Lobby
+        | HubLog.Settings -> LogCategory.Settings
+
+    let private resolveFilterFromWire (wire: LogFilterWire option) : Result<HubLog.LogFilter, string> =
+        match wire with
+        | None ->
+            Ok HubLog.defaultFilter
+        | Some w ->
+            let categoriesResult =
+                w.Categories
+                |> List.fold (fun acc c ->
+                    match acc with
+                    | Result.Error _ as e -> e
+                    | Ok xs ->
+                        match wireToLogCategory c with
+                        | Ok mapped -> Ok (mapped :: xs)
+                        | Result.Error e -> Result.Error e) (Ok [])
+            match categoriesResult with
+            | Result.Error e -> Result.Error e
+            | Ok categoriesRev ->
+                let categories = List.rev categoriesRev
+                let severity = wireToLogSeverity w.MinSeverity
+                let preset =
+                    if String.IsNullOrEmpty(w.PresetName) then None else Some w.PresetName
+                HubLog.resolveFilter categories severity preset
+
     [<Sealed>]
     type ScriptingService(
             sessions: SessionManager.SessionManager,
@@ -432,6 +498,7 @@ module ScriptingHub =
             state: HubStateStore.T,
             renderer: HeadlessRenderer.T,
             overlays: OverlayLayerStore.T,
+            log: HubLog.T,
             opts: ScriptingHubOptions) =
         inherit ScriptingService.ServiceBase()
 
@@ -1564,6 +1631,114 @@ module ScriptingHub =
                     ({ Result = Some (sentResult ())
                        ClearedCount = cleared } : ClearLayersResponse)
             }
+
+        // --- Feature 042 — StreamHubLog (US1) ---
+
+        override _.StreamHubLog requestStream responseStream context =
+            task {
+                // Wait for initial filter request.
+                let! hasFirst = requestStream.MoveNext(context.CancellationToken)
+                if not hasFirst then
+                    return ()
+                else
+                let firstReq = requestStream.Current
+                let firstFilterWire =
+                    firstReq.Filter
+                let filter =
+                    match resolveFilterFromWire firstFilterWire with
+                    | Ok f -> f
+                    | Result.Error reason ->
+                        raise (Grpc.Core.RpcException(
+                            Grpc.Core.Status(Grpc.Core.StatusCode.InvalidArgument, reason)))
+                let label =
+                    if String.IsNullOrEmpty(firstReq.ClientLabel) then "anonymous"
+                    else firstReq.ClientLabel
+                match HubLog.attach log label filter context.CancellationToken with
+                | HubLog.Rejected reason ->
+                    raise (Grpc.Core.RpcException(
+                        Grpc.Core.Status(Grpc.Core.StatusCode.ResourceExhausted, reason)))
+                | HubLog.Attached sub ->
+                    try
+                        // Start a background filter-update loop reading
+                        // subsequent request messages.
+                        let filterUpdateTask =
+                            task {
+                                try
+                                    let mutable keepGoing = true
+                                    while keepGoing do
+                                        let! nextOk =
+                                            try requestStream.MoveNext(context.CancellationToken)
+                                            with :? OperationCanceledException -> Task.FromResult(false)
+                                        if not nextOk then keepGoing <- false
+                                        else
+                                            let req = requestStream.Current
+                                            match resolveFilterFromWire req.Filter with
+                                            | Result.Error reason ->
+                                                raise (Grpc.Core.RpcException(
+                                                    Grpc.Core.Status(Grpc.Core.StatusCode.InvalidArgument, reason)))
+                                            | Ok newFilter ->
+                                                match HubLog.updateFilter log sub.Id newFilter with
+                                                | Ok () ->
+                                                    let catLabel =
+                                                        match newFilter.Categories with
+                                                        | None -> "all"
+                                                        | Some xs ->
+                                                            xs
+                                                            |> Seq.map (fun c -> sprintf "%A" c)
+                                                            |> String.concat ","
+                                                    HubLog.emitSimple log HubLog.ScriptingHub HubLog.Debug (fun () ->
+                                                        sprintf "log-stream filter updated: categories=[%s], minSeverity=%A"
+                                                            catLabel newFilter.MinSeverity)
+                                                | Result.Error reason ->
+                                                    raise (Grpc.Core.RpcException(
+                                                        Grpc.Core.Status(Grpc.Core.StatusCode.InvalidArgument, reason)))
+                                with
+                                | :? OperationCanceledException -> ()
+                                | _ -> ()
+                            } :> Task
+
+                        // Drain subscription reader → wire messages.
+                        let reader = sub.Reader
+                        let mutable keepGoing = true
+                        while keepGoing do
+                            let! ok =
+                                try reader.WaitToReadAsync(context.CancellationToken).AsTask()
+                                with :? OperationCanceledException -> Task.FromResult(false)
+                            if not ok then keepGoing <- false
+                            else
+                                let mutable entry = Unchecked.defaultof<HubLog.LogEntry>
+                                while reader.TryRead(&entry) do
+                                    let corr =
+                                        match entry.CorrelationId with
+                                        | Some (CorrelationId.CorrelationId s) -> s
+                                        | None -> ""
+                                    let sessionId =
+                                        match entry.SessionId with
+                                        | Some g -> g.ToString()
+                                        | None -> ""
+                                    let clientId =
+                                        match entry.ScriptingClientId with
+                                        | Some g -> g.ToString()
+                                        | None -> ""
+                                    let seq = HubLog.nextSequenceFor log sub.Id
+                                    let dropped = HubLog.exchangeDroppedSinceLast log sub.Id
+                                    let wire: LogEntryMessage = {
+                                        TimestampUnixMs = entry.TimestampUnixMs
+                                        Severity = logSeverityToWire entry.Severity
+                                        Category = logCategoryToWire entry.Category
+                                        Message = entry.Message
+                                        CorrelationId = corr
+                                        SessionId = sessionId
+                                        ScriptingClientId = clientId
+                                        Sequence = seq
+                                        DroppedSinceLast = dropped
+                                    }
+                                    do! responseStream.WriteAsync(wire)
+                        // Ensure filter loop completes.
+                        try do! filterUpdateTask with _ -> ()
+                    finally
+                        sub.Dispose()
+            } :> Task
 
         interface IDisposable with
             member _.Dispose() =

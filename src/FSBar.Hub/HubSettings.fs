@@ -13,6 +13,7 @@ module HubSettings =
         LaunchGraphicalViewerDefault: bool
         StartPausedDefault: bool
         MaxRenderFrameSubscribers: int
+        MaxLogStreamSubscribers: int
         SchemaVersion: int
     }
 
@@ -23,13 +24,16 @@ module HubSettings =
         LaunchGraphicalViewerDefault = false
         StartPausedDefault = true
         MaxRenderFrameSubscribers = 8
-        SchemaVersion = 2
+        MaxLogStreamSubscribers = 8
+        SchemaVersion = 3
     }
 
     let private minPort = 1024
     let private maxPort = 65535
     let private minRenderSubscribers = 1
     let private maxRenderSubscribers = 32
+    let private minLogSubscribers = 1
+    let private maxLogSubscribers = 32
 
     let settingsPath () =
         let xdgConfigHome = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME")
@@ -65,6 +69,7 @@ module HubSettings =
         writer.WriteBoolean("launchGraphicalViewerDefault", s.LaunchGraphicalViewerDefault)
         writer.WriteBoolean("startPausedDefault", s.StartPausedDefault)
         writer.WriteNumber("maxRenderFrameSubscribers", s.MaxRenderFrameSubscribers)
+        writer.WriteNumber("maxLogStreamSubscribers", s.MaxLogStreamSubscribers)
         writer.WriteNumber("schemaVersion", s.SchemaVersion)
         writer.WriteEndObject()
         writer.Flush()
@@ -114,18 +119,29 @@ module HubSettings =
                     defaults.MaxRenderFrameSubscribers
                 else
                     rawRenderSubscribers
+            let rawLogSubscribers =
+                parseInt root "maxLogStreamSubscribers" defaults.MaxLogStreamSubscribers
+            let logSubscribers =
+                // Missing field (v2 file) or out-of-range → clamp to default.
+                if rawLogSubscribers < minLogSubscribers
+                   || rawLogSubscribers > maxLogSubscribers then
+                    defaults.MaxLogStreamSubscribers
+                else
+                    rawLogSubscribers
             { BarDataDirOverride = parseOptionalString root "barDataDirOverride"
               EngineVersionOverride = parseOptionalString root "engineVersionOverride"
               GrpcPort = port
               LaunchGraphicalViewerDefault = parseBool root "launchGraphicalViewerDefault" defaults.LaunchGraphicalViewerDefault
               StartPausedDefault = parseBool root "startPausedDefault" defaults.StartPausedDefault
               MaxRenderFrameSubscribers = renderSubscribers
-              // v1 → v2 migration: any load below v2 is rewritten as v2 on
-              // the next `save` (the record already carries the upgraded
-              // value, and `serialize` always emits the current version).
+              MaxLogStreamSubscribers = logSubscribers
+              // v{n<3} → v3 migration: any load below the current version
+              // is rewritten on the next `save` (the record already carries
+              // the upgraded value and `serialize` always emits the current
+              // version).
               SchemaVersion =
                   if schemaVersion <= 0 then defaults.SchemaVersion
-                  elif schemaVersion < 2 then defaults.SchemaVersion
+                  elif schemaVersion < 3 then defaults.SchemaVersion
                   else schemaVersion }
 
     let load () : HubSettings =
@@ -149,6 +165,13 @@ module HubSettings =
                     settings.MaxRenderFrameSubscribers
                     minRenderSubscribers
                     maxRenderSubscribers)
+        elif settings.MaxLogStreamSubscribers < minLogSubscribers
+             || settings.MaxLogStreamSubscribers > maxLogSubscribers then
+            Error
+                (sprintf "maxLogStreamSubscribers=%d outside [%d, %d]"
+                    settings.MaxLogStreamSubscribers
+                    minLogSubscribers
+                    maxLogSubscribers)
         else
             let path = settingsPath ()
             try
@@ -181,3 +204,14 @@ module HubSettings =
                     value minRenderSubscribers maxRenderSubscribers)
         else
             Ok { settings with MaxRenderFrameSubscribers = value }
+
+    let updateMaxLogStreamSubscribers
+        (settings: HubSettings)
+        (value: int)
+        : Result<HubSettings, string> =
+        if value < minLogSubscribers || value > maxLogSubscribers then
+            Error
+                (sprintf "maxLogStreamSubscribers=%d outside [%d, %d]"
+                    value minLogSubscribers maxLogSubscribers)
+        else
+            Ok { settings with MaxLogStreamSubscribers = value }

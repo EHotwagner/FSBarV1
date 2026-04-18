@@ -23,6 +23,12 @@
     <Compile Include="LobbyConfig.fs" />
     <Compile Include="HubEvents.fsi" />
     <Compile Include="HubEvents.fs" />
+    <Compile Include="CorrelationId.fsi" />
+    <Compile Include="CorrelationId.fs" />
+    <Compile Include="HubLog.fsi" />
+    <Compile Include="HubLog.fs" />
+    <Compile Include="DispatchTracer.fsi" />
+    <Compile Include="DispatchTracer.fs" />
     <Compile Include="AdminChannelHost.fsi" />
     <Compile Include="AdminChannelHost.fs" />
     <Compile Include="SessionManager.fsi" />

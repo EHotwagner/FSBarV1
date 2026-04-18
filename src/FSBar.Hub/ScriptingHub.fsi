@@ -64,6 +64,9 @@ module ScriptingHub =
     ///     Lobby-related RPCs (`ConfigureLobby`, `LaunchSession`) read
     ///     and write through this store so the local GUI and gRPC
     ///     clients never drift.
+    ///   * `log` — feature-042 Hub log bus. `StreamHubLog` attaches to
+    ///     this; every emit site reads back through it. Additive to the
+    ///     feature-040 constructor.
     ///   * `opts` — fan-out tunables.
     [<Sealed>]
     type ScriptingService =
@@ -79,6 +82,7 @@ module ScriptingHub =
             state: HubStateStore.T *
             renderer: HeadlessRenderer.T *
             overlays: OverlayLayerStore.T *
+            log: HubLog.T *
             opts: ScriptingHubOptions ->
                 ScriptingService
 

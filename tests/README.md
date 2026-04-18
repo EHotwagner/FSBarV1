@@ -54,6 +54,12 @@ dotnet test tests/FSBar.LiveTests
 
 # One project:
 dotnet test tests/FSBar.Viz.Tests
+
+# Live admin-channel matrix (feature 039):
+dotnet test tests/FSBar.Hub.LiveTests --filter "Category=AdminChannel"
+
+# Live gRPC log-stream matrix (feature 042):
+dotnet test tests/FSBar.Hub.LiveTests --filter "Category=LogStream"
 ```
 
 ## Baseline regeneration

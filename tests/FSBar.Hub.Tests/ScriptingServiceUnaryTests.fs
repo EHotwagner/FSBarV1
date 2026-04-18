@@ -84,10 +84,11 @@ let private makeService () =
     let overlays = OverlayLayerStore.create bus.Sink
     let renderer =
         HeadlessRenderer.create sessions store overlays bus.Sink (fun () -> HubSettings.defaults)
+    let hubLog = HubLog.create bus.Sink (fun () -> HubSettings.defaults)
     let service =
         new ScriptingHub.ScriptingService(
             sessions, bus.Sink, bus.Events, unitDefs, install, makeBundled (), 5099,
-            store, renderer, overlays, ScriptingHub.defaults)
+            store, renderer, overlays, hubLog, ScriptingHub.defaults)
     service, bus, sessions, store, fixture
 
 let private disposeAll

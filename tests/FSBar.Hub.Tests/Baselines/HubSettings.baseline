@@ -39,8 +39,15 @@ module HubSettings =
         /// v1 files load this field as the default and are rewritten as
         /// v2 on the next `save`.
         MaxRenderFrameSubscribers: int
-        /// Schema version. Currently `2` (feature 040 bumped from 1 when
-        /// `MaxRenderFrameSubscribers` was added). Increments when
+        /// Maximum number of concurrent `StreamHubLog` subscribers
+        /// served by `HubLog` (feature 042, FR-015a). Validated to
+        /// `[1, 32]`; default `8`. Persisted starting at schema v3.
+        /// v2 files load this field as the default and are rewritten as
+        /// v3 on the next `save`.
+        MaxLogStreamSubscribers: int
+        /// Schema version. Currently `3` (feature 042 bumped from 2 when
+        /// `MaxLogStreamSubscribers` was added; feature 040 bumped from 1
+        /// when `MaxRenderFrameSubscribers` was added). Increments when
         /// additive / destructive changes require a migration step on
         /// load; missing-field additions do not bump.
         SchemaVersion: int
@@ -48,7 +55,8 @@ module HubSettings =
 
     /// Factory values identical to a fresh-install state:
     /// no overrides, port `5021`, graphical-viewer toggle off,
-    /// start-paused toggle on, 8 concurrent render subscribers, schema `2`.
+    /// start-paused toggle on, 8 concurrent render subscribers,
+    /// 8 concurrent log-stream subscribers, schema `3`.
     val defaults: HubSettings
 
     /// Returns the absolute filesystem path where settings are read /
@@ -91,6 +99,14 @@ module HubSettings =
     /// `MaxRenderFrameSubscribers = value`. Rejects values outside
     /// `[1, 32]` with an operator-visible reason (data-model §HubSettings).
     val updateMaxRenderFrameSubscribers:
+        settings: HubSettings ->
+        value: int ->
+            Result<HubSettings, string>
+
+    /// Return a validated copy of `settings` with
+    /// `MaxLogStreamSubscribers = value`. Rejects values outside
+    /// `[1, 32]` with an operator-visible reason (feature 042 R7).
+    val updateMaxLogStreamSubscribers:
         settings: HubSettings ->
         value: int ->
             Result<HubSettings, string>
