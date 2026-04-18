@@ -18,6 +18,8 @@
     <Compile Include="EngineConfigTests.fs" />
     <Compile Include="EngineDiscoveryTests.fs" />
     <Compile Include="ScriptGeneratorTests.fs" />
+    <Compile Include="ScriptGeneratorAutohostTests.fs" />
+    <Compile Include="AdminChannelCodecTests.fs" />
     <Compile Include="CommandsTests.fs" />
     <Compile Include="EventsTests.fs" />
     <Compile Include="ConnectionTests.fs" />

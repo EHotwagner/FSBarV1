@@ -40,8 +40,23 @@ module StatusBar =
     let private speedLabelWidth = 44.0f
     let private sliderWidth = 120.0f
     let private padX = 8.0f
+    // Gap between the pause-cluster and the destructive End button.
+    // Wider than padX so accidental clicks while reaching for Pause
+    // don't tear down the whole session.
+    let private dangerGap = 40.0f
 
     let private buttonHeight = 20.0f
+
+    // Mutable: track whether the End button is in "confirm" mode
+    // (clicked once, awaiting a second click to actually end).
+    let mutable private endConfirmArmed = false
+    let mutable private endConfirmArmedAt = System.DateTimeOffset.MinValue
+    let private endConfirmTimeoutMs = 4000.0
+
+    let private isEndArmed () =
+        endConfirmArmed
+        && (System.DateTimeOffset.UtcNow - endConfirmArmedAt).TotalMilliseconds
+           < endConfirmTimeoutMs
 
     // Rectangle helpers — return (x, y, w, h).
     let private endButtonRect (winW: int) (winH: int) =
@@ -51,7 +66,7 @@ module StatusBar =
 
     let private pauseButtonRect (winW: int) (winH: int) =
         let (ex, y, _, h) = endButtonRect winW winH
-        let x = ex - pauseButtonWidth - padX
+        let x = ex - pauseButtonWidth - dangerGap
         x, y, pauseButtonWidth, h
 
     let private sliderRect (winW: int) (winH: int) =
@@ -117,10 +132,15 @@ module StatusBar =
               yield Scene.rect px py pw ph pauseBg
               let pauseText = if state.Paused then "Resume" else "Pause"
               yield Scene.text pauseText (px + 6.0f) (py + ph * 0.7f) 13.0f textPaint
-              // End button.
+              // End button — armed two-click confirm so an accidental
+              // click next to Pause doesn't tear down the session.
               let (ex, ey, ew, eh) = endButtonRect windowWidth windowHeight
-              yield Scene.rect ex ey ew eh buttonDanger
-              yield Scene.text "End" (ex + 16.0f) (ey + eh * 0.7f) 13.0f textPaint ]
+              let armed = isEndArmed ()
+              let endBg = if armed then buttonHot else buttonDanger
+              yield Scene.rect ex ey ew eh endBg
+              let endLabel = if armed then "Confirm?" else "End"
+              let labelInset = if armed then 4.0f else 16.0f
+              yield Scene.text endLabel (ex + labelInset) (ey + eh * 0.7f) 13.0f textPaint ]
 
     let private hit (rx: float32, ry: float32, rw: float32, rh: float32) (x: float32) (y: float32) =
         x >= rx && x < rx + rw && y >= ry && y < ry + rh
@@ -138,15 +158,31 @@ module StatusBar =
             | SessionManager.Starting _
             | SessionManager.Ending _ -> true
             | _ -> false
-        if not showControls then None
+        if not showControls then
+            // Reset End-armed state if no controls are showing.
+            endConfirmArmed <- false
+            None
         else
             let endRect = endButtonRect windowWidth windowHeight
             let pauseRect = pauseButtonRect windowWidth windowHeight
             let slider = sliderRect windowWidth windowHeight
-            if hit endRect x y then Some StatusBarAction.EndSession
-            elif hit pauseRect x y then Some StatusBarAction.TogglePause
+            if hit endRect x y then
+                if isEndArmed () then
+                    endConfirmArmed <- false
+                    Some StatusBarAction.EndSession
+                else
+                    // First click only arms the confirm; doesn't end yet.
+                    endConfirmArmed <- true
+                    endConfirmArmedAt <- System.DateTimeOffset.UtcNow
+                    None
+            elif hit pauseRect x y then
+                endConfirmArmed <- false
+                Some StatusBarAction.TogglePause
             elif hit slider x y then
+                endConfirmArmed <- false
                 let (sx, _, sw, _) = slider
                 let frac = (x - sx) / sw
                 Some (StatusBarAction.SetSpeed (sliderToSpeed frac))
-            else None
+            else
+                endConfirmArmed <- false
+                None

@@ -10,6 +10,12 @@
   <ItemGroup>
     <Compile Include="LiveSessionLaunchTests.fs" />
     <Compile Include="PauseLiveTest.fs" />
+    <Compile Include="LiveAdminChannelLossTests.fs" />
+    <Compile Include="LiveAdminPauseTests.fs" />
+    <Compile Include="LiveScriptingAdminPauseTests.fs" />
+    <Compile Include="LiveAdminSpeedTests.fs" />
+    <Compile Include="LiveAdminForceEndTests.fs" />
+    <Compile Include="LiveAdminMessageTests.fs" />
     <Compile Include="PlaceholderTests.fs" />
   </ItemGroup>
 

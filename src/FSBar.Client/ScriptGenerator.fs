@@ -126,3 +126,20 @@ module ScriptGenerator =
         ln "}"
 
         sb.ToString()
+
+    /// <summary>
+    /// Generates the contents of <c>springsettings.cfg</c> for a session. Always forces
+    /// windowed mode. When <c>config.AutohostPort</c> is set, also emits the autohost
+    /// interface lines so the engine dials back to the hub-bound UDP socket (feature 039).
+    /// </summary>
+    let generateSpringSettings (config: EngineConfig) : string =
+        let sb = StringBuilder()
+        sb.Append("Fullscreen=0\n") |> ignore
+        sb.Append("XResolution=1280\n") |> ignore
+        sb.Append("YResolution=720\n") |> ignore
+        match config.AutohostPort with
+        | Some port ->
+            sb.Append("AutohostIP=127.0.0.1\n") |> ignore
+            sb.Append(sprintf "AutohostPort=%d\n" port) |> ignore
+        | None -> ()
+        sb.ToString()

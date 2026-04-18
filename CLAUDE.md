@@ -63,6 +63,8 @@ Auto-generated from all feature plans. Last updated: 2026-04-17
 - F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FSBar.Client, FSBar.Viz, FSBar.SyntheticData (in-repo), FSBar.Proto (in-repo, extended with `proto/hub/scripting.proto`), SkiaViewer 1.1.3-dev, Grpc.AspNetCore 2.67.0, Grpc.Core.Api 2.67.0, FsGrpc 1.0.6, xUnit 2.9.x. Bundled HighBarV2 proxy under `proxy/bundled/<version>/`. (035-central-gui-hub)
 - F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Hub`, (038-hub-viewer-fixes)
 - `$XDG_CONFIG_HOME/fsbar-hub/settings.json` — one additive (038-hub-viewer-fixes)
+- F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Client`, `FSBar.Hub`, `FSBar.Viz`, `FSBar.Proto`. BCL `System.Net.Sockets.UdpClient` + `System.Threading.Channels` for the autohost socket. `Grpc.AspNetCore 2.67.0` / `Grpc.Core.Api 2.67.0` already in the graph for scripting. `SkiaViewer` 1.1.3-dev for UI. `xUnit 2.9.x` for tests. **No new NuGet dependencies.** (039-hub-admin-channel)
+- In-memory only — `AdminChannelStatus` lives for the session's lifetime; no persistence. `HubSettings` is not extended (engine speed does NOT persist across launches per Session 2026-04-17 Q5). (039-hub-admin-channel)
 
 - F# / .NET 10.0 + FsGrpc 1.0.6 (protobuf generation), FsGrpc.Tools 1.0.6 (build-time), BarData (NuGet from local store) (001-fsharp-repl-client)
 
@@ -224,9 +226,9 @@ Tests that cannot pass due to out-of-scope issues (e.g., missing server, externa
 F# / .NET 10.0: Follow standard conventions
 
 ## Recent Changes
+- 039-hub-admin-channel: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo — `FSBar.Client`, `FSBar.Hub`, `FSBar.Viz`, `FSBar.Proto`. BCL `System.Net.Sockets.UdpClient` + `System.Threading.Channels` for the autohost socket. `Grpc.AspNetCore 2.67.0` / `Grpc.Core.Api 2.67.0` already in the graph for scripting. `SkiaViewer` 1.1.3-dev for UI. `xUnit 2.9.x` for tests. **No new NuGet dependencies.**
 - 038-hub-viewer-fixes: Added F# 9 on .NET 10.0 (exclusive per Constitution §Engineering Constraints) + Existing in-repo only — `FSBar.Hub`,
 - 035-central-gui-hub: Shipped the FSBar Hub (`FSBar.Hub` core library + `FSBar.Hub.App` SkiaViewer executable + `proto/hub/scripting.proto` gRPC contract). Six tabs — Setup / Viewer / Units / Style / Cfg / gRPC — share a live `VizConfig` and `SessionManager`, with a Kestrel-hosted `ScriptingService` on `127.0.0.1:5021` for external clients. Bundled HighBarV2 proxy committed at `proxy/bundled/0.1/`; `scripts/refresh-bundled-proxy.sh` bumps it. W/L/C/N hotkeys route through `GameViz` overlay accessors. 75 unit tests + 3 live integration tests green. `Grpc.AspNetCore 2.67.0` + `Grpc.Core.Api 2.67.0` added to the dependency graph; no other new packages.
-- 034-repo-cleanup: Added F# 9 on .NET 10.0 (exclusive per constitution §Engineering Constraints) + FsGrpc 1.0.6 (protobuf), BarData (NuGet local feed), SkiaViewer 1.1.3-dev (local nupkg), SkiaSharp 2.88.6, Silk.NET 2.22.0, xUnit 2.9.x, Microsoft.NET.Test.Sdk 17.x. No new dependencies introduced.
 
 
 <!-- MANUAL ADDITIONS START -->
@@ -266,6 +268,68 @@ signatures and surface-area baselines in
 / `FSBar.Viz.SceneBuilder.buildSceneHeadlessSized` /
 `FSBar.Viz.UnitGlyph.buildUnit` directly — so Units-tab glyphs
 byte-match Viewer-tab glyphs (SC-003).
+
+## Hub admin channel (feature 039)
+
+The Hub opens a loopback UDP autohost channel to the engine at every
+session launch so pause / resume / engine-speed / force-end / admin
+message work as real engine operations rather than cosmetic hub-side
+flags. Replaces the feature-038 chat-based path entirely.
+
+Wire-level client: `FSBar.Client.AdminChannel` binds `127.0.0.1:0` via
+`AdminChannel.bind()` before spawning the engine; `SessionManager.Launch`
+captures the OS-assigned port and threads it into `EngineConfig.AutohostPort`
+which `ScriptGenerator.generateSpringSettings` emits into the per-session
+`springsettings.cfg`. Wire format is documented in
+`specs/039-hub-admin-channel/contracts/autohost-wire.md`
+(outbound 4 SETGAMESPEED / 5 PAUSE / 8 SAYMESSAGE / 0 KILLSERVER;
+inbound 0 SERVER_STARTED / 1 SERVER_QUIT / 2 SERVER_STARTPLAYING /
+11 GAME_WARNING).
+
+Hub-level orchestrator: `FSBar.Hub.AdminChannelHost` wraps one
+`AdminChannel`, coalesces rapid same-kind submits within a 100 ms
+quiet window (research.md §R5), tracks `AdminChannelStatus`
+(Attached / Unavailable(reason) / Lost(reason)), and publishes every
+status transition as `HubEvent.AdminChannelStatusChanged`.
+
+`SessionManager` exposes five new admin members — each returns an
+`AdminChannelHost.SubmitOutcome` (`Sent` / `Coalesced n` / `Rejected r`):
+
+- `Pause: unit -> SubmitOutcome`
+- `Resume: unit -> SubmitOutcome`
+- `SetEngineSpeed: float32 -> SubmitOutcome`
+- `ForceEnd: unit -> SubmitOutcome`
+- `SendAdminMessage: string -> SubmitOutcome`
+
+`TogglePause()` survives as a convenience (dispatches to `Pause`/`Resume`
+based on `IsPaused`). `SetPaused(bool)` from feature 038 is gone.
+
+`startPaused = true` launches defer their initial `Pause true` until
+the autohost `ServerStartPlaying` event arrives so the sim is truly
+frozen at engine frame zero (research.md §R9).
+
+Viewer-tab toolbar (`src/FSBar.Hub.App/Tabs/ViewerTab.fs`) grows a
+top-right admin toolbar: `⏸ ⏹ [0.5x 1x 2x 5x 10x] [admin message]`.
+Clicks dispatch via the module-private `AdminToolbarAction` + the
+public `ViewerTab.handleMouse` entry point. Controls render
+disabled (dimmed) when `SessionManager.AdminStatus <> Some Attached`
+and an inline status line shows the reason (FR-009).
+
+Scripting service (`proto/hub/scripting.proto`) gained five unary RPCs
+— `Pause` / `Resume` / `SetEngineSpeed` / `ForceEndMatch` /
+`SendAdminMessage` — each returning an `AdminSubmitResult` that echoes
+the resulting `AdminChannelStatusInfo`. `ActiveSession` gained an
+optional `admin_channel_status` field. See
+`scripts/examples/16-hub-admin.fsx` for an end-to-end gRPC walkthrough.
+
+Unit test coverage: `tests/FSBar.Client.Tests/AdminChannelCodecTests.fs`
+(wire format round-trip), `tests/FSBar.Hub.Tests/AdminChannelHostTests.fs`
+(host rejection semantics, status transitions). Live coverage:
+`tests/FSBar.Hub.LiveTests/LiveAdminPauseTests.fs` +
+`LiveAdminSpeedTests.fs` + `LiveAdminForceEndTests.fs` +
+`LiveAdminMessageTests.fs` + `LiveScriptingAdminPauseTests.fs` +
+`LiveAdminChannelLossTests.fs` — all marked `[<Trait("Category", "AdminChannel")>]`
+so `dotnet test --filter "Category=AdminChannel"` runs the full live matrix.
 
 ## Hub scripting proto regeneration
 

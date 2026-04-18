@@ -506,6 +506,7 @@ module ActiveSession =
             val mutable EngineSpeed: float32 // (4)
             val mutable Paused: bool // (5)
             val mutable StartedAtUnixMs: int64 // (6)
+            val mutable AdminChannelStatus: OptionBuilder<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo> // (7)
         end
         with
         member x.Put ((tag, reader): int * Reader) =
@@ -516,6 +517,7 @@ module ActiveSession =
             | 4 -> x.EngineSpeed <- ValueCodec.Float.ReadValue reader
             | 5 -> x.Paused <- ValueCodec.Bool.ReadValue reader
             | 6 -> x.StartedAtUnixMs <- ValueCodec.Int64.ReadValue reader
+            | 7 -> x.AdminChannelStatus.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo>.ReadValue reader)
             | _ -> reader.SkipLastField()
         member x.Build : Fsbar.Hub.Scripting.V1.ActiveSession = {
             SessionId = x.SessionId |> orEmptyString
@@ -524,6 +526,7 @@ module ActiveSession =
             EngineSpeed = x.EngineSpeed
             Paused = x.Paused
             StartedAtUnixMs = x.StartedAtUnixMs
+            AdminChannelStatus = x.AdminChannelStatus.Build
             }
 
 type private _ActiveSession = ActiveSession
@@ -538,6 +541,8 @@ type ActiveSession = {
     [<System.Text.Json.Serialization.JsonPropertyName("engineSpeed")>] EngineSpeed: float32 // (4)
     [<System.Text.Json.Serialization.JsonPropertyName("paused")>] Paused: bool // (5)
     [<System.Text.Json.Serialization.JsonPropertyName("startedAtUnixMs")>] StartedAtUnixMs: int64 // (6)
+    /// <summary>Feature 039 — hub-level admin-channel status for the running session.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("adminChannelStatus")>] AdminChannelStatus: Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo option // (7)
     }
     with
     static member Proto : Lazy<ProtoDef<ActiveSession>> =
@@ -549,6 +554,7 @@ type ActiveSession = {
         let EngineSpeed = FieldCodec.Primitive ValueCodec.Float (4, "engineSpeed")
         let Paused = FieldCodec.Primitive ValueCodec.Bool (5, "paused")
         let StartedAtUnixMs = FieldCodec.Primitive ValueCodec.Int64 (6, "startedAtUnixMs")
+        let AdminChannelStatus = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo> (7, "adminChannelStatus")
         // Proto Definition Implementation
         { // ProtoDef<ActiveSession>
             Name = "ActiveSession"
@@ -559,6 +565,7 @@ type ActiveSession = {
                 EngineSpeed = EngineSpeed.GetDefault()
                 Paused = Paused.GetDefault()
                 StartedAtUnixMs = StartedAtUnixMs.GetDefault()
+                AdminChannelStatus = AdminChannelStatus.GetDefault()
                 }
             Size = fun (m: ActiveSession) ->
                 0
@@ -568,6 +575,7 @@ type ActiveSession = {
                 + EngineSpeed.CalcFieldSize m.EngineSpeed
                 + Paused.CalcFieldSize m.Paused
                 + StartedAtUnixMs.CalcFieldSize m.StartedAtUnixMs
+                + AdminChannelStatus.CalcFieldSize m.AdminChannelStatus
             Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: ActiveSession) ->
                 SessionId.WriteField w m.SessionId
                 MapName.WriteField w m.MapName
@@ -575,6 +583,7 @@ type ActiveSession = {
                 EngineSpeed.WriteField w m.EngineSpeed
                 Paused.WriteField w m.Paused
                 StartedAtUnixMs.WriteField w m.StartedAtUnixMs
+                AdminChannelStatus.WriteField w m.AdminChannelStatus
             Decode = fun (r: Google.Protobuf.CodedInputStream) ->
                 let mutable builder = new Fsbar.Hub.Scripting.V1.ActiveSession.Builder()
                 let mutable tag = 0
@@ -588,6 +597,7 @@ type ActiveSession = {
                 let writeEngineSpeed = EngineSpeed.WriteJsonField o
                 let writePaused = Paused.WriteJsonField o
                 let writeStartedAtUnixMs = StartedAtUnixMs.WriteJsonField o
+                let writeAdminChannelStatus = AdminChannelStatus.WriteJsonField o
                 let encode (w: System.Text.Json.Utf8JsonWriter) (m: ActiveSession) =
                     writeSessionId w m.SessionId
                     writeMapName w m.MapName
@@ -595,6 +605,7 @@ type ActiveSession = {
                     writeEngineSpeed w m.EngineSpeed
                     writePaused w m.Paused
                     writeStartedAtUnixMs w m.StartedAtUnixMs
+                    writeAdminChannelStatus w m.AdminChannelStatus
                 encode
             DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
                 let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : ActiveSession =
@@ -605,6 +616,7 @@ type ActiveSession = {
                     | "engineSpeed" -> { value with EngineSpeed = EngineSpeed.ReadJsonField kvPair.Value }
                     | "paused" -> { value with Paused = Paused.ReadJsonField kvPair.Value }
                     | "startedAtUnixMs" -> { value with StartedAtUnixMs = StartedAtUnixMs.ReadJsonField kvPair.Value }
+                    | "adminChannelStatus" -> { value with AdminChannelStatus = AdminChannelStatus.ReadJsonField kvPair.Value }
                     | _ -> value
                 Seq.fold update _ActiveSession.empty (node.AsObject ())
         }
@@ -1088,6 +1100,744 @@ type GetUnitDefResponse = {
     static member empty
         with get() = Fsbar.Hub.Scripting.V1._GetUnitDefResponse.Proto.Value.Empty
 
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module AdminChannelStatusInfo =
+
+    [<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.EnumConverter<State>>)>]
+    type State =
+    | [<FsGrpc.Protobuf.ProtobufName("STATE_UNSPECIFIED")>] Unspecified = 0
+    | [<FsGrpc.Protobuf.ProtobufName("ATTACHED")>] Attached = 1
+    | [<FsGrpc.Protobuf.ProtobufName("UNAVAILABLE")>] Unavailable = 2
+    | [<FsGrpc.Protobuf.ProtobufName("LOST")>] Lost = 3
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable State: Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo.State // (1)
+            val mutable Reason: string // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.State <- ValueCodec.Enum<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo.State>.ReadValue reader
+            | 2 -> x.Reason <- ValueCodec.String.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo = {
+            State = x.State
+            Reason = x.Reason |> orEmptyString
+            }
+
+/// <summary>
+/// Hub-visible admin-channel status. Mirrors
+/// FSBar.Hub.AdminChannelHost.AdminChannelStatus.
+/// </summary>
+type private _AdminChannelStatusInfo = AdminChannelStatusInfo
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type AdminChannelStatusInfo = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("state")>] State: Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo.State // (1)
+    /// <summary>Populated when state = UNAVAILABLE or LOST. Empty otherwise.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("reason")>] Reason: string // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<AdminChannelStatusInfo>> =
+        lazy
+        // Field Definitions
+        let State = FieldCodec.Primitive ValueCodec.Enum<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo.State> (1, "state")
+        let Reason = FieldCodec.Primitive ValueCodec.String (2, "reason")
+        // Proto Definition Implementation
+        { // ProtoDef<AdminChannelStatusInfo>
+            Name = "AdminChannelStatusInfo"
+            Empty = {
+                State = State.GetDefault()
+                Reason = Reason.GetDefault()
+                }
+            Size = fun (m: AdminChannelStatusInfo) ->
+                0
+                + State.CalcFieldSize m.State
+                + Reason.CalcFieldSize m.Reason
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: AdminChannelStatusInfo) ->
+                State.WriteField w m.State
+                Reason.WriteField w m.Reason
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeState = State.WriteJsonField o
+                let writeReason = Reason.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: AdminChannelStatusInfo) =
+                    writeState w m.State
+                    writeReason w m.Reason
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : AdminChannelStatusInfo =
+                    match kvPair.Key with
+                    | "state" -> { value with State = State.ReadJsonField kvPair.Value }
+                    | "reason" -> { value with Reason = Reason.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _AdminChannelStatusInfo.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._AdminChannelStatusInfo.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module AdminSubmitResult =
+
+    [<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.EnumConverter<Outcome>>)>]
+    type Outcome =
+    | [<FsGrpc.Protobuf.ProtobufName("OUTCOME_UNSPECIFIED")>] Unspecified = 0
+    | [<FsGrpc.Protobuf.ProtobufName("SENT")>] Sent = 1
+    | [<FsGrpc.Protobuf.ProtobufName("COALESCED")>] Coalesced = 2
+    | [<FsGrpc.Protobuf.ProtobufName("REJECTED")>] Rejected = 3
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Outcome: Fsbar.Hub.Scripting.V1.AdminSubmitResult.Outcome // (1)
+            val mutable DroppedCount: int // (2)
+            val mutable Reason: string // (3)
+            val mutable AdminChannelStatus: OptionBuilder<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo> // (4)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Outcome <- ValueCodec.Enum<Fsbar.Hub.Scripting.V1.AdminSubmitResult.Outcome>.ReadValue reader
+            | 2 -> x.DroppedCount <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Reason <- ValueCodec.String.ReadValue reader
+            | 4 -> x.AdminChannelStatus.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.AdminSubmitResult = {
+            Outcome = x.Outcome
+            DroppedCount = x.DroppedCount
+            Reason = x.Reason |> orEmptyString
+            AdminChannelStatus = x.AdminChannelStatus.Build
+            }
+
+/// <summary>
+/// Common shape for every admin-command response. Matches the three
+/// FSBar.Hub.AdminChannelHost.SubmitOutcome cases.
+/// </summary>
+type private _AdminSubmitResult = AdminSubmitResult
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type AdminSubmitResult = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("outcome")>] Outcome: Fsbar.Hub.Scripting.V1.AdminSubmitResult.Outcome // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("droppedCount")>] DroppedCount: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("reason")>] Reason: string // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("adminChannelStatus")>] AdminChannelStatus: Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo option // (4)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<AdminSubmitResult>> =
+        lazy
+        // Field Definitions
+        let Outcome = FieldCodec.Primitive ValueCodec.Enum<Fsbar.Hub.Scripting.V1.AdminSubmitResult.Outcome> (1, "outcome")
+        let DroppedCount = FieldCodec.Primitive ValueCodec.Int32 (2, "droppedCount")
+        let Reason = FieldCodec.Primitive ValueCodec.String (3, "reason")
+        let AdminChannelStatus = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminChannelStatusInfo> (4, "adminChannelStatus")
+        // Proto Definition Implementation
+        { // ProtoDef<AdminSubmitResult>
+            Name = "AdminSubmitResult"
+            Empty = {
+                Outcome = Outcome.GetDefault()
+                DroppedCount = DroppedCount.GetDefault()
+                Reason = Reason.GetDefault()
+                AdminChannelStatus = AdminChannelStatus.GetDefault()
+                }
+            Size = fun (m: AdminSubmitResult) ->
+                0
+                + Outcome.CalcFieldSize m.Outcome
+                + DroppedCount.CalcFieldSize m.DroppedCount
+                + Reason.CalcFieldSize m.Reason
+                + AdminChannelStatus.CalcFieldSize m.AdminChannelStatus
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: AdminSubmitResult) ->
+                Outcome.WriteField w m.Outcome
+                DroppedCount.WriteField w m.DroppedCount
+                Reason.WriteField w m.Reason
+                AdminChannelStatus.WriteField w m.AdminChannelStatus
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.AdminSubmitResult.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeOutcome = Outcome.WriteJsonField o
+                let writeDroppedCount = DroppedCount.WriteJsonField o
+                let writeReason = Reason.WriteJsonField o
+                let writeAdminChannelStatus = AdminChannelStatus.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: AdminSubmitResult) =
+                    writeOutcome w m.Outcome
+                    writeDroppedCount w m.DroppedCount
+                    writeReason w m.Reason
+                    writeAdminChannelStatus w m.AdminChannelStatus
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : AdminSubmitResult =
+                    match kvPair.Key with
+                    | "outcome" -> { value with Outcome = Outcome.ReadJsonField kvPair.Value }
+                    | "droppedCount" -> { value with DroppedCount = DroppedCount.ReadJsonField kvPair.Value }
+                    | "reason" -> { value with Reason = Reason.ReadJsonField kvPair.Value }
+                    | "adminChannelStatus" -> { value with AdminChannelStatus = AdminChannelStatus.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _AdminSubmitResult.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._AdminSubmitResult.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module PauseRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = PauseRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type PauseRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<PauseRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<PauseRequest>
+            Name = "PauseRequest"
+            Empty = PauseRequest.empty
+            Size = fun (m: PauseRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: PauseRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                PauseRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> PauseRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module PauseResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Result: OptionBuilder<Fsbar.Hub.Scripting.V1.AdminSubmitResult> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Result.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.PauseResponse = {
+            Result = x.Result.Build
+            }
+
+type private _PauseResponse = PauseResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type PauseResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("result")>] Result: Fsbar.Hub.Scripting.V1.AdminSubmitResult option // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<PauseResponse>> =
+        lazy
+        // Field Definitions
+        let Result = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult> (1, "result")
+        // Proto Definition Implementation
+        { // ProtoDef<PauseResponse>
+            Name = "PauseResponse"
+            Empty = {
+                Result = Result.GetDefault()
+                }
+            Size = fun (m: PauseResponse) ->
+                0
+                + Result.CalcFieldSize m.Result
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: PauseResponse) ->
+                Result.WriteField w m.Result
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.PauseResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeResult = Result.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: PauseResponse) =
+                    writeResult w m.Result
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : PauseResponse =
+                    match kvPair.Key with
+                    | "result" -> { value with Result = Result.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _PauseResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._PauseResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module ResumeRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = ResumeRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type ResumeRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<ResumeRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<ResumeRequest>
+            Name = "ResumeRequest"
+            Empty = ResumeRequest.empty
+            Size = fun (m: ResumeRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: ResumeRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                ResumeRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> ResumeRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module ResumeResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Result: OptionBuilder<Fsbar.Hub.Scripting.V1.AdminSubmitResult> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Result.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.ResumeResponse = {
+            Result = x.Result.Build
+            }
+
+type private _ResumeResponse = ResumeResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type ResumeResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("result")>] Result: Fsbar.Hub.Scripting.V1.AdminSubmitResult option // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<ResumeResponse>> =
+        lazy
+        // Field Definitions
+        let Result = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult> (1, "result")
+        // Proto Definition Implementation
+        { // ProtoDef<ResumeResponse>
+            Name = "ResumeResponse"
+            Empty = {
+                Result = Result.GetDefault()
+                }
+            Size = fun (m: ResumeResponse) ->
+                0
+                + Result.CalcFieldSize m.Result
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: ResumeResponse) ->
+                Result.WriteField w m.Result
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.ResumeResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeResult = Result.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: ResumeResponse) =
+                    writeResult w m.Result
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : ResumeResponse =
+                    match kvPair.Key with
+                    | "result" -> { value with Result = Result.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _ResumeResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._ResumeResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module SetEngineSpeedRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Speed: float32 // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Speed <- ValueCodec.Float.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest = {
+            Speed = x.Speed
+            }
+
+type private _SetEngineSpeedRequest = SetEngineSpeedRequest
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type SetEngineSpeedRequest = {
+    // Field Declarations
+    /// <summary>
+    /// Multiplier relative to 1.0x engine-native speed. Must be finite and
+    /// positive; Hub-local validation rejects non-positive values.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("speed")>] Speed: float32 // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<SetEngineSpeedRequest>> =
+        lazy
+        // Field Definitions
+        let Speed = FieldCodec.Primitive ValueCodec.Float (1, "speed")
+        // Proto Definition Implementation
+        { // ProtoDef<SetEngineSpeedRequest>
+            Name = "SetEngineSpeedRequest"
+            Empty = {
+                Speed = Speed.GetDefault()
+                }
+            Size = fun (m: SetEngineSpeedRequest) ->
+                0
+                + Speed.CalcFieldSize m.Speed
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: SetEngineSpeedRequest) ->
+                Speed.WriteField w m.Speed
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeSpeed = Speed.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: SetEngineSpeedRequest) =
+                    writeSpeed w m.Speed
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : SetEngineSpeedRequest =
+                    match kvPair.Key with
+                    | "speed" -> { value with Speed = Speed.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _SetEngineSpeedRequest.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._SetEngineSpeedRequest.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module SetEngineSpeedResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Result: OptionBuilder<Fsbar.Hub.Scripting.V1.AdminSubmitResult> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Result.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.SetEngineSpeedResponse = {
+            Result = x.Result.Build
+            }
+
+type private _SetEngineSpeedResponse = SetEngineSpeedResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type SetEngineSpeedResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("result")>] Result: Fsbar.Hub.Scripting.V1.AdminSubmitResult option // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<SetEngineSpeedResponse>> =
+        lazy
+        // Field Definitions
+        let Result = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult> (1, "result")
+        // Proto Definition Implementation
+        { // ProtoDef<SetEngineSpeedResponse>
+            Name = "SetEngineSpeedResponse"
+            Empty = {
+                Result = Result.GetDefault()
+                }
+            Size = fun (m: SetEngineSpeedResponse) ->
+                0
+                + Result.CalcFieldSize m.Result
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: SetEngineSpeedResponse) ->
+                Result.WriteField w m.Result
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.SetEngineSpeedResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeResult = Result.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: SetEngineSpeedResponse) =
+                    writeResult w m.Result
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : SetEngineSpeedResponse =
+                    match kvPair.Key with
+                    | "result" -> { value with Result = Result.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _SetEngineSpeedResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._SetEngineSpeedResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module ForceEndMatchRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = ForceEndMatchRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type ForceEndMatchRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<ForceEndMatchRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<ForceEndMatchRequest>
+            Name = "ForceEndMatchRequest"
+            Empty = ForceEndMatchRequest.empty
+            Size = fun (m: ForceEndMatchRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: ForceEndMatchRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                ForceEndMatchRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> ForceEndMatchRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module ForceEndMatchResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Result: OptionBuilder<Fsbar.Hub.Scripting.V1.AdminSubmitResult> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Result.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.ForceEndMatchResponse = {
+            Result = x.Result.Build
+            }
+
+type private _ForceEndMatchResponse = ForceEndMatchResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type ForceEndMatchResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("result")>] Result: Fsbar.Hub.Scripting.V1.AdminSubmitResult option // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<ForceEndMatchResponse>> =
+        lazy
+        // Field Definitions
+        let Result = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult> (1, "result")
+        // Proto Definition Implementation
+        { // ProtoDef<ForceEndMatchResponse>
+            Name = "ForceEndMatchResponse"
+            Empty = {
+                Result = Result.GetDefault()
+                }
+            Size = fun (m: ForceEndMatchResponse) ->
+                0
+                + Result.CalcFieldSize m.Result
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: ForceEndMatchResponse) ->
+                Result.WriteField w m.Result
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.ForceEndMatchResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeResult = Result.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: ForceEndMatchResponse) =
+                    writeResult w m.Result
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : ForceEndMatchResponse =
+                    match kvPair.Key with
+                    | "result" -> { value with Result = Result.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _ForceEndMatchResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._ForceEndMatchResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module SendAdminMessageRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Text: string // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Text <- ValueCodec.String.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.SendAdminMessageRequest = {
+            Text = x.Text |> orEmptyString
+            }
+
+type private _SendAdminMessageRequest = SendAdminMessageRequest
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type SendAdminMessageRequest = {
+    // Field Declarations
+    /// <summary>Free-form UTF-8. Empty strings are rejected locally.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("text")>] Text: string // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<SendAdminMessageRequest>> =
+        lazy
+        // Field Definitions
+        let Text = FieldCodec.Primitive ValueCodec.String (1, "text")
+        // Proto Definition Implementation
+        { // ProtoDef<SendAdminMessageRequest>
+            Name = "SendAdminMessageRequest"
+            Empty = {
+                Text = Text.GetDefault()
+                }
+            Size = fun (m: SendAdminMessageRequest) ->
+                0
+                + Text.CalcFieldSize m.Text
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: SendAdminMessageRequest) ->
+                Text.WriteField w m.Text
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.SendAdminMessageRequest.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeText = Text.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: SendAdminMessageRequest) =
+                    writeText w m.Text
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : SendAdminMessageRequest =
+                    match kvPair.Key with
+                    | "text" -> { value with Text = Text.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _SendAdminMessageRequest.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._SendAdminMessageRequest.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module SendAdminMessageResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Result: OptionBuilder<Fsbar.Hub.Scripting.V1.AdminSubmitResult> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Result.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.SendAdminMessageResponse = {
+            Result = x.Result.Build
+            }
+
+type private _SendAdminMessageResponse = SendAdminMessageResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type SendAdminMessageResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("result")>] Result: Fsbar.Hub.Scripting.V1.AdminSubmitResult option // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<SendAdminMessageResponse>> =
+        lazy
+        // Field Definitions
+        let Result = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.AdminSubmitResult> (1, "result")
+        // Proto Definition Implementation
+        { // ProtoDef<SendAdminMessageResponse>
+            Name = "SendAdminMessageResponse"
+            Empty = {
+                Result = Result.GetDefault()
+                }
+            Size = fun (m: SendAdminMessageResponse) ->
+                0
+                + Result.CalcFieldSize m.Result
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: SendAdminMessageResponse) ->
+                Result.WriteField w m.Result
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.SendAdminMessageResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeResult = Result.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: SendAdminMessageResponse) =
+                    writeResult w m.Result
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : SendAdminMessageResponse =
+                    match kvPair.Key with
+                    | "result" -> { value with Result = Result.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _SendAdminMessageResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._SendAdminMessageResponse.Proto.Value.Empty
+
 module ScriptingService =
     let private __Marshaller__fsbar_hub_scripting_v1_GameFrameMessage = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.GameFrameMessage) -> FsGrpc.Protobuf.encode x),
@@ -1105,6 +1855,26 @@ module ScriptingService =
         (fun (x: Fsbar.Hub.Scripting.V1.GetUnitDefResponse) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
     )
+    let private __Marshaller__fsbar_hub_scripting_v1_PauseResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.PauseResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_ResumeResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.ResumeResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_SetEngineSpeedResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.SetEngineSpeedResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_ForceEndMatchResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.ForceEndMatchResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_SendAdminMessageResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.SendAdminMessageResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
     let private __Marshaller__fsbar_hub_scripting_v1_StreamGameFramesRequest = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.StreamGameFramesRequest) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
@@ -1119,6 +1889,26 @@ module ScriptingService =
     )
     let private __Marshaller__fsbar_hub_scripting_v1_GetUnitDefRequest = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.GetUnitDefRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_PauseRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.PauseRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_ResumeRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.ResumeRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_SetEngineSpeedRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_ForceEndMatchRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.ForceEndMatchRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_SendAdminMessageRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.SendAdminMessageRequest) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
     )
     let private __Method_StreamGameFrames =
@@ -1153,6 +1943,46 @@ module ScriptingService =
             __Marshaller__fsbar_hub_scripting_v1_GetUnitDefRequest,
             __Marshaller__fsbar_hub_scripting_v1_GetUnitDefResponse
         )
+    let private __Method_Pause =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.PauseRequest,Fsbar.Hub.Scripting.V1.PauseResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "Pause",
+            __Marshaller__fsbar_hub_scripting_v1_PauseRequest,
+            __Marshaller__fsbar_hub_scripting_v1_PauseResponse
+        )
+    let private __Method_Resume =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.ResumeRequest,Fsbar.Hub.Scripting.V1.ResumeResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "Resume",
+            __Marshaller__fsbar_hub_scripting_v1_ResumeRequest,
+            __Marshaller__fsbar_hub_scripting_v1_ResumeResponse
+        )
+    let private __Method_SetEngineSpeed =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest,Fsbar.Hub.Scripting.V1.SetEngineSpeedResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "SetEngineSpeed",
+            __Marshaller__fsbar_hub_scripting_v1_SetEngineSpeedRequest,
+            __Marshaller__fsbar_hub_scripting_v1_SetEngineSpeedResponse
+        )
+    let private __Method_ForceEndMatch =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.ForceEndMatchRequest,Fsbar.Hub.Scripting.V1.ForceEndMatchResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "ForceEndMatch",
+            __Marshaller__fsbar_hub_scripting_v1_ForceEndMatchRequest,
+            __Marshaller__fsbar_hub_scripting_v1_ForceEndMatchResponse
+        )
+    let private __Method_SendAdminMessage =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.SendAdminMessageRequest,Fsbar.Hub.Scripting.V1.SendAdminMessageResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "SendAdminMessage",
+            __Marshaller__fsbar_hub_scripting_v1_SendAdminMessageRequest,
+            __Marshaller__fsbar_hub_scripting_v1_SendAdminMessageResponse
+        )
     [<AbstractClass>]
     [<Grpc.Core.BindServiceMethod(typeof<ServiceBase>, "BindService")>]
     type ServiceBase() = 
@@ -1160,6 +1990,11 @@ module ScriptingService =
         abstract member SendCommand : Fsbar.Hub.Scripting.V1.SendCommandRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.SendCommandResponse>
         abstract member GetSessionStatus : Fsbar.Hub.Scripting.V1.GetSessionStatusRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.GetSessionStatusResponse>
         abstract member GetUnitDef : Fsbar.Hub.Scripting.V1.GetUnitDefRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.GetUnitDefResponse>
+        abstract member Pause : Fsbar.Hub.Scripting.V1.PauseRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.PauseResponse>
+        abstract member Resume : Fsbar.Hub.Scripting.V1.ResumeRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.ResumeResponse>
+        abstract member SetEngineSpeed : Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.SetEngineSpeedResponse>
+        abstract member ForceEndMatch : Fsbar.Hub.Scripting.V1.ForceEndMatchRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.ForceEndMatchResponse>
+        abstract member SendAdminMessage : Fsbar.Hub.Scripting.V1.SendAdminMessageRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.SendAdminMessageResponse>
         static member BindService (serviceBinder: Grpc.Core.ServiceBinderBase) (serviceImpl: ServiceBase) =
             let serviceMethodOrNull =
                 match box serviceImpl with
@@ -1181,6 +2016,31 @@ module ScriptingService =
                 | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetUnitDefRequest,Fsbar.Hub.Scripting.V1.GetUnitDefResponse>>
                 | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetUnitDefRequest,Fsbar.Hub.Scripting.V1.GetUnitDefResponse>(serviceImpl.GetUnitDef)
             serviceBinder.AddMethod(__Method_GetUnitDef, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.PauseRequest,Fsbar.Hub.Scripting.V1.PauseResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.PauseRequest,Fsbar.Hub.Scripting.V1.PauseResponse>(serviceImpl.Pause)
+            serviceBinder.AddMethod(__Method_Pause, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ResumeRequest,Fsbar.Hub.Scripting.V1.ResumeResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ResumeRequest,Fsbar.Hub.Scripting.V1.ResumeResponse>(serviceImpl.Resume)
+            serviceBinder.AddMethod(__Method_Resume, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest,Fsbar.Hub.Scripting.V1.SetEngineSpeedResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest,Fsbar.Hub.Scripting.V1.SetEngineSpeedResponse>(serviceImpl.SetEngineSpeed)
+            serviceBinder.AddMethod(__Method_SetEngineSpeed, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ForceEndMatchRequest,Fsbar.Hub.Scripting.V1.ForceEndMatchResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ForceEndMatchRequest,Fsbar.Hub.Scripting.V1.ForceEndMatchResponse>(serviceImpl.ForceEndMatch)
+            serviceBinder.AddMethod(__Method_ForceEndMatch, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.SendAdminMessageRequest,Fsbar.Hub.Scripting.V1.SendAdminMessageResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.SendAdminMessageRequest,Fsbar.Hub.Scripting.V1.SendAdminMessageResponse>(serviceImpl.SendAdminMessage)
+            serviceBinder.AddMethod(__Method_SendAdminMessage, serviceMethodOrNull) |> ignore
     type Client = 
         inherit Grpc.Core.ClientBase<Client>
         new () = { inherit Grpc.Core.ClientBase<Client>() }
@@ -1202,3 +2062,23 @@ module ScriptingService =
             this.CallInvoker.BlockingUnaryCall(__Method_GetUnitDef, Unchecked.defaultof<string>, callOptions, request)
         member this.GetUnitDefAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetUnitDefRequest) =
             this.CallInvoker.AsyncUnaryCall(__Method_GetUnitDef, Unchecked.defaultof<string>, callOptions, request)
+        member this.Pause (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.PauseRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_Pause, Unchecked.defaultof<string>, callOptions, request)
+        member this.PauseAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.PauseRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_Pause, Unchecked.defaultof<string>, callOptions, request)
+        member this.Resume (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ResumeRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_Resume, Unchecked.defaultof<string>, callOptions, request)
+        member this.ResumeAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ResumeRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_Resume, Unchecked.defaultof<string>, callOptions, request)
+        member this.SetEngineSpeed (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_SetEngineSpeed, Unchecked.defaultof<string>, callOptions, request)
+        member this.SetEngineSpeedAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.SetEngineSpeedRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_SetEngineSpeed, Unchecked.defaultof<string>, callOptions, request)
+        member this.ForceEndMatch (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ForceEndMatchRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_ForceEndMatch, Unchecked.defaultof<string>, callOptions, request)
+        member this.ForceEndMatchAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ForceEndMatchRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_ForceEndMatch, Unchecked.defaultof<string>, callOptions, request)
+        member this.SendAdminMessage (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.SendAdminMessageRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_SendAdminMessage, Unchecked.defaultof<string>, callOptions, request)
+        member this.SendAdminMessageAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.SendAdminMessageRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_SendAdminMessage, Unchecked.defaultof<string>, callOptions, request)

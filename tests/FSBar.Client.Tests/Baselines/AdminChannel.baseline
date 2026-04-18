@@ -1,0 +1,98 @@
+namespace FSBar.Client
+
+/// <summary>
+/// Low-level client for the Spring/Recoil engine's autohost UDP interface
+/// (feature 039, see <c>specs/039-hub-admin-channel/contracts/autohost-wire.md</c>).
+/// Owns a single <c>UdpClient</c> bound on <c>127.0.0.1</c>, encode/decode, and a
+/// receive pump on a dedicated thread. Intended to be consumed by
+/// <c>FSBar.Hub.AdminChannelHost</c>, which layers coalescing and hub-level status
+/// semantics on top.
+/// </summary>
+module AdminChannel =
+
+    /// <summary>Outbound hub → engine admin command. Action codes map to
+    /// <c>AutohostInterface.cpp</c> in the engine source.</summary>
+    type AdminCommandOut =
+        /// <summary>Set the simulation pause flag. Action code 5.</summary>
+        | Pause of paused: bool
+        /// <summary>Set the engine speed multiplier. Action code 4.</summary>
+        | SetGameSpeed of speed: float32
+        /// <summary>Broadcast a text message into the engine's in-game chat log.
+        /// Action code 8. Attributed by the engine's native autohost speaker —
+        /// no hub-supplied name.</summary>
+        | SayMessage of text: string
+        /// <summary>Request the engine to shut down cleanly (force-end).
+        /// Action code 0.</summary>
+        | KillServer
+
+    /// <summary>Inbound engine → hub admin event. Unknown codes are preserved so
+    /// future engine revisions don't silently vanish from diagnostics.</summary>
+    type AdminEventIn =
+        /// <summary>Engine reported <c>SERVER_STARTED</c> (action 0). Channel
+        /// is now considered Attached at the hub layer.</summary>
+        | ServerStarted
+        /// <summary>Engine reported <c>SERVER_QUIT</c> (action 1).</summary>
+        | ServerQuit of reason: string
+        /// <summary>Engine reported <c>SERVER_STARTPLAYING</c> (action 2).
+        /// Unblocks deferred first-frame pause (FR-004).</summary>
+        | ServerStartPlaying
+        /// <summary>Engine reported <c>SERVER_GAMEOVER</c> (action 3).</summary>
+        | ServerGameOver
+        /// <summary>Engine reported <c>PLAYER_CHAT</c> (action 7).</summary>
+        | PlayerChat of playerId: int * text: string
+        /// <summary>Engine reported <c>GAME_WARNING</c> (action 11). Surfaced
+        /// to <c>HubEvent.DiagnosticsLine Warning</c>.</summary>
+        | GameWarning of text: string
+        /// <summary>An inbound action code outside the set explicitly handled
+        /// above. The raw payload is preserved for diagnostics.</summary>
+        | Unknown of code: byte * payload: byte[]
+
+    /// <summary>Socket-level state of an <see cref="T:FSBar.Client.AdminChannel.AdminChannel"/>.
+    /// The hub-level <c>AdminChannelStatus</c> (in <c>FSBar.Hub.AdminChannelHost</c>)
+    /// layers richer semantics on top.</summary>
+    type ChannelState =
+        /// <summary>The socket has not yet been bound.</summary>
+        | NotBound
+        /// <summary>The socket is bound on the given local port but has not
+        /// yet seen any inbound traffic from the engine.</summary>
+        | Bound of port: int
+        /// <summary>The socket has received at least one datagram from the
+        /// engine; the engine's remote endpoint is pinned to that address.</summary>
+        | ReceivingFrom of engineEndpoint: System.Net.IPEndPoint
+        /// <summary>The socket is no longer usable. <c>reason</c> captures why.</summary>
+        | Closed of reason: string
+
+    /// <summary>Encode an outbound command to the UDP datagram bytes the engine expects.
+    /// Exposed for unit testing; production callers should use
+    /// <see cref="M:FSBar.Client.AdminChannel.AdminChannel.Send"/>.</summary>
+    val encodeCommand: cmd: AdminCommandOut -> byte[]
+
+    /// <summary>Decode an inbound UDP datagram from the engine into an
+    /// <see cref="T:FSBar.Client.AdminChannel.AdminEventIn"/>. Returns
+    /// <c>Unknown</c> for any action code outside the handled set, preserving the raw payload.</summary>
+    /// <param name="bytes">The datagram payload (including the leading action code).</param>
+    val decodeEvent: bytes: byte[] -> AdminEventIn
+
+    /// <summary>Live admin channel. One instance owns one UDP socket and one
+    /// receive pump. Dispose to close the socket and stop the pump.</summary>
+    [<Sealed>]
+    type AdminChannel =
+        /// <summary>Current socket-level state. Thread-safe snapshot.</summary>
+        member State: ChannelState
+        /// <summary>Allocated local port. Valid once <c>State</c> is <c>Bound</c> or later.</summary>
+        member LocalPort: int option
+        /// <summary>Observable of inbound engine events. Completes when the
+        /// channel transitions to <c>Closed</c>.</summary>
+        member Events: System.IObservable<AdminEventIn>
+        /// <summary>Send one outbound command. Returns <c>Ok</c> when the UDP
+        /// datagram has been written; <c>Error</c> if the socket is closed, unbound,
+        /// or the engine endpoint is still unknown (no inbound datagram yet).</summary>
+        member Send: cmd: AdminCommandOut -> Result<unit, string>
+        interface System.IDisposable
+
+    /// <summary>Binds a fresh UDP socket on <c>IPAddress.Loopback:0</c> and returns it
+    /// in the <c>Bound</c> state. The caller writes the allocated port into
+    /// <c>springsettings.cfg</c> (via <see cref="M:FSBar.Client.ScriptGenerator.generateSpringSettings"/>)
+    /// and launches the engine; once the first datagram arrives the channel
+    /// auto-transitions to <c>ReceivingFrom</c>.</summary>
+    val bind: unit -> Result<AdminChannel, string>

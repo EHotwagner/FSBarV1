@@ -54,6 +54,19 @@ module HubEvents =
         /// Step failed; the payload carries the operator-visible reason.
         | StepFailed of reason: string
 
+    /// Hub-visible admin-channel status (feature 039). Mirrors
+    /// `FSBar.Hub.AdminChannelHost.AdminChannelStatus` — kept here so
+    /// `HubEvent.AdminChannelStatusChanged` can reference it without
+    /// pulling `AdminChannelHost` ahead of `HubEvents` in the compile
+    /// order.
+    type AdminChannelStatus =
+        /// Channel attached; admin commands are accepted.
+        | Attached
+        /// Channel could not be brought up at launch. `reason` populated.
+        | Unavailable of reason: string
+        /// Channel was `Attached` but has since failed. `reason` populated.
+        | Lost of reason: string
+
     /// Coarse session-state tag surfaced by `StateChanged`.
     ///
     /// Phase 2 scope: `SessionManager` does not yet exist, so this enum
@@ -85,6 +98,8 @@ module HubEvents =
         | ScriptingClientDetached of clientId: System.Guid * reason: DetachReason
         /// One step of the proxy-install flow reported its outcome.
         | ProxyInstallProgress of step: ProxyInstallStep * outcome: StepOutcome
+        /// The admin channel's hub-level status changed (feature 039).
+        | AdminChannelStatusChanged of status: AdminChannelStatus
 
     /// Inbound-only handle for modules that publish events. Taking this
     /// instead of a full `HubEventBus` reference in constructors makes the

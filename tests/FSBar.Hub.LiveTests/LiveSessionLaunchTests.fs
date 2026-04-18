@@ -176,14 +176,20 @@ type LiveSessionLaunchTests() =
         Assert.True(running, "session did not reach Running state")
 
         sm.SetSpeed 3.0f
-        sm.SetPaused true
-        sm.SetPaused false
+        // Feature 039: SetPaused(bool) was removed; drive pause/resume
+        // through the admin channel. These calls go out over UDP and
+        // may Reject if the autohost channel is unavailable in this
+        // environment — the assertions below only check the speed event.
+        sm.Pause() |> ignore
+        sm.Resume() |> ignore
         Thread.Sleep(200)
 
         let events = observedCtrl.ToArray()
         Assert.Contains(events, function HubEvents.EngineSpeedChanged 3.0f -> true | _ -> false)
-        Assert.Contains(events, function HubEvents.SessionPaused true -> true | _ -> false)
-        Assert.Contains(events, function HubEvents.SessionPaused false -> true | _ -> false)
+        // Don't assert SessionPaused was published — the feature 039
+        // admin channel may reject pauses when autohost isn't attached,
+        // in which case no SessionPaused event fires. That is tested
+        // in LiveAdminPauseTests instead.
 
         sm.End()
     }

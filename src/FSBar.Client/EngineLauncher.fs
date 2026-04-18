@@ -105,9 +105,12 @@ module EngineLauncher =
         // Copy archive cache if available
         springDataDir |> Option.iter (fun dir -> copyArchiveCache dir sessionDir)
 
-        // Write springsettings.cfg to force windowed mode for graphical launches
+        // Write springsettings.cfg — forces windowed mode and, when
+        // EngineConfig.AutohostPort is set, emits the autohost interface
+        // lines so the engine dials back to the hub's pre-bound UDP
+        // socket (feature 039 admin channel).
         let settingsPath = Path.Combine(sessionDir, "springsettings.cfg")
-        File.WriteAllText(settingsPath, "Fullscreen=0\nXResolution=1280\nYResolution=720\n")
+        File.WriteAllText(settingsPath, ScriptGenerator.generateSpringSettings config)
 
         // When FSBAR_ENGINE_WRAPPER is set to an executable path, run
         // the engine through it — the wrapper can install

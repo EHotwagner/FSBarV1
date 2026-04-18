@@ -79,22 +79,49 @@ module SessionManager =
         /// the AI-command plumbing in Phase 9 / US7.
         member SetSpeed: speed: float32 -> unit
 
-        /// Ensure pause state matches the argument (feature 038). When
-        /// `IsPaused <> paused`, issues a `/pause` chat command via
-        /// the internal `BarClient` and publishes `SessionPaused`.
-        /// No-op when the session is not `Running`.
-        member SetPaused: paused: bool -> unit
+        /// Set the engine speed multiplier via the admin channel
+        /// (feature 039). Values that are non-positive, NaN, or
+        /// infinite are rejected locally without touching the socket.
+        /// Engine-range rejection arrives as a
+        /// `HubEvent.DiagnosticsLine Warning`.
+        member SetEngineSpeed: speed: float32 -> AdminChannelHost.SubmitOutcome
+
+        /// Force-end the active match (feature 039 US3). Sends
+        /// `KILLSERVER` through the admin channel and arms a wall-clock
+        /// watchdog that escalates to SIGTERM at 5 s and SIGKILL at 8 s
+        /// if the engine hasn't exited (research.md §R8).
+        member ForceEnd: unit -> AdminChannelHost.SubmitOutcome
+
+        /// Broadcast an admin message into the engine's in-game chat log
+        /// (feature 039 US4). Empty / whitespace-only strings reject
+        /// locally without touching the socket.
+        member SendAdminMessage: text: string -> AdminChannelHost.SubmitOutcome
+
+        /// Pause the active match via the admin channel (feature 039).
+        /// Returns `Rejected` when no session is active or when the
+        /// admin channel is not `Attached`.
+        member Pause: unit -> AdminChannelHost.SubmitOutcome
+
+        /// Resume the active match via the admin channel (feature 039).
+        /// Returns `Rejected` when no session is active or when the
+        /// admin channel is not `Attached`.
+        member Resume: unit -> AdminChannelHost.SubmitOutcome
 
         /// True when the hub has most recently issued a pause to the
         /// engine. Not a live mirror of the engine state — BAR's
         /// native UI can flip the engine pause out-of-band without
-        /// the hub noticing (research.md §R2 pick A).
+        /// the hub noticing (research.md §R2 pick A / §R4).
         member IsPaused: bool
 
         /// Flip pause/unpause in a single call. Safe from any state;
         /// emits `SessionPaused` exactly once per toggle. Backing the
-        /// Viewer-tab pause button (FR-004b).
+        /// Viewer-tab pause button (FR-004b). Dispatches to `Pause` or
+        /// `Resume` based on the current `IsPaused` reading.
         member TogglePause: unit -> unit
+
+        /// Current admin-channel status, or `None` when no session is
+        /// active (data-model.md §8 invariant I3). Feature 039.
+        member AdminStatus: HubEvents.AdminChannelStatus option
 
         /// Tear down the active session. Safe to call from any state.
         /// Does not exit the hub process or close gRPC clients.

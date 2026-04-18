@@ -76,20 +76,21 @@ module SessionManager =
         /// if any. Swapped on every session transition.
         let mutable currentSubscription: IDisposable option = None
 
-        // Feature 038: hub-known pause state.
-        //
-        // KNOWN LIMITATION (2026-04-17 investigation, spring-headless
-        // 2025.06.19): neither `/pause` nor `/speed 0` reliably halts
-        // simulation when sent via `BarClient.SendCommands` as a
-        // chat message from the AI team. `/pause` hangs the engine
-        // on the Pause Screen widget; `/speed 0` has no observable
-        // effect. Until a working mechanism ships, pause is hub-side
-        // only: `SetPaused` / `TogglePause` flip the in-memory flag
-        // and emit `SessionPaused`, and `ViewerTab.render` freezes
-        // the displayed snapshot while the flag is set. The game
-        // continues to advance in the background.
+        // Feature 039: per-session admin channel + host. Set at Launch,
+        // cleared at Ending → Idle. When `AdminChannel.bind()` fails at
+        // launch the channel slot stays None and the host is constructed
+        // in `Unavailable` state (FR-009).
+        let mutable adminChannel: AdminChannel.AdminChannel option = None
+        let mutable adminHost: AdminChannelHost.AdminChannelHost option = None
+
+        // Feature 039: `startPaused` now flips through the admin
+        // channel's Pause command. We defer issuing the first
+        // `Pause true` until the autohost `ServerStartPlaying` event
+        // arrives — this is the first instant the engine will honor
+        // a pause (research.md §R9). Subscription is armed inside
+        // Launch and self-disposes after firing once.
         let mutable startPausedForNextLaunch: bool = false
-        let mutable isPausedFlag: int = 0
+        let mutable startPausedSubscription: IDisposable option = None
 
         let transitionTo (newState: SessionState) =
             lock sync (fun () -> state <- newState)
@@ -105,12 +106,24 @@ module SessionManager =
                 currentSubscription <- None
             | None -> ()
 
+        let mutable lastReportedFrame = 0u
+        let mutable lastReportTime = DateTimeOffset.UtcNow
         let attachFrames (client: BarClient) =
             detachFrames ()
+            lastReportedFrame <- 0u
+            lastReportTime <- DateTimeOffset.UtcNow
             let subscription =
                 client.Frames.Subscribe(
                     { new IObserver<GameFrame> with
-                        member _.OnNext(frame) = fanOut.Publish(frame)
+                        member _.OnNext(frame) =
+                            let now = DateTimeOffset.UtcNow
+                            if (now - lastReportTime).TotalSeconds >= 2.0 then
+                                let delta = int frame.FrameNumber - int lastReportedFrame
+                                eprintfn "[SessionManager] frame=%d (Δ=%d in 2s)"
+                                    frame.FrameNumber delta
+                                lastReportedFrame <- frame.FrameNumber
+                                lastReportTime <- now
+                            fanOut.Publish(frame)
                         member _.OnError(ex) =
                             publishDiagnostic HubEvents.Error
                                 (sprintf "BarClient.Frames errored: %s" ex.Message)
@@ -125,9 +138,43 @@ module SessionManager =
                             | _ -> () })
             currentSubscription <- Some subscription
 
+        let disposeAdminChannel () =
+            startPausedSubscription |> Option.iter (fun s ->
+                try s.Dispose() with _ -> ())
+            startPausedSubscription <- None
+            adminHost |> Option.iter (fun h ->
+                try (h :> IDisposable).Dispose() with _ -> ())
+            adminHost <- None
+            adminChannel |> Option.iter (fun c ->
+                try (c :> IDisposable).Dispose() with _ -> ())
+            adminChannel <- None
+
         let startSessionBackground (lobby: LobbyConfig.LobbyConfig) (engineCfg: EngineConfig) =
             ignore (System.Threading.Tasks.Task.Run(fun () ->
                 try
+                    // Feature 039: bind the admin channel BEFORE the
+                    // engine is spawned so the engine's autohost client
+                    // can dial back into a socket we already own. On
+                    // bind failure, construct the host in `Unavailable`
+                    // state and continue the launch in read-only mode
+                    // (FR-009) so the Viewer-tab toolbar can render the
+                    // reason.
+                    let engineCfg =
+                        match AdminChannel.bind () with
+                        | Ok ch ->
+                            let port =
+                                ch.LocalPort |> Option.defaultValue 0
+                            adminChannel <- Some ch
+                            adminHost <-
+                                Some (AdminChannelHost.attach(ch, events))
+                            { engineCfg with AutohostPort = Some port }
+                        | Result.Error reason ->
+                            adminChannel <- None
+                            adminHost <-
+                                Some (AdminChannelHost.unavailable(reason, events))
+                            publishDiagnostic HubEvents.Warning
+                                (sprintf "admin channel unavailable: %s" reason)
+                            { engineCfg with AutohostPort = None }
                     let client = BarClient.create engineCfg
                     client.Start()
                     // Load the MapGrid BEFORE subscribing to
@@ -166,17 +213,39 @@ module SessionManager =
                         MetalSpots = metalSpots
                     }
                     transitionTo (Running rs)
-                    // Feature 038 FR-003: if this launch was armed to
-                    // start paused, flip the hub-side flag now. The
-                    // Viewer tab renders the frozen first-frame state
-                    // until the user unpauses (engine-level pause is
-                    // unavailable on this BAR build — see note above).
+                    // Feature 039 FR-004: defer the initial Pause(true)
+                    // until the autohost ServerStartPlaying event fires
+                    // (research.md §R9). Subscribe here and self-dispose
+                    // after the first hit.
                     if startPausedForNextLaunch then
                         startPausedForNextLaunch <- false
-                        Interlocked.Exchange(&isPausedFlag, 1) |> ignore
-                        events.Publish(HubEvents.SessionPaused true)
-                    else
-                        Interlocked.Exchange(&isPausedFlag, 0) |> ignore
+                        match adminChannel with
+                        | Some ch ->
+                            let sub =
+                                ch.Events.Subscribe(
+                                    { new IObserver<AdminChannel.AdminEventIn> with
+                                        member _.OnNext(evt) =
+                                            match evt with
+                                            | AdminChannel.ServerStartPlaying ->
+                                                adminHost |> Option.iter (fun h ->
+                                                    match h.Submit(AdminChannel.Pause true) with
+                                                    | AdminChannelHost.Sent ->
+                                                        events.Publish(HubEvents.SessionPaused true)
+                                                    | _ -> ())
+                                                startPausedSubscription |> Option.iter (fun s ->
+                                                    try s.Dispose() with _ -> ())
+                                                startPausedSubscription <- None
+                                            | _ -> ()
+                                        member _.OnError(_) = ()
+                                        member _.OnCompleted() = () })
+                            startPausedSubscription <- Some sub
+                        | None ->
+                            // Admin channel unavailable — record the
+                            // intent diagnostically and move on. The
+                            // UI will render the toolbar disabled per
+                            // FR-009.
+                            publishDiagnostic HubEvents.Warning
+                                "startPaused requested but admin channel is unavailable"
                     publishDiagnostic HubEvents.Info
                         (sprintf "session %s started — map=%s vs %s (MapGrid=%s, metalSpots=%d)"
                             (rs.Id.ToString("N").Substring(0, 8))
@@ -224,20 +293,123 @@ module SessionManager =
         member _.SetSpeed(speed: float32) =
             events.Publish(HubEvents.EngineSpeedChanged speed)
 
-        member _.IsPaused =
-            Volatile.Read(&isPausedFlag) <> 0
+        member _.SetEngineSpeed(speed: float32) : AdminChannelHost.SubmitOutcome =
+            if Single.IsNaN(speed) || Single.IsInfinity(speed) || speed <= 0.0f then
+                AdminChannelHost.Rejected "engine speed must be a positive finite number"
+            else
+                match adminHost with
+                | Some h ->
+                    let outcome = h.Submit(AdminChannel.SetGameSpeed speed)
+                    match outcome with
+                    | AdminChannelHost.Sent ->
+                        events.Publish(HubEvents.EngineSpeedChanged speed)
+                    | _ -> ()
+                    outcome
+                | None -> AdminChannelHost.Rejected "no active session"
 
-        member this.SetPaused(paused: bool) =
-            let current = this.IsPaused
-            if current = paused then () else
+        member this.ForceEnd() : AdminChannelHost.SubmitOutcome =
+            match adminHost with
+            | Some h ->
+                let outcome = h.Submit(AdminChannel.KillServer)
+                match outcome with
+                | AdminChannelHost.Sent ->
+                    // Arm the escalation watchdog on a background task.
+                    // Per research.md §R8: SIGTERM at 5s, SIGKILL at 8s.
+                    ignore (System.Threading.Tasks.Task.Run(fun () ->
+                        Thread.Sleep(5000)
+                        if this.State <> Idle then
+                            match this.State with
+                            | Running rs | Ending rs ->
+                                publishDiagnostic HubEvents.Warning
+                                    "force-end: engine still alive after 5s, escalating"
+                                try rs.BarClient.Stop() with _ -> ()
+                            | _ -> ()
+                            Thread.Sleep(3000)
+                            match this.State with
+                            | Running rs | Ending rs ->
+                                publishDiagnostic HubEvents.Warning
+                                    "force-end: SIGKILL escalation at 8s"
+                                match rs.GraphicalEngineProcess with
+                                | Some p when not p.HasExited ->
+                                    try p.Kill(true) with _ -> ()
+                                | _ -> ()
+                                try (rs.BarClient :> IDisposable).Dispose() with _ -> ()
+                            | _ -> ()))
+                | _ -> ()
+                outcome
+            | None -> AdminChannelHost.Rejected "no active session"
+
+        member _.SendAdminMessage(text: string) : AdminChannelHost.SubmitOutcome =
+            if String.IsNullOrWhiteSpace(text) then
+                AdminChannelHost.Rejected "empty message"
+            else
+                match adminHost with
+                | Some h -> h.Submit(AdminChannel.SayMessage text)
+                | None -> AdminChannelHost.Rejected "no active session"
+
+        member _.IsPaused =
+            match adminHost with
+            | Some h -> h.IsPaused
+            | None -> false
+
+        // While paused, the engine sim doesn't tick → the proxy stops
+        // sending frames → BarClient's read times out (default 10s) →
+        // session ends. We bump the stream read timeout to effectively
+        // infinite while paused and restore on resume.
+        member private this.SetStreamReadTimeout(timeoutMs: int) =
             match this.State with
-            | Running _ ->
-                Interlocked.Exchange(&isPausedFlag, if paused then 1 else 0) |> ignore
-                events.Publish(HubEvents.SessionPaused paused)
+            | Running rs ->
+                try rs.BarClient.Stream.ReadTimeout <- timeoutMs with _ -> ()
             | _ -> ()
 
+        member private this.RestoreStreamReadTimeout() =
+            match this.State with
+            | Running rs ->
+                let ms = EngineConfig.resolveReadTimeout rs.EngineConfig
+                try rs.BarClient.Stream.ReadTimeout <- ms with _ -> ()
+            | _ -> ()
+
+        member this.Pause() : AdminChannelHost.SubmitOutcome =
+            match adminHost with
+            | Some h ->
+                // Disarm the frame-loop timeout BEFORE the engine pauses
+                // so the next blocking read doesn't fire on a stale 10s
+                // budget while sim is frozen.
+                this.SetStreamReadTimeout(System.Threading.Timeout.Infinite)
+                let outcome = h.Submit(AdminChannel.Pause true)
+                match outcome with
+                | AdminChannelHost.Sent ->
+                    events.Publish(HubEvents.SessionPaused true)
+                | _ ->
+                    // Pause didn't reach the engine — restore the timeout
+                    // so the session keeps normal disconnect detection.
+                    this.RestoreStreamReadTimeout()
+                outcome
+            | None ->
+                AdminChannelHost.Rejected "no active session"
+
+        member this.Resume() : AdminChannelHost.SubmitOutcome =
+            match adminHost with
+            | Some h ->
+                let outcome = h.Submit(AdminChannel.Pause false)
+                match outcome with
+                | AdminChannelHost.Sent ->
+                    this.RestoreStreamReadTimeout()
+                    events.Publish(HubEvents.SessionPaused false)
+                | _ -> ()
+                outcome
+            | None ->
+                AdminChannelHost.Rejected "no active session"
+
         member this.TogglePause() =
-            this.SetPaused(not this.IsPaused)
+            if this.IsPaused then this.Resume() |> ignore
+            else this.Pause() |> ignore
+
+        member _.AdminStatus : HubEvents.AdminChannelStatus option =
+            lock sync (fun () ->
+                match state with
+                | Idle -> None
+                | _ -> adminHost |> Option.map (fun h -> h.Status))
 
         member this.End() =
             if Volatile.Read(&disposed) <> 0 then () else
@@ -256,6 +428,7 @@ module SessionManager =
                     publishDiagnostic HubEvents.Warning
                         (sprintf "session end encountered: %s" ex.Message)
                 detachFrames ()
+                disposeAdminChannel ()
                 transitionTo Idle
             | Ending _ | Idle | Failed _ | Starting _ -> ()
 

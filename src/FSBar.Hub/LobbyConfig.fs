@@ -255,5 +255,6 @@ module LobbyConfig =
                         ReadTimeoutMs = None
                         OpponentAIOptions = oppOpts
                         DeathMode = "com"
+                        AutohostPort = None
                     }
                     Ok ec

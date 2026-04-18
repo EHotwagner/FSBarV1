@@ -1,0 +1,116 @@
+// Feature 039 — delta over proto/hub/scripting.proto.
+//
+// This file is the spec-side authoritative change set. The real file on the
+// wire is proto/hub/scripting.proto (regenerated via `cd proto && buf
+// generate`). Copy these additions verbatim during implementation.
+//
+// Conventions follow the existing file:
+//   - package: fsbar.hub.scripting.v1
+//   - All RPCs are unary except StreamGameFrames.
+//   - Every new RPC returns a response that echoes the resulting
+//     AdminChannelStatusInfo so scripting clients don't need to
+//     round-trip GetSessionStatus after each call.
+
+syntax = "proto3";
+package fsbar.hub.scripting.v1;
+
+// -----------------------------------------------------------------------------
+// New RPCs added to ScriptingService
+// -----------------------------------------------------------------------------
+//
+// service ScriptingService {
+//   rpc Pause(PauseRequest) returns (PauseResponse);
+//   rpc Resume(ResumeRequest) returns (ResumeResponse);
+//   rpc SetEngineSpeed(SetEngineSpeedRequest) returns (SetEngineSpeedResponse);
+//   rpc ForceEndMatch(ForceEndMatchRequest) returns (ForceEndMatchResponse);
+//   rpc SendAdminMessage(SendAdminMessageRequest) returns (SendAdminMessageResponse);
+// }
+
+// -----------------------------------------------------------------------------
+// Supporting messages
+// -----------------------------------------------------------------------------
+
+// Hub-visible admin-channel status. Mirrors
+// FSBar.Hub.AdminChannelHost.AdminChannelStatus.
+message AdminChannelStatusInfo {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    // Channel attached; admin commands are accepted.
+    ATTACHED = 1;
+    // Channel never came up at launch. `reason` populated.
+    UNAVAILABLE = 2;
+    // Channel was Attached but has since failed. `reason` populated.
+    LOST = 3;
+  }
+
+  State state = 1;
+  // Populated when state = UNAVAILABLE or LOST. Empty otherwise.
+  string reason = 2;
+}
+
+// Common shape for every admin-command response. Matches the three
+// FSBar.Hub.AdminChannelHost.SubmitOutcome cases.
+message AdminSubmitResult {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // The datagram was written to the autohost socket.
+    SENT = 1;
+    // A newer same-kind command superseded this one before it was sent.
+    // `dropped_count` reports how many requests (including this one) were
+    // coalesced away. The effective end state matches the last click.
+    COALESCED = 2;
+    // The request was rejected without touching the socket. `reason`
+    // explains why — typically the channel is not Attached, or the
+    // payload failed local validation (e.g. non-positive engine speed).
+    REJECTED = 3;
+  }
+
+  Outcome outcome = 1;
+  int32 dropped_count = 2;
+  string reason = 3;
+  AdminChannelStatusInfo admin_channel_status = 4;
+}
+
+// -----------------------------------------------------------------------------
+// Request / response messages
+// -----------------------------------------------------------------------------
+
+message PauseRequest {}
+message PauseResponse { AdminSubmitResult result = 1; }
+
+message ResumeRequest {}
+message ResumeResponse { AdminSubmitResult result = 1; }
+
+message SetEngineSpeedRequest {
+  // Multiplier relative to 1.0x engine-native speed. Must be finite and
+  // positive; Hub-local validation rejects non-positive values with
+  // Outcome=REJECTED. Values outside the engine's supported range may
+  // be accepted locally and rejected later by the engine, surfacing as a
+  // GAME_WARNING in hub diagnostics.
+  float speed = 1;
+}
+message SetEngineSpeedResponse { AdminSubmitResult result = 1; }
+
+message ForceEndMatchRequest {}
+message ForceEndMatchResponse { AdminSubmitResult result = 1; }
+
+message SendAdminMessageRequest {
+  // Free-form UTF-8. Empty strings are rejected locally.
+  // Attribution in the engine's in-game chat log is whatever the engine
+  // natively applies to autohost SAYMESSAGE commands — the hub does NOT
+  // prepend a speaker name (spec Session 2026-04-17 Q4).
+  string text = 1;
+}
+message SendAdminMessageResponse { AdminSubmitResult result = 1; }
+
+// -----------------------------------------------------------------------------
+// Extensions to existing messages
+// -----------------------------------------------------------------------------
+//
+// Add one optional field to ActiveSession (field 7). Existing fields 1..6
+// stay stable; older clients ignore the new field.
+//
+// message ActiveSession {
+//   // existing fields 1..6 unchanged
+//   optional AdminChannelStatusInfo admin_channel_status = 7;
+// }

@@ -271,7 +271,10 @@ let main _argv =
                 sessions
                 |> Option.map (fun sm -> sm.IsPaused)
                 |> Option.defaultValue false
-            ViewerTab.render sessState vizConfig viewerViewState paused cx cy cw ch
+            let adminStatus =
+                sessions
+                |> Option.bind (fun sm -> sm.AdminStatus)
+            ViewerTab.render sessState vizConfig viewerViewState paused adminStatus cx cy cw ch
         | HubTab.Configurator ->
             ConfiguratorTab.render configuratorState vizConfig cx cy cw ch
         | HubTab.Encyclopedia ->
@@ -344,10 +347,14 @@ let main _argv =
                     match StatusBar.handleMouse status x y windowWidth windowHeight with
                     | Some (StatusBar.StatusBarAction.SetSpeed s) ->
                         currentSpeed <- s
-                        sessions |> Option.iter (fun sm -> sm.SetSpeed s)
+                        sessions |> Option.iter (fun sm ->
+                            sm.SetEngineSpeed s |> ignore)
                     | Some StatusBar.StatusBarAction.TogglePause ->
-                        currentPaused <- not currentPaused
-                        sessions |> Option.iter (fun sm -> sm.SetPaused currentPaused)
+                        sessions |> Option.iter (fun sm -> sm.TogglePause())
+                        currentPaused <-
+                            sessions
+                            |> Option.map (fun sm -> sm.IsPaused)
+                            |> Option.defaultValue (not currentPaused)
                     | Some StatusBar.StatusBarAction.EndSession ->
                         sessions |> Option.iter (fun sm -> sm.End())
                     | None ->
@@ -506,21 +513,20 @@ let main _argv =
                                 | None -> ()
                             | None -> ()
                         | HubTab.Viewer, _, _ ->
-                            // Feature 038 FR-004b: hit-test the pause
-                            // button first, then fall through to pan.
-                            let (bx, by, bw, bh) =
-                                ViewerTab.pauseButtonRect cx cy cw ch
-                            if x >= bx && x < bx + bw && y >= by && y < by + bh then
-                                match sessions with
-                                | Some sm -> sm.TogglePause()
-                                | None -> ()
-                            elif x >= cx && x < cx + cw && y >= cy && y < cy + ch then
-                                // Left-click inside the Viewer content rect
-                                // starts a pan drag. Subsequent MouseMove
-                                // events update OriginX/Y; MouseUp ends it.
-                                viewerDragStart <- Some (x, y)
-                                viewerDragOrigin <-
-                                    Some (viewerViewState.Value.OriginX, viewerViewState.Value.OriginY)
+                            // Feature 039: admin toolbar dispatch takes
+                            // precedence over pan-drag. handleMouse
+                            // internally routes pause / force-end / speed
+                            // presets / message-submit to SessionManager.
+                            let handled =
+                                ViewerTab.handleMouse sessions "" x y cx cy cw ch
+                            if not handled then
+                                if x >= cx && x < cx + cw && y >= cy && y < cy + ch then
+                                    // Left-click inside the Viewer content rect
+                                    // starts a pan drag. Subsequent MouseMove
+                                    // events update OriginX/Y; MouseUp ends it.
+                                    viewerDragStart <- Some (x, y)
+                                    viewerDragOrigin <-
+                                        Some (viewerViewState.Value.OriginX, viewerViewState.Value.OriginY)
                         | _ -> ()
             trigger ()
         | InputEvent.MouseMove(x, y) ->

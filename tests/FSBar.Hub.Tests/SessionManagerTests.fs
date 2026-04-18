@@ -110,24 +110,29 @@ let ``SetSpeed emits EngineSpeedChanged`` () =
     Assert.Contains(events, function HubEvents.EngineSpeedChanged 2.5f -> true | _ -> false)
 
 [<Fact>]
-let ``SetPaused no-op when not Running (feature 038)`` () =
-    // Feature 038 repurposes SetPaused from a simple event-emitter into
-    // an engine-wired call. Without a Running session there is nothing
-    // to pause — the call should be a silent no-op rather than emit a
-    // stale SessionPaused event.
+let ``Pause rejects when not Running (feature 039)`` () =
+    // Feature 039 replaces the cosmetic SetPaused path with a real
+    // admin-channel Pause. When no session is active, AdminHost is
+    // None and Submit must reject without emitting a stale
+    // SessionPaused event.
     use fake = new FakeInstall()
     use bus = HubEvents.create ()
     use sm = SessionManager.create (fake.Resolve()) bus.Sink
     let collector = Async.StartAsTask (async { return collectEvents bus 1 200 })
     Thread.Sleep(50)
-    sm.SetPaused true
+    let outcome = sm.Pause()
     let events = collector.Result
+    match outcome with
+    | AdminChannelHost.Rejected _ -> ()
+    | other -> Assert.Fail(sprintf "expected Rejected, got %A" other)
     // Guarantee: no SessionPaused event while Idle.
     Assert.DoesNotContain(events, function HubEvents.SessionPaused _ -> true | _ -> false)
     Assert.False(sm.IsPaused)
 
 [<Fact>]
-let ``TogglePause no-op when not Running (feature 038)`` () =
+let ``TogglePause no-op when not Running (feature 039)`` () =
+    // With no active session, AdminHost is None and Pause/Resume
+    // return Rejected — TogglePause silently consumes the outcome.
     use fake = new FakeInstall()
     use bus = HubEvents.create ()
     use sm = SessionManager.create (fake.Resolve()) bus.Sink

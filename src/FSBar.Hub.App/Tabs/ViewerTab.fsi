@@ -28,6 +28,7 @@ module ViewerTab =
         vizConfig: VizConfig ->
         viewStateRef: ViewState ref ->
         isPaused: bool ->
+        adminStatus: HubEvents.AdminChannelStatus option ->
         contentX: float32 ->
         contentY: float32 ->
         contentW: float32 ->
@@ -44,3 +45,21 @@ module ViewerTab =
         contentW: float32 ->
         contentH: float32 ->
             float32 * float32 * float32 * float32
+
+    /// Feature 039 admin-toolbar click dispatcher. Hit-tests (x, y) against
+    /// the pause button, force-end button, speed preset row, and admin-
+    /// message input, then routes to the matching `SessionManager` member.
+    /// Returns `true` when the click was consumed by a toolbar widget.
+    ///
+    /// Keeps the `AdminToolbarAction` DU module-private (data-model.md §6)
+    /// so callers only see this high-level `bool` result.
+    val handleMouse:
+        sessions: SessionManager.SessionManager option ->
+        adminMessage: string ->
+        x: float32 ->
+        y: float32 ->
+        contentX: float32 ->
+        contentY: float32 ->
+        contentW: float32 ->
+        contentH: float32 ->
+            bool

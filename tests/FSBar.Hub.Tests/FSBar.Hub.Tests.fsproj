@@ -15,6 +15,7 @@
   <ItemGroup>
     <Compile Include="..\Common\SurfaceAreaHelper.fs" />
     <Compile Include="HubEventsTests.fs" />
+    <Compile Include="AdminChannelHostTests.fs" />
     <Compile Include="HubSettingsTests.fs" />
     <Compile Include="BundledProxyTests.fs" />
     <Compile Include="BarInstallTests.fs" />

@@ -60,6 +60,15 @@ service ScriptingService {
   // own BarData dependency (matches the v1 contract scope listed in the
   // spec's Assumptions).
   rpc GetUnitDef(GetUnitDefRequest) returns (GetUnitDefResponse);
+
+  // Feature 039 — hub admin channel RPCs. Each returns an AdminSubmitResult
+  // that echoes the resulting AdminChannelStatusInfo, so scripting clients
+  // don't need to round-trip GetSessionStatus after every call.
+  rpc Pause(PauseRequest) returns (PauseResponse);
+  rpc Resume(ResumeRequest) returns (ResumeResponse);
+  rpc SetEngineSpeed(SetEngineSpeedRequest) returns (SetEngineSpeedResponse);
+  rpc ForceEndMatch(ForceEndMatchRequest) returns (ForceEndMatchResponse);
+  rpc SendAdminMessage(SendAdminMessageRequest) returns (SendAdminMessageResponse);
 }
 
 // -----------------------------------------------------------------------------
@@ -134,6 +143,8 @@ message ActiveSession {
   float engine_speed = 4;
   bool paused = 5;
   int64 started_at_unix_ms = 6;
+  // Feature 039 — hub-level admin-channel status for the running session.
+  optional AdminChannelStatusInfo admin_channel_status = 7;
 }
 
 message ConnectedClient {
@@ -173,3 +184,60 @@ message UnitDefInfo {
 message GetUnitDefResponse {
   optional UnitDefInfo unit_def = 1;
 }
+
+// -----------------------------------------------------------------------------
+// Feature 039 — hub admin channel
+// -----------------------------------------------------------------------------
+
+// Hub-visible admin-channel status. Mirrors
+// FSBar.Hub.AdminChannelHost.AdminChannelStatus.
+message AdminChannelStatusInfo {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    ATTACHED = 1;
+    UNAVAILABLE = 2;
+    LOST = 3;
+  }
+
+  State state = 1;
+  // Populated when state = UNAVAILABLE or LOST. Empty otherwise.
+  string reason = 2;
+}
+
+// Common shape for every admin-command response. Matches the three
+// FSBar.Hub.AdminChannelHost.SubmitOutcome cases.
+message AdminSubmitResult {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    SENT = 1;
+    COALESCED = 2;
+    REJECTED = 3;
+  }
+
+  Outcome outcome = 1;
+  int32 dropped_count = 2;
+  string reason = 3;
+  AdminChannelStatusInfo admin_channel_status = 4;
+}
+
+message PauseRequest {}
+message PauseResponse { AdminSubmitResult result = 1; }
+
+message ResumeRequest {}
+message ResumeResponse { AdminSubmitResult result = 1; }
+
+message SetEngineSpeedRequest {
+  // Multiplier relative to 1.0x engine-native speed. Must be finite and
+  // positive; Hub-local validation rejects non-positive values.
+  float speed = 1;
+}
+message SetEngineSpeedResponse { AdminSubmitResult result = 1; }
+
+message ForceEndMatchRequest {}
+message ForceEndMatchResponse { AdminSubmitResult result = 1; }
+
+message SendAdminMessageRequest {
+  // Free-form UTF-8. Empty strings are rejected locally.
+  string text = 1;
+}
+message SendAdminMessageResponse { AdminSubmitResult result = 1; }

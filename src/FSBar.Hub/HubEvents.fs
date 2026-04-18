@@ -28,6 +28,11 @@ module HubEvents =
         | Performed
         | StepFailed of reason: string
 
+    type AdminChannelStatus =
+        | Attached
+        | Unavailable of reason: string
+        | Lost of reason: string
+
     type SessionStateTag =
         | Idle
         | Starting
@@ -43,6 +48,7 @@ module HubEvents =
         | ScriptingClientConnected of clientId: Guid * remote: string
         | ScriptingClientDetached of clientId: Guid * reason: DetachReason
         | ProxyInstallProgress of step: ProxyInstallStep * outcome: StepOutcome
+        | AdminChannelStatusChanged of status: AdminChannelStatus
 
     type IHubEventSink =
         abstract Publish: HubEvent -> unit

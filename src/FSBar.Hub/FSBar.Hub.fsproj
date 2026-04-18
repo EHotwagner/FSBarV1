@@ -13,6 +13,8 @@
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="HubEvents.fsi" />
     <Compile Include="HubEvents.fs" />
+    <Compile Include="AdminChannelHost.fsi" />
+    <Compile Include="AdminChannelHost.fs" />
     <Compile Include="HubSettings.fsi" />
     <Compile Include="HubSettings.fs" />
     <Compile Include="BundledProxy.fsi" />

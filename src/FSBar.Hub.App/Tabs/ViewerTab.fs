@@ -1,5 +1,6 @@
 namespace FSBar.Hub.App.Tabs
 
+open System
 open SkiaSharp
 open SkiaViewer
 open FSBar.Client
@@ -36,8 +37,20 @@ module ViewerTab =
         let y = contentY + 8.0f
         x, y, w, h
 
+    // Feature 039: pause / speed / end-session controls live in the
+    // chrome status bar (`Chrome/StatusBar.fs`) — it has owned them
+    // since feature 035. The Viewer-tab admin toolbar would just
+    // duplicate them and put a dangerous force-end click one pixel
+    // away from pause, so we don't render those here. The only
+    // Viewer-tab admin affordance is the channel-status reason line
+    // (FR-009) — and a future admin-message input when we add one.
+
+    type private AdminToolbarAction =
+        | PauseOrResume
+
     let private renderPauseButton
             (isPaused: bool)
+            (_adminStatus: HubEvents.AdminChannelStatus option)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32) : Element list =
         let x, y, w, h = pauseButtonRect contentX contentY contentW contentH
@@ -47,11 +60,42 @@ module ViewerTab =
           Scene.rect x y w h pauseBtnBorder
           Scene.text glyph (x + w * 0.30f) (y + h * 0.72f) 16.0f headingText ]
 
+    let private renderStatusLine
+            (adminStatus: HubEvents.AdminChannelStatus option)
+            (contentX: float32) (contentY: float32)
+            (contentW: float32) (contentH: float32) : Element list =
+        let _, py, _, ph = pauseButtonRect contentX contentY contentW contentH
+        let y = py + ph + 16.0f
+        let reason =
+            match adminStatus with
+            | None -> None
+            | Some HubEvents.Attached -> None
+            | Some (HubEvents.Unavailable r) ->
+                Some (sprintf "Admin channel unavailable: %s" r)
+            | Some (HubEvents.Lost r) ->
+                Some (sprintf "Admin channel lost: %s" r)
+        match reason with
+        | Some line ->
+            [ Scene.text line (contentX + contentW - 280.0f) y 11.0f dimText ]
+        | None -> []
+
+    /// Public click dispatcher — Viewer-tab pause/speed/end controls
+    /// live in the chrome status bar, so this is a no-op stub kept for
+    /// API stability. Returns false so callers fall through to pan-drag.
+    let handleMouse
+            (_sessions: SessionManager.SessionManager option)
+            (_adminMessage: string)
+            (_x: float32) (_y: float32)
+            (_contentX: float32) (_contentY: float32)
+            (_contentW: float32) (_contentH: float32) : bool =
+        false
+
     let render
             (sessionState: SessionManager.SessionState)
             (vizConfig: VizConfig)
             (viewStateRef: ViewState ref)
             (isPaused: bool)
+            (adminStatus: HubEvents.AdminChannelStatus option)
             (contentX: float32) (contentY: float32)
             (contentW: float32) (contentH: float32)
             : Element list =
@@ -116,7 +160,7 @@ module ViewerTab =
             let content = Scene.group (Some tx) None embedded.Elements
             [ yield Scene.rect contentX contentY contentW contentH panelBg
               yield content
-              yield! renderPauseButton isPaused contentX contentY contentW contentH ]
+              yield! renderStatusLine adminStatus contentX contentY contentW contentH ]
         | SessionManager.Starting _ ->
             frozenState <- None
             [ Scene.rect contentX contentY contentW contentH panelBg

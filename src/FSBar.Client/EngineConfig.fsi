@@ -53,6 +53,15 @@ type EngineConfig = {
     /// <c>win</c> outcome. Use <c>"neverend"</c> for long-running sessions without termination.
     /// </summary>
     DeathMode: string
+    /// <summary>
+    /// Loopback UDP port the hub pre-bound for the engine's autohost interface
+    /// (feature 039, see <c>specs/039-hub-admin-channel/data-model.md §5</c>).
+    /// When <c>Some p</c>, <see cref="T:FSBar.Client.ScriptGenerator"/> emits
+    /// <c>AutohostIP = 127.0.0.1</c> and <c>AutohostPort = p</c> into the
+    /// per-session <c>springsettings.cfg</c>. When <c>None</c>, the admin
+    /// channel is not configured for this session (legacy launch path).
+    /// </summary>
+    AutohostPort: int option
 }
 
 /// <summary>Functions for creating and querying <see cref="T:FSBar.Client.EngineConfig"/> values.</summary>

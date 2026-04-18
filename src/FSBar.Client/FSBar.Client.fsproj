@@ -13,6 +13,8 @@
     <Compile Include="EngineDiscovery.fs" />
     <Compile Include="EngineConfig.fsi" />
     <Compile Include="EngineConfig.fs" />
+    <Compile Include="AdminChannel.fsi" />
+    <Compile Include="AdminChannel.fs" />
     <Compile Include="Connection.fsi" />
     <Compile Include="Connection.fs" />
     <Compile Include="Events.fsi" />

@@ -45,6 +45,50 @@ module ScriptingHub =
     let private unixMillis () =
         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
 
+    /// Convert the F# admin-channel status DU into its gRPC wire form.
+    let private toStatusInfo
+            (status: HubEvents.AdminChannelStatus option)
+            : AdminChannelStatusInfo option =
+        match status with
+        | None -> None
+        | Some HubEvents.Attached ->
+            Some { State = AdminChannelStatusInfo.State.Attached; Reason = "" }
+        | Some (HubEvents.Unavailable reason) ->
+            Some { State = AdminChannelStatusInfo.State.Unavailable; Reason = reason }
+        | Some (HubEvents.Lost reason) ->
+            Some { State = AdminChannelStatusInfo.State.Lost; Reason = reason }
+
+    /// Convert an AdminChannelHost SubmitOutcome into the AdminSubmitResult wire form.
+    let private toSubmitResult
+            (outcome: AdminChannelHost.SubmitOutcome)
+            (status: HubEvents.AdminChannelStatus option)
+            : AdminSubmitResult =
+        let wireStatus = toStatusInfo status
+        match outcome with
+        | AdminChannelHost.Sent ->
+            { Outcome = AdminSubmitResult.Outcome.Sent
+              DroppedCount = 0
+              Reason = ""
+              AdminChannelStatus = wireStatus }
+        | AdminChannelHost.Coalesced dropped ->
+            { Outcome = AdminSubmitResult.Outcome.Coalesced
+              DroppedCount = dropped
+              Reason = ""
+              AdminChannelStatus = wireStatus }
+        | AdminChannelHost.Rejected reason ->
+            { Outcome = AdminSubmitResult.Outcome.Rejected
+              DroppedCount = 0
+              Reason = reason
+              AdminChannelStatus = wireStatus }
+
+    /// Construct a REJECTED AdminSubmitResult from a local-validation reason —
+    /// used when the RPC caller bypasses the SessionManager entirely (e.g. no session).
+    let private rejectedResult (reason: string) (status: HubEvents.AdminChannelStatus option) : AdminSubmitResult =
+        { Outcome = AdminSubmitResult.Outcome.Rejected
+          DroppedCount = 0
+          Reason = reason
+          AdminChannelStatus = toStatusInfo status }
+
     [<Sealed>]
     type ScriptingService(
             sessions: SessionManager.SessionManager,
@@ -266,6 +310,7 @@ module ScriptingHub =
                             EngineSpeed = rs.Config.EngineSpeed
                             Paused = false
                             StartedAtUnixMs = rs.StartedAt.ToUnixTimeMilliseconds()
+                            AdminChannelStatus = toStatusInfo sessions.AdminStatus
                         }
                     | _ -> None
                 let failure : FailureInfo option =
@@ -325,6 +370,46 @@ module ScriptingHub =
                         }
                     | None -> { UnitDef = None }
                 return resp
+            }
+
+        // --- Feature 039 admin-channel RPCs ---
+        // Phase-2E scaffolding: every RPC rejects with a "not yet implemented"
+        // reason until its per-US phase lands (US1 wires Pause/Resume, US2
+        // SetEngineSpeed, US3 ForceEndMatch, US4 SendAdminMessage).
+
+        override _.Pause _request _context =
+            task {
+                let outcome = sessions.Pause()
+                let result = toSubmitResult outcome sessions.AdminStatus
+                return ({ Result = Some result } : PauseResponse)
+            }
+
+        override _.Resume _request _context =
+            task {
+                let outcome = sessions.Resume()
+                let result = toSubmitResult outcome sessions.AdminStatus
+                return ({ Result = Some result } : ResumeResponse)
+            }
+
+        override _.SetEngineSpeed request _context =
+            task {
+                let outcome = sessions.SetEngineSpeed request.Speed
+                let result = toSubmitResult outcome sessions.AdminStatus
+                return ({ Result = Some result } : SetEngineSpeedResponse)
+            }
+
+        override _.ForceEndMatch _request _context =
+            task {
+                let outcome = sessions.ForceEnd()
+                let result = toSubmitResult outcome sessions.AdminStatus
+                return ({ Result = Some result } : ForceEndMatchResponse)
+            }
+
+        override _.SendAdminMessage request _context =
+            task {
+                let outcome = sessions.SendAdminMessage request.Text
+                let result = toSubmitResult outcome sessions.AdminStatus
+                return ({ Result = Some result } : SendAdminMessageResponse)
             }
 
         interface IDisposable with
