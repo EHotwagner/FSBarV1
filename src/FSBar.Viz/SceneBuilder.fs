@@ -479,10 +479,14 @@ module SceneBuilder =
                     |> Map.toSeq
                     |> Seq.map (fun (uid, u) ->
                         uid, UnitDisplayAdapter.ofTrackedUnit cache state.TeamId uid u)
+                // Show every known enemy — InLOS now, InRadar-only, or
+                // last-known-position after contact is lost. Filtering
+                // on `e.InLOS` dropped buildings once our units walked
+                // away and left mobile contacts invisible the whole
+                // game. Ghost contacts are a feature, not a bug.
                 let hostile =
                     state.Enemies
                     |> Map.toSeq
-                    |> Seq.filter (fun (_, e) -> e.InLOS)
                     |> Seq.map (fun (eid, e) ->
                         eid, UnitDisplayAdapter.ofTrackedEnemy cache eid e)
                 Seq.append friendly hostile |> Map.ofSeq

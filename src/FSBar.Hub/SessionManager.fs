@@ -97,6 +97,12 @@ module SessionManager =
         // call AttachLog observe the legacy no-log behaviour.
         let mutable logBusOpt: HubLog.T option = None
 
+        // In-flight BarClient held while state = Starting, so End()
+        // can dispose it (killing the engine subprocess) before the
+        // background launch task finishes. Cleared when the task
+        // transitions to Running or Idle.
+        let mutable startingClient: BarClient option = None
+
         let currentSessionId () : Guid option =
             match state with
             | Running rs -> Some rs.Id
@@ -193,6 +199,9 @@ module SessionManager =
                     // state and continue the launch in read-only mode
                     // (FR-009) so the Viewer-tab toolbar can render the
                     // reason.
+                    let wantStartPaused = startPausedForNextLaunch
+                    let initialSpeed = lobby.EngineSpeed
+                    startPausedForNextLaunch <- false
                     let engineCfg =
                         match AdminChannel.bind () with
                         | Ok ch ->
@@ -205,16 +214,47 @@ module SessionManager =
                             // emit sites light up for its lifetime.
                             logBusOpt |> Option.iter (fun bus -> h.AttachLog bus)
                             adminHost <- Some h
+                            // Subscribe to ServerStartPlaying BEFORE the
+                            // engine spawns so we never miss it — the
+                            // Events fanOut is hot with no replay, and by
+                            // the time MapGrid/MetalSpots finish loading
+                            // the event may already have fired.
+                            if wantStartPaused || initialSpeed <> 1.0f then
+                                let sub =
+                                    ch.Events.Subscribe(
+                                        { new IObserver<AdminChannel.AdminEventIn> with
+                                            member _.OnNext(evt) =
+                                                match evt with
+                                                | AdminChannel.ServerStartPlaying ->
+                                                    adminHost |> Option.iter (fun host ->
+                                                        if initialSpeed <> 1.0f then
+                                                            host.Submit(AdminChannel.SetGameSpeed initialSpeed) |> ignore
+                                                        if wantStartPaused then
+                                                            match host.Submit(AdminChannel.Pause true) with
+                                                            | AdminChannelHost.Sent ->
+                                                                events.Publish(HubEvents.SessionPaused true)
+                                                            | _ -> ())
+                                                    startPausedSubscription |> Option.iter (fun s ->
+                                                        try s.Dispose() with _ -> ())
+                                                    startPausedSubscription <- None
+                                                | _ -> ()
+                                            member _.OnError(_) = ()
+                                            member _.OnCompleted() = () })
+                                startPausedSubscription <- Some sub
                             { engineCfg with AutohostPort = Some port }
                         | Result.Error reason ->
                             adminChannel <- None
                             let h = AdminChannelHost.unavailable(reason, events)
                             logBusOpt |> Option.iter (fun bus -> h.AttachLog bus)
                             adminHost <- Some h
+                            if wantStartPaused || initialSpeed <> 1.0f then
+                                publishDiagnostic HubEvents.Warning
+                                    "startPaused/initial-speed requested but admin channel is unavailable"
                             publishDiagnostic HubEvents.Warning
                                 (sprintf "admin channel unavailable: %s" reason)
                             { engineCfg with AutohostPort = None }
                     let client = BarClient.create engineCfg
+                    startingClient <- Some client
                     client.Start()
                     // Load the MapGrid BEFORE subscribing to
                     // `client.Frames`. BarClient.Frames.Subscribe spawns
@@ -240,6 +280,17 @@ module SessionManager =
                             publishDiagnostic HubEvents.Warning
                                 (sprintf "MetalSpots load failed (viewer omits metal markers): %s" ex.Message)
                             [||]
+                    // If End() fired while we were spawning, bail instead
+                    // of transitioning Idle → Running behind its back.
+                    let stillStarting =
+                        lock sync (fun () ->
+                            match state with Starting _ -> true | _ -> false)
+                    if not stillStarting then
+                        try (client :> IDisposable).Dispose() with _ -> ()
+                        startingClient <- None
+                        publishDiagnostic HubEvents.Info
+                            "session launch cancelled during warmup"
+                    else
                     attachFrames client
                     let rs: RunningSession = {
                         Id = Guid.NewGuid()
@@ -251,40 +302,8 @@ module SessionManager =
                         MapGrid = mapGrid
                         MetalSpots = metalSpots
                     }
+                    startingClient <- None
                     transitionTo (Running rs)
-                    // Feature 039 FR-004: defer the initial Pause(true)
-                    // until the autohost ServerStartPlaying event fires
-                    // (research.md §R9). Subscribe here and self-dispose
-                    // after the first hit.
-                    if startPausedForNextLaunch then
-                        startPausedForNextLaunch <- false
-                        match adminChannel with
-                        | Some ch ->
-                            let sub =
-                                ch.Events.Subscribe(
-                                    { new IObserver<AdminChannel.AdminEventIn> with
-                                        member _.OnNext(evt) =
-                                            match evt with
-                                            | AdminChannel.ServerStartPlaying ->
-                                                adminHost |> Option.iter (fun h ->
-                                                    match h.Submit(AdminChannel.Pause true) with
-                                                    | AdminChannelHost.Sent ->
-                                                        events.Publish(HubEvents.SessionPaused true)
-                                                    | _ -> ())
-                                                startPausedSubscription |> Option.iter (fun s ->
-                                                    try s.Dispose() with _ -> ())
-                                                startPausedSubscription <- None
-                                            | _ -> ()
-                                        member _.OnError(_) = ()
-                                        member _.OnCompleted() = () })
-                            startPausedSubscription <- Some sub
-                        | None ->
-                            // Admin channel unavailable — record the
-                            // intent diagnostically and move on. The
-                            // UI will render the toolbar disabled per
-                            // FR-009.
-                            publishDiagnostic HubEvents.Warning
-                                "startPaused requested but admin channel is unavailable"
                     publishDiagnostic HubEvents.Info
                         (sprintf "session %s started — map=%s vs %s (MapGrid=%s, metalSpots=%d)"
                             (rs.Id.ToString("N").Substring(0, 8))
@@ -490,7 +509,21 @@ module SessionManager =
                 detachFrames ()
                 disposeAdminChannel ()
                 transitionTo Idle
-            | Ending _ | Idle | Failed _ | Starting _ -> ()
+            | Starting lobby ->
+                // Engine may still be spawning on the background task.
+                // Kill the in-flight client + admin channel and flip to
+                // Idle; the background task checks the state before
+                // transitioning to Running and bails when it sees Idle.
+                transitionTo Idle
+                startingClient |> Option.iter (fun c ->
+                    try c.Stop() with _ -> ()
+                    try (c :> IDisposable).Dispose() with _ -> ())
+                startingClient <- None
+                detachFrames ()
+                disposeAdminChannel ()
+                publishDiagnostic HubEvents.Info
+                    (sprintf "session cancelled during warmup (map=%s)" lobby.MapName)
+            | Ending _ | Idle | Failed _ -> ()
 
         member _.AttachLog(log: HubLog.T) =
             logBusOpt <- Some log

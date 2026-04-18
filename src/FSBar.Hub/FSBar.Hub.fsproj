@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>FSBar.Hub</RootNamespace>
     <PackageId>FSBar.Hub</PackageId>
-    <VersionPrefix>0.2.4</VersionPrefix>
+    <VersionPrefix>0.2.5</VersionPrefix>
     <IsPackable>true</IsPackable>
     <Description>F# core library for the FSBar central GUI hub — BAR install detection, proxy installer, lobby + session management, hub event bus, and gRPC scripting service implementation</Description>
   </PropertyGroup>
