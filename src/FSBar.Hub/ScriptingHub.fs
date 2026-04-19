@@ -486,6 +486,126 @@ module ScriptingHub =
                     if String.IsNullOrEmpty(w.PresetName) then None else Some w.PresetName
                 HubLog.resolveFilter categories severity preset
 
+    // ---------------------------------------------------------------
+    // Feature 046 — projection helpers (US1 + US2).
+    //
+    // Pure mappers from FSBar.Client.GameState (the feature-045
+    // single source of truth) to the wire types defined in
+    // proto/hub/scripting.proto. No IO, no engine round-trips.
+    // ---------------------------------------------------------------
+    module Projection =
+
+        let private toVec3 ((x, y, z): float32 * float32 * float32) : Vec3Wire =
+            { X = x; Y = y; Z = z }
+
+        let projectFriendly (u: FSBar.Client.TrackedUnit) : FriendlyUnitState = {
+            UnitId = u.UnitId
+            DefId = u.DefId
+            Position = Some (toVec3 u.Position)
+            Health = u.Health
+            MaxHealth = u.MaxHealth
+            Finished = u.IsFinished
+            Idle = u.IsIdle
+        }
+
+        let projectEnemy (e: FSBar.Client.TrackedEnemy) : EnemyUnitState = {
+            UnitId = e.EnemyId
+            DefId = e.DefId
+            Position = Some (toVec3 e.Position)
+            // FR-003 totality: Some _ → health arm; None → unknown arm.
+            // Radar-only and frozen-last-known both arrive as None per
+            // GameState.applySnapshot in feature 045.
+            HealthInfo =
+                match e.Health with
+                | Some h ->
+                    EnemyUnitState.HealthInfoCase.Health h
+                | None ->
+                    EnemyUnitState.HealthInfoCase.Unknown EnemyHealthUnknown.empty
+            InLos = e.InLOS
+            InRadar = e.InRadar
+        }
+
+        let projectEconomy
+                (metal: FSBar.Client.EconomySnapshot)
+                (energy: FSBar.Client.EconomySnapshot)
+                : EconomySnapshotWire = {
+            MetalCurrent  = metal.Current
+            MetalIncome   = metal.Income
+            MetalUsage    = metal.Usage
+            MetalStorage  = metal.Storage
+            EnergyCurrent = energy.Current
+            EnergyIncome  = energy.Income
+            EnergyUsage   = energy.Usage
+            EnergyStorage = energy.Storage
+        }
+
+        let projectGameState (gs: FSBar.Client.GameState) : GameStateFrame =
+            let friendlies =
+                gs.Units
+                |> Seq.map (fun kv -> projectFriendly kv.Value)
+                |> Seq.toList
+            let enemies =
+                gs.Enemies
+                |> Seq.map (fun kv -> projectEnemy kv.Value)
+                |> Seq.toList
+            { FrameNumber = gs.FrameNumber
+              TeamId = gs.TeamId
+              Friendlies = friendlies
+              Enemies = enemies
+              Economy = Some (projectEconomy gs.Metal gs.Energy) }
+
+        // Map a single typed FSBar.Client.GameEvent to its wire envelope.
+        // Returns None for cases that the feature-046 spec FR-005
+        // deliberately excludes (e.g., Release/Message/UnitDamaged/
+        // EnemyDamaged/WeaponFired/PlayerCommand/SeismicPing/
+        // CommandFinished/Load/Save/LuaMessage/Unknown).
+        let projectGameEvent (ev: FSBar.Client.GameEvent) : GameEventEnvelope option =
+            let envelope p = Some ({ Payload = p }: GameEventEnvelope)
+            match ev with
+            | FSBar.Client.GameEvent.Init teamId ->
+                envelope (GameEventEnvelope.PayloadCase.Init { TeamId = teamId })
+            | FSBar.Client.GameEvent.UnitCreated (unitId, builderId) ->
+                envelope (GameEventEnvelope.PayloadCase.UnitCreated
+                            { UnitId = unitId; DefId = 0; BuilderUnitId = builderId })
+            | FSBar.Client.GameEvent.UnitFinished unitId ->
+                envelope (GameEventEnvelope.PayloadCase.UnitFinished
+                            { UnitId = unitId; DefId = 0 })
+            | FSBar.Client.GameEvent.UnitIdle unitId ->
+                envelope (GameEventEnvelope.PayloadCase.UnitIdle { UnitId = unitId })
+            | FSBar.Client.GameEvent.UnitDestroyed (unitId, attackerId) ->
+                envelope (GameEventEnvelope.PayloadCase.UnitDestroyed
+                            { UnitId = unitId
+                              AttackerUnitId = defaultArg attackerId 0 })
+            | FSBar.Client.GameEvent.UnitGiven (unitId, oldT, newT) ->
+                envelope (GameEventEnvelope.PayloadCase.UnitGiven
+                            { UnitId = unitId; OldTeamId = oldT; NewTeamId = newT })
+            | FSBar.Client.GameEvent.UnitCaptured (unitId, oldT, newT) ->
+                envelope (GameEventEnvelope.PayloadCase.UnitCaptured
+                            { UnitId = unitId; OldTeamId = oldT; NewTeamId = newT })
+            | FSBar.Client.GameEvent.EnemyEnterLOS enemyId ->
+                envelope (GameEventEnvelope.PayloadCase.EnemyEnterLos { EnemyId = enemyId })
+            | FSBar.Client.GameEvent.EnemyLeaveLOS enemyId ->
+                envelope (GameEventEnvelope.PayloadCase.EnemyLeaveLos { EnemyId = enemyId })
+            | FSBar.Client.GameEvent.EnemyEnterRadar enemyId ->
+                envelope (GameEventEnvelope.PayloadCase.EnemyEnterRadar { EnemyId = enemyId })
+            | FSBar.Client.GameEvent.EnemyLeaveRadar enemyId ->
+                envelope (GameEventEnvelope.PayloadCase.EnemyLeaveRadar { EnemyId = enemyId })
+            | FSBar.Client.GameEvent.EnemyDestroyed (enemyId, attackerId) ->
+                envelope (GameEventEnvelope.PayloadCase.EnemyDestroyed
+                            { EnemyId = enemyId
+                              AttackerUnitId = defaultArg attackerId 0 })
+            | FSBar.Client.GameEvent.EnemyCreated enemyId ->
+                envelope (GameEventEnvelope.PayloadCase.EnemyCreated
+                            { EnemyId = enemyId; DefId = 0 })
+            | FSBar.Client.GameEvent.EnemyFinished enemyId ->
+                envelope (GameEventEnvelope.PayloadCase.EnemyFinished
+                            { EnemyId = enemyId; DefId = 0 })
+            | FSBar.Client.GameEvent.Update frame ->
+                envelope (GameEventEnvelope.PayloadCase.Update { Frame = uint32 frame })
+            | FSBar.Client.GameEvent.Shutdown _ ->
+                envelope (GameEventEnvelope.PayloadCase.Shutdown GameEventShutdown.empty)
+            | _ -> None
+
     [<Sealed>]
     type ScriptingService(
             sessions: SessionManager.SessionManager,
@@ -512,7 +632,10 @@ module ScriptingHub =
                 SingleReader = true,
                 SingleWriter = false)
 
-        let publishFrame (highbarFrame: Highbar.Frame) =
+        let publishFrame
+                (highbarFrame: Highbar.Frame)
+                (gameState: GameStateFrame option)
+                (gameEvents: GameEventEnvelope list) =
             let snapshot = clients.Values |> Seq.toArray
             for client in snapshot do
                 // DropOldest never fails TryWrite — peek at reader
@@ -526,6 +649,8 @@ module ScriptingHub =
                     Frame = Some highbarFrame
                     ClientSequence = seq
                     HubEnqueuedAtUnixMs = unixMillis ()
+                    GameState = gameState
+                    GameEvents = gameEvents
                 }
                 client.Channel.Writer.TryWrite(wire) |> ignore
 
@@ -545,23 +670,36 @@ module ScriptingHub =
             sessions.Frames.Subscribe(
                 { new IObserver<FSBar.Client.GameFrame> with
                     member _.OnNext(frame) =
-                        // Phase-9 note (see proto comment): the hub
-                        // surfaces only the engine frame number +
-                        // team id pulled from SessionManager's live
-                        // GameState. The F# GameFrame carries typed
-                        // events that do not yet have a wire form.
-                        let teamId =
+                        // Feature 046: project BarClient.GameState
+                        // (feature-045 single source of truth) and the
+                        // tick's typed events onto the wire. State +
+                        // events ride the same GameFrameMessage so they
+                        // cannot reorder relative to each other (FR-001).
+                        let gsOpt, teamId =
                             match sessions.State with
                             | SessionManager.Running rs ->
-                                try rs.BarClient.GameState.TeamId
-                                with _ -> 0
-                            | _ -> 0
+                                try
+                                    let gs = rs.BarClient.GameState
+                                    // Pin the wire frame number to the
+                                    // incoming frame — GameState.FrameNumber
+                                    // is the last-applied-snapshot's value
+                                    // and can race with this OnNext (US1
+                                    // monotonicity hinges on it).
+                                    let projected =
+                                        { Projection.projectGameState gs with
+                                            FrameNumber = frame.FrameNumber }
+                                    Some projected, gs.TeamId
+                                with _ -> None, 0
+                            | _ -> None, 0
+                        let gameEvents =
+                            frame.Events
+                            |> List.choose Projection.projectGameEvent
                         let wireFrame: Highbar.Frame = {
                             FrameNumber = frame.FrameNumber
                             Events = []
                             TeamId = teamId
                         }
-                        publishFrame wireFrame
+                        publishFrame wireFrame gsOpt gameEvents
                     member _.OnError(_) = ()
                     member _.OnCompleted() = () })
 
@@ -583,7 +721,7 @@ module ScriptingHub =
                 Events = []
                 TeamId = teamId
             }
-            publishFrame wire
+            publishFrame wire None []
 
         member internal this.AttachTestClient(label: string) =
             let id = Guid.NewGuid()
@@ -1743,6 +1881,257 @@ module ScriptingHub =
                     finally
                         sub.Dispose()
             } :> Task
+
+        // --- Feature 046 US3 — Map data + extended unit def. ---
+        //
+        // All data is read from the already-cached RunningSession
+        // (`MapGrid`, `MetalSpots`, `Config.MapName`) loaded at session
+        // warmup by SessionManager — no new engine round-trips. When
+        // no session is running OR the warmup left MapGrid = None, we
+        // return well-formed empty responses (FR-012 no-session
+        // semantics).
+
+        // Flatten a 2D float array in row-major order.
+        member private _.Flatten2DFloat (arr: float32[,]) : float32 list =
+            let w = Array2D.length1 arr
+            let h = Array2D.length2 arr
+            [ for z in 0 .. h - 1 do
+                for x in 0 .. w - 1 do
+                    yield arr.[x, z] ]
+
+        // Flatten a 2D int array in row-major order.
+        member private _.Flatten2DInt (arr: int[,]) : int list =
+            let w = Array2D.length1 arr
+            let h = Array2D.length2 arr
+            [ for z in 0 .. h - 1 do
+                for x in 0 .. w - 1 do
+                    yield arr.[x, z] ]
+
+        member private this.TryRunning () =
+            match sessions.State with
+            | SessionManager.Running rs -> Some rs
+            | _ -> None
+
+        override this.GetMapInfo (_request: GetMapInfoRequest) _context : Task<GetMapInfoResponse> =
+            match this.TryRunning () with
+            | Some rs ->
+                let w, h =
+                    match rs.MapGrid with
+                    | Some g -> g.WidthHeightmap, g.HeightHeightmap
+                    | None -> 0, 0
+                Task.FromResult(
+                    { Width = w
+                      Height = h
+                      MapName = rs.Config.MapName
+                      DataDir = install.DataDir } : GetMapInfoResponse)
+            | None ->
+                Task.FromResult(
+                    { Width = 0; Height = 0; MapName = ""; DataDir = install.DataDir }
+                    : GetMapInfoResponse)
+
+        override this.GetHeightmap (_request: GetHeightmapRequest) _context : Task<HeightmapResponse> =
+            // The warmup caches the corners heightmap only (see
+            // MapGrid.loadFromEngine). The plain heightmap is derivable
+            // by averaging the four corners of each cell; return that
+            // at (width × height) resolution to match FR-006 shape.
+            match this.TryRunning () |> Option.bind (fun rs -> rs.MapGrid) with
+            | Some g ->
+                let w = g.WidthHeightmap
+                let h = g.HeightHeightmap
+                let corners = g.HeightMap
+                let heights =
+                    [ for z in 0 .. h - 1 do
+                        for x in 0 .. w - 1 do
+                            yield
+                                (corners.[x, z]
+                                 + corners.[x + 1, z]
+                                 + corners.[x, z + 1]
+                                 + corners.[x + 1, z + 1]) / 4.0f ]
+                Task.FromResult(
+                    { Width = w; Height = h; Heights = heights } : HeightmapResponse)
+            | None ->
+                Task.FromResult(
+                    { Width = 0; Height = 0; Heights = [] } : HeightmapResponse)
+
+        override this.GetCornersHeightmap (_request: GetCornersHeightmapRequest) _context : Task<CornersHeightmapResponse> =
+            match this.TryRunning () |> Option.bind (fun rs -> rs.MapGrid) with
+            | Some g ->
+                let w = Array2D.length1 g.HeightMap
+                let h = Array2D.length2 g.HeightMap
+                let heights = this.Flatten2DFloat g.HeightMap
+                Task.FromResult(
+                    { Width = w; Height = h; Heights = heights }
+                    : CornersHeightmapResponse)
+            | None ->
+                Task.FromResult(
+                    { Width = 0; Height = 0; Heights = [] }
+                    : CornersHeightmapResponse)
+
+        override this.GetSlopeMap (_request: GetSlopeMapRequest) _context : Task<SlopeMapResponse> =
+            match this.TryRunning () |> Option.bind (fun rs -> rs.MapGrid) with
+            | Some g ->
+                let w = Array2D.length1 g.SlopeMap
+                let h = Array2D.length2 g.SlopeMap
+                Task.FromResult(
+                    { Width = w; Height = h; Slopes = this.Flatten2DFloat g.SlopeMap }
+                    : SlopeMapResponse)
+            | None ->
+                Task.FromResult({ Width = 0; Height = 0; Slopes = [] } : SlopeMapResponse)
+
+        override this.GetLosMap (_request: GetLosMapRequest) _context : Task<LosMapResponse> =
+            match this.TryRunning () |> Option.bind (fun rs -> rs.MapGrid) with
+            | Some g ->
+                let w = Array2D.length1 g.LosMap
+                let h = Array2D.length2 g.LosMap
+                Task.FromResult(
+                    { Width = w; Height = h; Values = this.Flatten2DInt g.LosMap }
+                    : LosMapResponse)
+            | None ->
+                Task.FromResult({ Width = 0; Height = 0; Values = [] } : LosMapResponse)
+
+        override this.GetRadarMap (_request: GetRadarMapRequest) _context : Task<RadarMapResponse> =
+            match this.TryRunning () |> Option.bind (fun rs -> rs.MapGrid) with
+            | Some g ->
+                let w = Array2D.length1 g.RadarMap
+                let h = Array2D.length2 g.RadarMap
+                Task.FromResult(
+                    { Width = w; Height = h; Values = this.Flatten2DInt g.RadarMap }
+                    : RadarMapResponse)
+            | None ->
+                Task.FromResult({ Width = 0; Height = 0; Values = [] } : RadarMapResponse)
+
+        override this.GetResourceMap (_request: GetResourceMapRequest) _context : Task<ResourceMapResponse> =
+            match this.TryRunning () |> Option.bind (fun rs -> rs.MapGrid) with
+            | Some g ->
+                let w = Array2D.length1 g.ResourceMap
+                let h = Array2D.length2 g.ResourceMap
+                Task.FromResult(
+                    { Width = w; Height = h; Values = this.Flatten2DInt g.ResourceMap }
+                    : ResourceMapResponse)
+            | None ->
+                Task.FromResult({ Width = 0; Height = 0; Values = [] } : ResourceMapResponse)
+
+        override this.ListMetalSpots (_request: ListMetalSpotsRequest) _context : Task<MetalSpotsResponse> =
+            match this.TryRunning () with
+            | Some rs ->
+                let spots =
+                    rs.MetalSpots
+                    |> Array.map (fun (x, y, z, v) ->
+                        ({ X = x; Y = y; Z = z; MetalValue = v } : MetalSpot))
+                    |> Array.toList
+                Task.FromResult({ Spots = spots } : MetalSpotsResponse)
+            | None ->
+                Task.FromResult({ Spots = [] } : MetalSpotsResponse)
+
+        override this.GetUnitDefExtended (request: GetUnitDefRequest) _context : Task<GetUnitDefExtendedResponse> =
+            // Merge static BarData (EncyclopediaEntry) with live engine
+            // cache (UnitDefCache) so callers get one rich response.
+            let entries = ScriptingService.cachedEntries.Value
+            let cache = unitDefs ()
+            let selected =
+                match request.Selector with
+                | GetUnitDefRequest.SelectorCase.DefId defId ->
+                    entries |> List.tryFind (fun e -> e.DefId = defId)
+                | GetUnitDefRequest.SelectorCase.InternalName name ->
+                    entries |> List.tryFind (fun e -> e.InternalName = name)
+                | GetUnitDefRequest.SelectorCase.None -> None
+            match selected with
+            | None ->
+                Task.FromResult({ UnitDef = None } : GetUnitDefExtendedResponse)
+            | Some e ->
+                // Look up the live cache by internal name — the
+                // encyclopedia's DefId may be a BarData-internal id that
+                // differs from the engine's.
+                let live =
+                    FSBar.Client.UnitDefCache.tryFindByName cache e.InternalName
+                    |> Option.orElseWith (fun () ->
+                        FSBar.Client.UnitDefCache.tryFindById cache e.DefId)
+                let buildOptions =
+                    live
+                    |> Option.map (fun li -> Array.toList li.BuildOptions)
+                    |> Option.defaultValue []
+                let buildSpeed =
+                    live |> Option.map (fun li -> li.BuildSpeed) |> Option.defaultValue 0.0f
+                let maxWeaponRange =
+                    let fromEncy =
+                        if List.isEmpty e.WeaponRangesElmo then 0.0f
+                        else List.max e.WeaponRangesElmo
+                    match live with
+                    | Some li when li.MaxWeaponRange > 0.0f -> li.MaxWeaponRange
+                    | _ -> fromEncy
+                let info : UnitDefInfoExtended = {
+                    DefId = e.DefId
+                    InternalName = e.InternalName
+                    DisplayName = e.InternalName  // EncyclopediaEntry has no separate display name
+                    Faction = sprintf "%A" e.Faction
+                    Cost = Some ({ Metal = float32 e.MetalCost; Energy = float32 e.EnergyCost } : CostWire)
+                    BuildTime = float32 e.BuildTime
+                    BuildSpeed = buildSpeed
+                    SightRangeElmo = e.SightRangeElmo
+                    MaxWeaponRange = maxWeaponRange
+                    FootprintX = e.FootprintX
+                    FootprintZ = e.FootprintZ
+                    BuildOptions = buildOptions
+                    MaxHealth = e.Health
+                    WeaponRangesElmo = e.WeaponRangesElmo
+                }
+                Task.FromResult({ UnitDef = Some info } : GetUnitDefExtendedResponse)
+
+        override this.SendCommandBatch (request: SendCommandBatchRequest) _context : Task<SendCommandBatchResponse> =
+            let count = List.length request.Commands
+            // FR-008: size cap is checked first; whole-batch rejection
+            // above 1024 (no commands forwarded).
+            if count > 1024 then
+                let diag =
+                    sprintf "batch size %d exceeds cap of 1024; whole batch rejected" count
+                Task.FromResult(
+                    { ForwardedAtFrame = 0
+                      Outcomes = []
+                      BatchDiagnostic = diag }: SendCommandBatchResponse)
+            elif count = 0 then
+                Task.FromResult(
+                    { ForwardedAtFrame = 0
+                      Outcomes = []
+                      BatchDiagnostic = "" }: SendCommandBatchResponse)
+            else
+                match this.TryRunning () with
+                | None ->
+                    Task.FromResult(
+                        { ForwardedAtFrame = 0
+                          Outcomes = []
+                          BatchDiagnostic = "no active session" }: SendCommandBatchResponse)
+                | Some rs ->
+                    // Per-entry validation: an entry without a payload
+                    // is rejected; everything else is forwarded as a
+                    // single dispatch so the engine sees one frame.
+                    let outcomes, accepted =
+                        request.Commands
+                        |> List.mapi (fun i cmd ->
+                            let payloadSet =
+                                match cmd.Command with
+                                | Highbar.AICommand.CommandCase.None -> false
+                                | _ -> true
+                            if payloadSet then
+                                ({ Index = i
+                                   Accepted = true
+                                   Diagnostic = "" } : CommandOutcome), Some cmd
+                            else
+                                ({ Index = i
+                                   Accepted = false
+                                   Diagnostic = "command payload not set" }
+                                  : CommandOutcome), None)
+                        |> List.unzip
+                    let acceptedCmds = accepted |> List.choose id
+                    let frameNum =
+                        try
+                            if not (List.isEmpty acceptedCmds) then
+                                rs.BarClient.SendCommands(acceptedCmds)
+                            int rs.BarClient.GameState.FrameNumber
+                        with _ -> 0
+                    Task.FromResult(
+                        { ForwardedAtFrame = frameNum
+                          Outcomes = outcomes
+                          BatchDiagnostic = "" }: SendCommandBatchResponse)
 
         interface IDisposable with
             member _.Dispose() =

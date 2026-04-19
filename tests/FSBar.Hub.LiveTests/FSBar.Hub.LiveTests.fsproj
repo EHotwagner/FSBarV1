@@ -18,6 +18,9 @@
     <Compile Include="LiveAdminForceEndTests.fs" />
     <Compile Include="LiveAdminMessageTests.fs" />
     <Compile Include="LiveHeadlessOrchestrationTests.fs" />
+    <Compile Include="LiveStateStreamTests.fs" />
+    <Compile Include="LiveMapQueriesTests.fs" />
+    <Compile Include="LiveCommandBatchTests.fs" />
     <Compile Include="LiveTabStateRoutingTests.fs" />
     <Compile Include="LiveAdminChannelLogStreamTests.fs" />
     <Compile Include="PlaceholderTests.fs" />

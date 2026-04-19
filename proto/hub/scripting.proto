@@ -123,6 +123,40 @@ service ScriptingService {
   rpc ListLayers(ListLayersRequest) returns (ListLayersResponse);
   rpc ClearLayers(ClearLayersRequest) returns (ClearLayersResponse);
 
+  // ---------------------------------------------------------------------------
+  // Feature 046 — Fully comprehensive scripting client. Additive only.
+  // ---------------------------------------------------------------------------
+  //
+  // State + events travel on the existing `StreamGameFrames` RPC: every
+  // `GameFrameMessage` now carries `game_state` + `game_events` alongside
+  // the legacy `frame` envelope. This section adds the unary map-data
+  // RPCs, extends `GetUnitDef` with `UnitDefInfoExtended`, and introduces
+  // `SendCommandBatch` (≤1024 commands per call, whole-batch rejection
+  // above cap).
+
+  // ---------------- Map-data unary queries (US3) ----------------
+
+  rpc GetMapInfo(GetMapInfoRequest) returns (GetMapInfoResponse);
+  rpc GetHeightmap(GetHeightmapRequest) returns (HeightmapResponse);
+  rpc GetCornersHeightmap(GetCornersHeightmapRequest) returns (CornersHeightmapResponse);
+  rpc GetSlopeMap(GetSlopeMapRequest) returns (SlopeMapResponse);
+  rpc GetLosMap(GetLosMapRequest) returns (LosMapResponse);
+  rpc GetRadarMap(GetRadarMapRequest) returns (RadarMapResponse);
+  rpc GetResourceMap(GetResourceMapRequest) returns (ResourceMapResponse);
+  rpc ListMetalSpots(ListMetalSpotsRequest) returns (MetalSpotsResponse);
+
+  // ---------------- Extended unit-def (US3) ----------------
+  //
+  // The existing `GetUnitDef` return type is unchanged — it still returns
+  // the legacy `UnitDefInfo`. `GetUnitDefExtended` returns the full
+  // planning-relevant surface (build options, weapon ranges, build
+  // speed, etc.) per feature-046 FR-007.
+  rpc GetUnitDefExtended(GetUnitDefRequest) returns (GetUnitDefExtendedResponse);
+
+  // ---------------- Command batch (US4) ----------------
+
+  rpc SendCommandBatch(SendCommandBatchRequest) returns (SendCommandBatchResponse);
+
   // ---------------- Hub log stream (feature 042) ----------------
 
   // Bidirectional streaming RPC. The client sends an initial
@@ -150,7 +184,8 @@ message StreamGameFramesRequest {
 
 message GameFrameMessage {
   // The raw proxy frame envelope as seen by the embedded viewer.
-  // Phase-9 note: may be widened with decoded state projections.
+  // Phase-9 note: superseded by `game_state` + `game_events` (feature
+  // 046) for most consumers; kept for legacy compatibility.
   highbar.Frame frame = 1;
 
   // Hub-assigned monotonic sequence number for this client. Lets clients
@@ -160,6 +195,15 @@ message GameFrameMessage {
   // Hub-side timestamp (unix millis) when the frame was enqueued for this
   // client. Useful for measuring fan-out latency.
   int64 hub_enqueued_at_unix_ms = 3;
+
+  // Feature 046: per-tick projection of BarClient.GameState. Populated
+  // whenever a session is active and the frame carries a fresh snapshot;
+  // absent on the "no-session" placeholder paths.
+  optional GameStateFrame game_state = 4;
+
+  // Feature 046: typed gameplay events observed since the previous frame
+  // delivered to this subscriber, in engine arrival order.
+  repeated GameEventEnvelope game_events = 5;
 }
 
 message SendCommandRequest {
@@ -971,4 +1015,315 @@ message LogEntryMessage {
   // Count of entries the server dropped to this subscriber since the
   // last successful delivery (FR-012). Reset to 0 on every delivery.
   int32 dropped_since_last = 9;
+}
+
+// -----------------------------------------------------------------------------
+// Feature 046 — Fully comprehensive scripting client. Additive only.
+//
+// Design notes (see specs/046-scripting-full-client/):
+//   * Per-tick state is a projection of FSBar.Client.BarClient.GameState
+//     (feature 045 is the single source of truth). No new engine RPCs.
+//   * Enemy health uses oneof{health_info} so "unknown" (radar-only /
+//     frozen last-known) is distinguishable from "health = 0" (dying).
+//   * Grid responses are repeated float / repeated int32 + width/height;
+//     the Hub scripting channel's MaxReceiveMessageSize /
+//     MaxSendMessageSize are raised to fit worst-case SupportedMap grids.
+//   * SendCommandBatch is capped at 1024; oversize batches are rejected
+//     whole with a diagnostic naming the cap and received size.
+// -----------------------------------------------------------------------------
+
+// ---------- Per-tick game-state projection (US1) ----------
+
+message Vec3Wire {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+}
+
+message EconomySnapshotWire {
+  float metal_current = 1;
+  float metal_income  = 2;
+  float metal_usage   = 3;
+  float metal_storage = 4;
+  float energy_current = 5;
+  float energy_income  = 6;
+  float energy_usage   = 7;
+  float energy_storage = 8;
+}
+
+// Explicit "unknown health" marker on EnemyUnitState.health_info.
+// Distinct from health = 0 (a dying unit).
+message EnemyHealthUnknown {}
+
+message FriendlyUnitState {
+  int32 unit_id = 1;
+  int32 def_id = 2;
+  Vec3Wire position = 3;
+  float health = 4;
+  float max_health = 5;
+  bool finished = 6;
+  bool idle = 7;
+}
+
+message EnemyUnitState {
+  int32 unit_id = 1;
+  // Absent iff the engine has not disclosed the def (radar-only of
+  // unknown class).
+  optional int32 def_id = 2;
+  // Last-known position — frozen when the enemy dropped from both LOS
+  // and radar this tick.
+  Vec3Wire position = 3;
+  // FR-003 totality: exactly one arm is always set. `unknown` indicates
+  // radar-only or frozen-last-known. `health = 0` is a legitimate
+  // "visible but dying" reading.
+  oneof health_info {
+    float health = 4;
+    EnemyHealthUnknown unknown = 5;
+  }
+  bool in_los = 6;
+  bool in_radar = 7;
+}
+
+message GameStateFrame {
+  uint32 frame_number = 1;
+  int32 team_id = 2;
+  repeated FriendlyUnitState friendlies = 3;
+  repeated EnemyUnitState enemies = 4;
+  EconomySnapshotWire economy = 5;
+}
+
+// ---------- Typed game events (US2) ----------
+
+message GameEventInit {
+  int32 team_id = 1;
+}
+
+message GameEventUnitCreated {
+  int32 unit_id = 1;
+  int32 def_id = 2;
+  // 0 if no builder (e.g., commander).
+  int32 builder_unit_id = 3;
+}
+
+message GameEventUnitFinished {
+  int32 unit_id = 1;
+  int32 def_id = 2;
+}
+
+message GameEventUnitIdle {
+  int32 unit_id = 1;
+}
+
+message GameEventUnitDestroyed {
+  int32 unit_id = 1;
+  int32 attacker_unit_id = 2;
+}
+
+message GameEventUnitGiven {
+  int32 unit_id = 1;
+  int32 old_team_id = 2;
+  int32 new_team_id = 3;
+}
+
+message GameEventUnitCaptured {
+  int32 unit_id = 1;
+  int32 old_team_id = 2;
+  int32 new_team_id = 3;
+}
+
+message GameEventEnemyEnterLos {
+  int32 enemy_id = 1;
+}
+
+message GameEventEnemyLeaveLos {
+  int32 enemy_id = 1;
+}
+
+message GameEventEnemyEnterRadar {
+  int32 enemy_id = 1;
+}
+
+message GameEventEnemyLeaveRadar {
+  int32 enemy_id = 1;
+}
+
+message GameEventEnemyDestroyed {
+  int32 enemy_id = 1;
+  int32 attacker_unit_id = 2;
+}
+
+message GameEventEnemyCreated {
+  int32 enemy_id = 1;
+  int32 def_id = 2;
+}
+
+message GameEventEnemyFinished {
+  int32 enemy_id = 1;
+  int32 def_id = 2;
+}
+
+message GameEventUpdate {
+  uint32 frame = 1;
+}
+
+message GameEventShutdown {}
+
+message GameEventEnvelope {
+  oneof payload {
+    GameEventInit              init = 1;
+    GameEventUnitCreated       unit_created = 2;
+    GameEventUnitFinished      unit_finished = 3;
+    GameEventUnitIdle          unit_idle = 4;
+    GameEventUnitDestroyed     unit_destroyed = 5;
+    GameEventUnitGiven         unit_given = 6;
+    GameEventUnitCaptured      unit_captured = 7;
+    GameEventEnemyEnterLos     enemy_enter_los = 8;
+    GameEventEnemyLeaveLos     enemy_leave_los = 9;
+    GameEventEnemyEnterRadar   enemy_enter_radar = 10;
+    GameEventEnemyLeaveRadar   enemy_leave_radar = 11;
+    GameEventEnemyDestroyed    enemy_destroyed = 12;
+    GameEventEnemyCreated      enemy_created = 13;
+    GameEventEnemyFinished     enemy_finished = 14;
+    GameEventUpdate            update = 15;
+    GameEventShutdown          shutdown = 16;
+  }
+}
+
+// ---------- Map-data queries (US3) ----------
+
+message GetMapInfoRequest {}
+
+message GetMapInfoResponse {
+  // Width/height in heightmap squares (matches Callbacks.getMapWidth /
+  // getMapHeight). World size = width * 8, height * 8 elmos.
+  int32 width = 1;
+  int32 height = 2;
+  // Active map's internal name (best-effort; empty when no session).
+  string map_name = 3;
+  // BAR data directory for the running engine.
+  string data_dir = 4;
+}
+
+message GetHeightmapRequest {}
+
+message HeightmapResponse {
+  int32 width = 1;
+  int32 height = 2;
+  // Row-major, length = width * height.
+  repeated float heights = 3;
+}
+
+message GetCornersHeightmapRequest {}
+
+message CornersHeightmapResponse {
+  // Width + 1 by Height + 1 vertex resolution.
+  int32 width = 1;
+  int32 height = 2;
+  repeated float heights = 3;
+}
+
+message GetSlopeMapRequest {}
+
+message SlopeMapResponse {
+  // Half heightmap resolution.
+  int32 width = 1;
+  int32 height = 2;
+  repeated float slopes = 3;
+}
+
+message GetLosMapRequest {}
+
+message LosMapResponse {
+  int32 width = 1;
+  int32 height = 2;
+  repeated int32 values = 3;
+}
+
+message GetRadarMapRequest {}
+
+message RadarMapResponse {
+  int32 width = 1;
+  int32 height = 2;
+  repeated int32 values = 3;
+}
+
+message GetResourceMapRequest {}
+
+message ResourceMapResponse {
+  int32 width = 1;
+  int32 height = 2;
+  // Engine reports integer intensities; widened to int32 to match the
+  // Callbacks.getResourceMap return type.
+  repeated int32 values = 3;
+}
+
+message ListMetalSpotsRequest {}
+
+message MetalSpot {
+  float x = 1;
+  float y = 2;
+  float z = 3;
+  float metal_value = 4;
+}
+
+message MetalSpotsResponse {
+  repeated MetalSpot spots = 1;
+}
+
+// ---------- Extended unit def (US3) ----------
+
+message CostWire {
+  float metal = 1;
+  float energy = 2;
+}
+
+message UnitDefInfoExtended {
+  int32 def_id = 1;
+  string internal_name = 2;
+  string display_name = 3;
+  string faction = 4;
+  CostWire cost = 5;
+  float build_time = 6;
+  float build_speed = 7;
+  float sight_range_elmo = 8;
+  // 0 for units without weapons.
+  float max_weapon_range = 9;
+  int32 footprint_x = 10;
+  int32 footprint_z = 11;
+  // Def ids this unit can build. Empty for non-builders.
+  repeated int32 build_options = 12;
+  int32 max_health = 13;
+  // All weapon ranges in elmos (mirrors EncyclopediaEntryWire).
+  repeated float weapon_ranges_elmo = 14;
+}
+
+message GetUnitDefExtendedResponse {
+  optional UnitDefInfoExtended unit_def = 1;
+}
+
+// ---------- Command batch (US4) ----------
+
+message SendCommandBatchRequest {
+  // ≤1024 commands; above cap → whole-batch rejection (FR-008).
+  repeated highbar.AICommand commands = 1;
+}
+
+message CommandOutcome {
+  // Zero-based index into SendCommandBatchRequest.commands.
+  int32 index = 1;
+  bool accepted = 2;
+  // Empty when accepted; human-readable reason when rejected.
+  string diagnostic = 3;
+}
+
+message SendCommandBatchResponse {
+  // Engine frame at which the accepted commands were forwarded. 0 when
+  // the whole batch was rejected (oversize, no session, etc.).
+  int32 forwarded_at_frame = 1;
+  // 1:1 with request.commands when the batch was accepted at the
+  // size-cap gate. Empty when the whole batch was rejected.
+  repeated CommandOutcome outcomes = 2;
+  // Populated when the whole batch was rejected (e.g., oversize,
+  // no-session). Names the cap and received size when applicable.
+  string batch_diagnostic = 3;
 }

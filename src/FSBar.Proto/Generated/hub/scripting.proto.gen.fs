@@ -188,6 +188,8 @@ module GameFrameMessage =
             val mutable Frame: OptionBuilder<Highbar.Frame> // (1)
             val mutable ClientSequence: uint64 // (2)
             val mutable HubEnqueuedAtUnixMs: int64 // (3)
+            val mutable GameState: OptionBuilder<Fsbar.Hub.Scripting.V1.GameStateFrame> // (4)
+            val mutable GameEvents: RepeatedBuilder<Fsbar.Hub.Scripting.V1.GameEventEnvelope> // (5)
         end
         with
         member x.Put ((tag, reader): int * Reader) =
@@ -195,11 +197,15 @@ module GameFrameMessage =
             | 1 -> x.Frame.Set (ValueCodec.Message<Highbar.Frame>.ReadValue reader)
             | 2 -> x.ClientSequence <- ValueCodec.UInt64.ReadValue reader
             | 3 -> x.HubEnqueuedAtUnixMs <- ValueCodec.Int64.ReadValue reader
+            | 4 -> x.GameState.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameStateFrame>.ReadValue reader)
+            | 5 -> x.GameEvents.Add (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnvelope>.ReadValue reader)
             | _ -> reader.SkipLastField()
         member x.Build : Fsbar.Hub.Scripting.V1.GameFrameMessage = {
             Frame = x.Frame.Build
             ClientSequence = x.ClientSequence
             HubEnqueuedAtUnixMs = x.HubEnqueuedAtUnixMs
+            GameState = x.GameState.Build
+            GameEvents = x.GameEvents.Build
             }
 
 type private _GameFrameMessage = GameFrameMessage
@@ -210,7 +216,8 @@ type GameFrameMessage = {
     // Field Declarations
     /// <summary>
     /// The raw proxy frame envelope as seen by the embedded viewer.
-    /// Phase-9 note: may be widened with decoded state projections.
+    /// Phase-9 note: superseded by `game_state` + `game_events` (feature
+    /// 046) for most consumers; kept for legacy compatibility.
     /// </summary>
     [<System.Text.Json.Serialization.JsonPropertyName("frame")>] Frame: Highbar.Frame option // (1)
     /// <summary>
@@ -223,6 +230,17 @@ type GameFrameMessage = {
     /// client. Useful for measuring fan-out latency.
     /// </summary>
     [<System.Text.Json.Serialization.JsonPropertyName("hubEnqueuedAtUnixMs")>] HubEnqueuedAtUnixMs: int64 // (3)
+    /// <summary>
+    /// Feature 046: per-tick projection of BarClient.GameState. Populated
+    /// whenever a session is active and the frame carries a fresh snapshot;
+    /// absent on the "no-session" placeholder paths.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("gameState")>] GameState: Fsbar.Hub.Scripting.V1.GameStateFrame option // (4)
+    /// <summary>
+    /// Feature 046: typed gameplay events observed since the previous frame
+    /// delivered to this subscriber, in engine arrival order.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("gameEvents")>] GameEvents: Fsbar.Hub.Scripting.V1.GameEventEnvelope list // (5)
     }
     with
     static member Proto : Lazy<ProtoDef<GameFrameMessage>> =
@@ -231,6 +249,8 @@ type GameFrameMessage = {
         let Frame = FieldCodec.Optional ValueCodec.Message<Highbar.Frame> (1, "frame")
         let ClientSequence = FieldCodec.Primitive ValueCodec.UInt64 (2, "clientSequence")
         let HubEnqueuedAtUnixMs = FieldCodec.Primitive ValueCodec.Int64 (3, "hubEnqueuedAtUnixMs")
+        let GameState = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameStateFrame> (4, "gameState")
+        let GameEvents = FieldCodec.Repeated ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnvelope> (5, "gameEvents")
         // Proto Definition Implementation
         { // ProtoDef<GameFrameMessage>
             Name = "GameFrameMessage"
@@ -238,16 +258,22 @@ type GameFrameMessage = {
                 Frame = Frame.GetDefault()
                 ClientSequence = ClientSequence.GetDefault()
                 HubEnqueuedAtUnixMs = HubEnqueuedAtUnixMs.GetDefault()
+                GameState = GameState.GetDefault()
+                GameEvents = GameEvents.GetDefault()
                 }
             Size = fun (m: GameFrameMessage) ->
                 0
                 + Frame.CalcFieldSize m.Frame
                 + ClientSequence.CalcFieldSize m.ClientSequence
                 + HubEnqueuedAtUnixMs.CalcFieldSize m.HubEnqueuedAtUnixMs
+                + GameState.CalcFieldSize m.GameState
+                + GameEvents.CalcFieldSize m.GameEvents
             Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameFrameMessage) ->
                 Frame.WriteField w m.Frame
                 ClientSequence.WriteField w m.ClientSequence
                 HubEnqueuedAtUnixMs.WriteField w m.HubEnqueuedAtUnixMs
+                GameState.WriteField w m.GameState
+                GameEvents.WriteField w m.GameEvents
             Decode = fun (r: Google.Protobuf.CodedInputStream) ->
                 let mutable builder = new Fsbar.Hub.Scripting.V1.GameFrameMessage.Builder()
                 let mutable tag = 0
@@ -258,10 +284,14 @@ type GameFrameMessage = {
                 let writeFrame = Frame.WriteJsonField o
                 let writeClientSequence = ClientSequence.WriteJsonField o
                 let writeHubEnqueuedAtUnixMs = HubEnqueuedAtUnixMs.WriteJsonField o
+                let writeGameState = GameState.WriteJsonField o
+                let writeGameEvents = GameEvents.WriteJsonField o
                 let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameFrameMessage) =
                     writeFrame w m.Frame
                     writeClientSequence w m.ClientSequence
                     writeHubEnqueuedAtUnixMs w m.HubEnqueuedAtUnixMs
+                    writeGameState w m.GameState
+                    writeGameEvents w m.GameEvents
                 encode
             DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
                 let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameFrameMessage =
@@ -269,6 +299,8 @@ type GameFrameMessage = {
                     | "frame" -> { value with Frame = Frame.ReadJsonField kvPair.Value }
                     | "clientSequence" -> { value with ClientSequence = ClientSequence.ReadJsonField kvPair.Value }
                     | "hubEnqueuedAtUnixMs" -> { value with HubEnqueuedAtUnixMs = HubEnqueuedAtUnixMs.ReadJsonField kvPair.Value }
+                    | "gameState" -> { value with GameState = GameState.ReadJsonField kvPair.Value }
+                    | "gameEvents" -> { value with GameEvents = GameEvents.ReadJsonField kvPair.Value }
                     | _ -> value
                 Seq.fold update _GameFrameMessage.empty (node.AsObject ())
         }
@@ -9252,6 +9284,3658 @@ type LogEntryMessage = {
     static member empty
         with get() = Fsbar.Hub.Scripting.V1._LogEntryMessage.Proto.Value.Empty
 
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module Vec3Wire =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable X: float32 // (1)
+            val mutable Y: float32 // (2)
+            val mutable Z: float32 // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.X <- ValueCodec.Float.ReadValue reader
+            | 2 -> x.Y <- ValueCodec.Float.ReadValue reader
+            | 3 -> x.Z <- ValueCodec.Float.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.Vec3Wire = {
+            X = x.X
+            Y = x.Y
+            Z = x.Z
+            }
+
+type private _Vec3Wire = Vec3Wire
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type Vec3Wire = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("x")>] X: float32 // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("y")>] Y: float32 // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("z")>] Z: float32 // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<Vec3Wire>> =
+        lazy
+        // Field Definitions
+        let X = FieldCodec.Primitive ValueCodec.Float (1, "x")
+        let Y = FieldCodec.Primitive ValueCodec.Float (2, "y")
+        let Z = FieldCodec.Primitive ValueCodec.Float (3, "z")
+        // Proto Definition Implementation
+        { // ProtoDef<Vec3Wire>
+            Name = "Vec3Wire"
+            Empty = {
+                X = X.GetDefault()
+                Y = Y.GetDefault()
+                Z = Z.GetDefault()
+                }
+            Size = fun (m: Vec3Wire) ->
+                0
+                + X.CalcFieldSize m.X
+                + Y.CalcFieldSize m.Y
+                + Z.CalcFieldSize m.Z
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: Vec3Wire) ->
+                X.WriteField w m.X
+                Y.WriteField w m.Y
+                Z.WriteField w m.Z
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.Vec3Wire.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeX = X.WriteJsonField o
+                let writeY = Y.WriteJsonField o
+                let writeZ = Z.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: Vec3Wire) =
+                    writeX w m.X
+                    writeY w m.Y
+                    writeZ w m.Z
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : Vec3Wire =
+                    match kvPair.Key with
+                    | "x" -> { value with X = X.ReadJsonField kvPair.Value }
+                    | "y" -> { value with Y = Y.ReadJsonField kvPair.Value }
+                    | "z" -> { value with Z = Z.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _Vec3Wire.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._Vec3Wire.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module EconomySnapshotWire =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable MetalCurrent: float32 // (1)
+            val mutable MetalIncome: float32 // (2)
+            val mutable MetalUsage: float32 // (3)
+            val mutable MetalStorage: float32 // (4)
+            val mutable EnergyCurrent: float32 // (5)
+            val mutable EnergyIncome: float32 // (6)
+            val mutable EnergyUsage: float32 // (7)
+            val mutable EnergyStorage: float32 // (8)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.MetalCurrent <- ValueCodec.Float.ReadValue reader
+            | 2 -> x.MetalIncome <- ValueCodec.Float.ReadValue reader
+            | 3 -> x.MetalUsage <- ValueCodec.Float.ReadValue reader
+            | 4 -> x.MetalStorage <- ValueCodec.Float.ReadValue reader
+            | 5 -> x.EnergyCurrent <- ValueCodec.Float.ReadValue reader
+            | 6 -> x.EnergyIncome <- ValueCodec.Float.ReadValue reader
+            | 7 -> x.EnergyUsage <- ValueCodec.Float.ReadValue reader
+            | 8 -> x.EnergyStorage <- ValueCodec.Float.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.EconomySnapshotWire = {
+            MetalCurrent = x.MetalCurrent
+            MetalIncome = x.MetalIncome
+            MetalUsage = x.MetalUsage
+            MetalStorage = x.MetalStorage
+            EnergyCurrent = x.EnergyCurrent
+            EnergyIncome = x.EnergyIncome
+            EnergyUsage = x.EnergyUsage
+            EnergyStorage = x.EnergyStorage
+            }
+
+type private _EconomySnapshotWire = EconomySnapshotWire
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type EconomySnapshotWire = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("metalCurrent")>] MetalCurrent: float32 // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("metalIncome")>] MetalIncome: float32 // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("metalUsage")>] MetalUsage: float32 // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("metalStorage")>] MetalStorage: float32 // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyCurrent")>] EnergyCurrent: float32 // (5)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyIncome")>] EnergyIncome: float32 // (6)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyUsage")>] EnergyUsage: float32 // (7)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyStorage")>] EnergyStorage: float32 // (8)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<EconomySnapshotWire>> =
+        lazy
+        // Field Definitions
+        let MetalCurrent = FieldCodec.Primitive ValueCodec.Float (1, "metalCurrent")
+        let MetalIncome = FieldCodec.Primitive ValueCodec.Float (2, "metalIncome")
+        let MetalUsage = FieldCodec.Primitive ValueCodec.Float (3, "metalUsage")
+        let MetalStorage = FieldCodec.Primitive ValueCodec.Float (4, "metalStorage")
+        let EnergyCurrent = FieldCodec.Primitive ValueCodec.Float (5, "energyCurrent")
+        let EnergyIncome = FieldCodec.Primitive ValueCodec.Float (6, "energyIncome")
+        let EnergyUsage = FieldCodec.Primitive ValueCodec.Float (7, "energyUsage")
+        let EnergyStorage = FieldCodec.Primitive ValueCodec.Float (8, "energyStorage")
+        // Proto Definition Implementation
+        { // ProtoDef<EconomySnapshotWire>
+            Name = "EconomySnapshotWire"
+            Empty = {
+                MetalCurrent = MetalCurrent.GetDefault()
+                MetalIncome = MetalIncome.GetDefault()
+                MetalUsage = MetalUsage.GetDefault()
+                MetalStorage = MetalStorage.GetDefault()
+                EnergyCurrent = EnergyCurrent.GetDefault()
+                EnergyIncome = EnergyIncome.GetDefault()
+                EnergyUsage = EnergyUsage.GetDefault()
+                EnergyStorage = EnergyStorage.GetDefault()
+                }
+            Size = fun (m: EconomySnapshotWire) ->
+                0
+                + MetalCurrent.CalcFieldSize m.MetalCurrent
+                + MetalIncome.CalcFieldSize m.MetalIncome
+                + MetalUsage.CalcFieldSize m.MetalUsage
+                + MetalStorage.CalcFieldSize m.MetalStorage
+                + EnergyCurrent.CalcFieldSize m.EnergyCurrent
+                + EnergyIncome.CalcFieldSize m.EnergyIncome
+                + EnergyUsage.CalcFieldSize m.EnergyUsage
+                + EnergyStorage.CalcFieldSize m.EnergyStorage
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: EconomySnapshotWire) ->
+                MetalCurrent.WriteField w m.MetalCurrent
+                MetalIncome.WriteField w m.MetalIncome
+                MetalUsage.WriteField w m.MetalUsage
+                MetalStorage.WriteField w m.MetalStorage
+                EnergyCurrent.WriteField w m.EnergyCurrent
+                EnergyIncome.WriteField w m.EnergyIncome
+                EnergyUsage.WriteField w m.EnergyUsage
+                EnergyStorage.WriteField w m.EnergyStorage
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.EconomySnapshotWire.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeMetalCurrent = MetalCurrent.WriteJsonField o
+                let writeMetalIncome = MetalIncome.WriteJsonField o
+                let writeMetalUsage = MetalUsage.WriteJsonField o
+                let writeMetalStorage = MetalStorage.WriteJsonField o
+                let writeEnergyCurrent = EnergyCurrent.WriteJsonField o
+                let writeEnergyIncome = EnergyIncome.WriteJsonField o
+                let writeEnergyUsage = EnergyUsage.WriteJsonField o
+                let writeEnergyStorage = EnergyStorage.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: EconomySnapshotWire) =
+                    writeMetalCurrent w m.MetalCurrent
+                    writeMetalIncome w m.MetalIncome
+                    writeMetalUsage w m.MetalUsage
+                    writeMetalStorage w m.MetalStorage
+                    writeEnergyCurrent w m.EnergyCurrent
+                    writeEnergyIncome w m.EnergyIncome
+                    writeEnergyUsage w m.EnergyUsage
+                    writeEnergyStorage w m.EnergyStorage
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : EconomySnapshotWire =
+                    match kvPair.Key with
+                    | "metalCurrent" -> { value with MetalCurrent = MetalCurrent.ReadJsonField kvPair.Value }
+                    | "metalIncome" -> { value with MetalIncome = MetalIncome.ReadJsonField kvPair.Value }
+                    | "metalUsage" -> { value with MetalUsage = MetalUsage.ReadJsonField kvPair.Value }
+                    | "metalStorage" -> { value with MetalStorage = MetalStorage.ReadJsonField kvPair.Value }
+                    | "energyCurrent" -> { value with EnergyCurrent = EnergyCurrent.ReadJsonField kvPair.Value }
+                    | "energyIncome" -> { value with EnergyIncome = EnergyIncome.ReadJsonField kvPair.Value }
+                    | "energyUsage" -> { value with EnergyUsage = EnergyUsage.ReadJsonField kvPair.Value }
+                    | "energyStorage" -> { value with EnergyStorage = EnergyStorage.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _EconomySnapshotWire.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._EconomySnapshotWire.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module EnemyHealthUnknown =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = EnemyHealthUnknown.empty
+
+[<StructuralEquality;StructuralComparison>]
+type EnemyHealthUnknown = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<EnemyHealthUnknown>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<EnemyHealthUnknown>
+            Name = "EnemyHealthUnknown"
+            Empty = EnemyHealthUnknown.empty
+            Size = fun (m: EnemyHealthUnknown) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: EnemyHealthUnknown) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                EnemyHealthUnknown.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> EnemyHealthUnknown.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module FriendlyUnitState =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable DefId: int // (2)
+            val mutable Position: OptionBuilder<Fsbar.Hub.Scripting.V1.Vec3Wire> // (3)
+            val mutable Health: float32 // (4)
+            val mutable MaxHealth: float32 // (5)
+            val mutable Finished: bool // (6)
+            val mutable Idle: bool // (7)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.DefId <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Position.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.Vec3Wire>.ReadValue reader)
+            | 4 -> x.Health <- ValueCodec.Float.ReadValue reader
+            | 5 -> x.MaxHealth <- ValueCodec.Float.ReadValue reader
+            | 6 -> x.Finished <- ValueCodec.Bool.ReadValue reader
+            | 7 -> x.Idle <- ValueCodec.Bool.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.FriendlyUnitState = {
+            UnitId = x.UnitId
+            DefId = x.DefId
+            Position = x.Position.Build
+            Health = x.Health
+            MaxHealth = x.MaxHealth
+            Finished = x.Finished
+            Idle = x.Idle
+            }
+
+type private _FriendlyUnitState = FriendlyUnitState
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type FriendlyUnitState = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("defId")>] DefId: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("position")>] Position: Fsbar.Hub.Scripting.V1.Vec3Wire option // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("health")>] Health: float32 // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("maxHealth")>] MaxHealth: float32 // (5)
+    [<System.Text.Json.Serialization.JsonPropertyName("finished")>] Finished: bool // (6)
+    [<System.Text.Json.Serialization.JsonPropertyName("idle")>] Idle: bool // (7)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<FriendlyUnitState>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let DefId = FieldCodec.Primitive ValueCodec.Int32 (2, "defId")
+        let Position = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.Vec3Wire> (3, "position")
+        let Health = FieldCodec.Primitive ValueCodec.Float (4, "health")
+        let MaxHealth = FieldCodec.Primitive ValueCodec.Float (5, "maxHealth")
+        let Finished = FieldCodec.Primitive ValueCodec.Bool (6, "finished")
+        let Idle = FieldCodec.Primitive ValueCodec.Bool (7, "idle")
+        // Proto Definition Implementation
+        { // ProtoDef<FriendlyUnitState>
+            Name = "FriendlyUnitState"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                DefId = DefId.GetDefault()
+                Position = Position.GetDefault()
+                Health = Health.GetDefault()
+                MaxHealth = MaxHealth.GetDefault()
+                Finished = Finished.GetDefault()
+                Idle = Idle.GetDefault()
+                }
+            Size = fun (m: FriendlyUnitState) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + DefId.CalcFieldSize m.DefId
+                + Position.CalcFieldSize m.Position
+                + Health.CalcFieldSize m.Health
+                + MaxHealth.CalcFieldSize m.MaxHealth
+                + Finished.CalcFieldSize m.Finished
+                + Idle.CalcFieldSize m.Idle
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: FriendlyUnitState) ->
+                UnitId.WriteField w m.UnitId
+                DefId.WriteField w m.DefId
+                Position.WriteField w m.Position
+                Health.WriteField w m.Health
+                MaxHealth.WriteField w m.MaxHealth
+                Finished.WriteField w m.Finished
+                Idle.WriteField w m.Idle
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.FriendlyUnitState.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writeDefId = DefId.WriteJsonField o
+                let writePosition = Position.WriteJsonField o
+                let writeHealth = Health.WriteJsonField o
+                let writeMaxHealth = MaxHealth.WriteJsonField o
+                let writeFinished = Finished.WriteJsonField o
+                let writeIdle = Idle.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: FriendlyUnitState) =
+                    writeUnitId w m.UnitId
+                    writeDefId w m.DefId
+                    writePosition w m.Position
+                    writeHealth w m.Health
+                    writeMaxHealth w m.MaxHealth
+                    writeFinished w m.Finished
+                    writeIdle w m.Idle
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : FriendlyUnitState =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "defId" -> { value with DefId = DefId.ReadJsonField kvPair.Value }
+                    | "position" -> { value with Position = Position.ReadJsonField kvPair.Value }
+                    | "health" -> { value with Health = Health.ReadJsonField kvPair.Value }
+                    | "maxHealth" -> { value with MaxHealth = MaxHealth.ReadJsonField kvPair.Value }
+                    | "finished" -> { value with Finished = Finished.ReadJsonField kvPair.Value }
+                    | "idle" -> { value with Idle = Idle.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _FriendlyUnitState.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._FriendlyUnitState.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module EnemyUnitState =
+
+    [<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.OneofConverter<HealthInfoCase>>)>]
+    [<CompilationRepresentation(CompilationRepresentationFlags.UseNullAsTrueValue)>]
+    [<StructuralEquality;StructuralComparison>]
+    [<RequireQualifiedAccess>]
+    type HealthInfoCase =
+    | None
+    | [<System.Text.Json.Serialization.JsonPropertyName("health")>] Health of float32
+    | [<System.Text.Json.Serialization.JsonPropertyName("unknown")>] Unknown of Fsbar.Hub.Scripting.V1.EnemyHealthUnknown
+    with
+        static member OneofCodec : Lazy<OneofCodec<HealthInfoCase>> = 
+            lazy
+            let Health = FieldCodec.OneofCase "health_info" ValueCodec.Float (4, "health")
+            let Unknown = FieldCodec.OneofCase "health_info" ValueCodec.Message<Fsbar.Hub.Scripting.V1.EnemyHealthUnknown> (5, "unknown")
+            let HealthInfo = FieldCodec.Oneof "health_info" (FSharp.Collections.Map [
+                ("health", fun node -> HealthInfoCase.Health (Health.ReadJsonField node))
+                ("unknown", fun node -> HealthInfoCase.Unknown (Unknown.ReadJsonField node))
+                ])
+            HealthInfo
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable DefId: OptionBuilder<int> // (2)
+            val mutable Position: OptionBuilder<Fsbar.Hub.Scripting.V1.Vec3Wire> // (3)
+            val mutable HealthInfo: OptionBuilder<Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase>
+            val mutable InLos: bool // (6)
+            val mutable InRadar: bool // (7)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.DefId.Set (ValueCodec.Int32.ReadValue reader)
+            | 3 -> x.Position.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.Vec3Wire>.ReadValue reader)
+            | 4 -> x.HealthInfo.Set (HealthInfoCase.Health (ValueCodec.Float.ReadValue reader))
+            | 5 -> x.HealthInfo.Set (HealthInfoCase.Unknown (ValueCodec.Message<Fsbar.Hub.Scripting.V1.EnemyHealthUnknown>.ReadValue reader))
+            | 6 -> x.InLos <- ValueCodec.Bool.ReadValue reader
+            | 7 -> x.InRadar <- ValueCodec.Bool.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.EnemyUnitState = {
+            UnitId = x.UnitId
+            DefId = x.DefId.Build
+            Position = x.Position.Build
+            HealthInfo = x.HealthInfo.Build |> (Option.defaultValue HealthInfoCase.None)
+            InLos = x.InLos
+            InRadar = x.InRadar
+            }
+
+type private _EnemyUnitState = EnemyUnitState
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type EnemyUnitState = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    /// <summary>
+    /// Absent iff the engine has not disclosed the def (radar-only of
+    /// unknown class).
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("defId")>] DefId: int option // (2)
+    /// <summary>
+    /// Last-known position — frozen when the enemy dropped from both LOS
+    /// and radar this tick.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("position")>] Position: Fsbar.Hub.Scripting.V1.Vec3Wire option // (3)
+    /// <summary>
+    /// FR-003 totality: exactly one arm is always set. `unknown` indicates
+    /// radar-only or frozen-last-known. `health = 0` is a legitimate
+    /// "visible but dying" reading.
+    /// </summary>
+    HealthInfo: Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase
+    [<System.Text.Json.Serialization.JsonPropertyName("inLos")>] InLos: bool // (6)
+    [<System.Text.Json.Serialization.JsonPropertyName("inRadar")>] InRadar: bool // (7)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<EnemyUnitState>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let DefId = FieldCodec.Optional ValueCodec.Int32 (2, "defId")
+        let Position = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.Vec3Wire> (3, "position")
+        let Health = FieldCodec.OneofCase "health_info" ValueCodec.Float (4, "health")
+        let Unknown = FieldCodec.OneofCase "health_info" ValueCodec.Message<Fsbar.Hub.Scripting.V1.EnemyHealthUnknown> (5, "unknown")
+        let InLos = FieldCodec.Primitive ValueCodec.Bool (6, "inLos")
+        let InRadar = FieldCodec.Primitive ValueCodec.Bool (7, "inRadar")
+        let HealthInfo = FieldCodec.Oneof "health_info" (FSharp.Collections.Map [
+            ("health", fun node -> Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Health (Health.ReadJsonField node))
+            ("unknown", fun node -> Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Unknown (Unknown.ReadJsonField node))
+            ])
+        // Proto Definition Implementation
+        { // ProtoDef<EnemyUnitState>
+            Name = "EnemyUnitState"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                DefId = DefId.GetDefault()
+                Position = Position.GetDefault()
+                HealthInfo = Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.None
+                InLos = InLos.GetDefault()
+                InRadar = InRadar.GetDefault()
+                }
+            Size = fun (m: EnemyUnitState) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + DefId.CalcFieldSize m.DefId
+                + Position.CalcFieldSize m.Position
+                + match m.HealthInfo with
+                    | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.None -> 0
+                    | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Health v -> Health.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Unknown v -> Unknown.CalcFieldSize v
+                + InLos.CalcFieldSize m.InLos
+                + InRadar.CalcFieldSize m.InRadar
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: EnemyUnitState) ->
+                UnitId.WriteField w m.UnitId
+                DefId.WriteField w m.DefId
+                Position.WriteField w m.Position
+                (match m.HealthInfo with
+                | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.None -> ()
+                | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Health v -> Health.WriteField w v
+                | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Unknown v -> Unknown.WriteField w v
+                )
+                InLos.WriteField w m.InLos
+                InRadar.WriteField w m.InRadar
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.EnemyUnitState.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writeDefId = DefId.WriteJsonField o
+                let writePosition = Position.WriteJsonField o
+                let writeHealthInfoNone = HealthInfo.WriteJsonNoneCase o
+                let writeHealth = Health.WriteJsonField o
+                let writeUnknown = Unknown.WriteJsonField o
+                let writeInLos = InLos.WriteJsonField o
+                let writeInRadar = InRadar.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: EnemyUnitState) =
+                    writeUnitId w m.UnitId
+                    writeDefId w m.DefId
+                    writePosition w m.Position
+                    (match m.HealthInfo with
+                    | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.None -> writeHealthInfoNone w
+                    | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Health v -> writeHealth w v
+                    | Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Unknown v -> writeUnknown w v
+                    )
+                    writeInLos w m.InLos
+                    writeInRadar w m.InRadar
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : EnemyUnitState =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "defId" -> { value with DefId = DefId.ReadJsonField kvPair.Value }
+                    | "position" -> { value with Position = Position.ReadJsonField kvPair.Value }
+                    | "health" -> { value with HealthInfo = Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Health (Health.ReadJsonField kvPair.Value) }
+                    | "unknown" -> { value with HealthInfo = Fsbar.Hub.Scripting.V1.EnemyUnitState.HealthInfoCase.Unknown (Unknown.ReadJsonField kvPair.Value) }
+                    | "healthInfo" -> { value with HealthInfo = HealthInfo.ReadJsonField kvPair.Value }
+                    | "inLos" -> { value with InLos = InLos.ReadJsonField kvPair.Value }
+                    | "inRadar" -> { value with InRadar = InRadar.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _EnemyUnitState.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._EnemyUnitState.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameStateFrame =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable FrameNumber: uint32 // (1)
+            val mutable TeamId: int // (2)
+            val mutable Friendlies: RepeatedBuilder<Fsbar.Hub.Scripting.V1.FriendlyUnitState> // (3)
+            val mutable Enemies: RepeatedBuilder<Fsbar.Hub.Scripting.V1.EnemyUnitState> // (4)
+            val mutable Economy: OptionBuilder<Fsbar.Hub.Scripting.V1.EconomySnapshotWire> // (5)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.FrameNumber <- ValueCodec.UInt32.ReadValue reader
+            | 2 -> x.TeamId <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Friendlies.Add (ValueCodec.Message<Fsbar.Hub.Scripting.V1.FriendlyUnitState>.ReadValue reader)
+            | 4 -> x.Enemies.Add (ValueCodec.Message<Fsbar.Hub.Scripting.V1.EnemyUnitState>.ReadValue reader)
+            | 5 -> x.Economy.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.EconomySnapshotWire>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameStateFrame = {
+            FrameNumber = x.FrameNumber
+            TeamId = x.TeamId
+            Friendlies = x.Friendlies.Build
+            Enemies = x.Enemies.Build
+            Economy = x.Economy.Build
+            }
+
+type private _GameStateFrame = GameStateFrame
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameStateFrame = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("frameNumber")>] FrameNumber: uint32 // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("teamId")>] TeamId: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("friendlies")>] Friendlies: Fsbar.Hub.Scripting.V1.FriendlyUnitState list // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("enemies")>] Enemies: Fsbar.Hub.Scripting.V1.EnemyUnitState list // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("economy")>] Economy: Fsbar.Hub.Scripting.V1.EconomySnapshotWire option // (5)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameStateFrame>> =
+        lazy
+        // Field Definitions
+        let FrameNumber = FieldCodec.Primitive ValueCodec.UInt32 (1, "frameNumber")
+        let TeamId = FieldCodec.Primitive ValueCodec.Int32 (2, "teamId")
+        let Friendlies = FieldCodec.Repeated ValueCodec.Message<Fsbar.Hub.Scripting.V1.FriendlyUnitState> (3, "friendlies")
+        let Enemies = FieldCodec.Repeated ValueCodec.Message<Fsbar.Hub.Scripting.V1.EnemyUnitState> (4, "enemies")
+        let Economy = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.EconomySnapshotWire> (5, "economy")
+        // Proto Definition Implementation
+        { // ProtoDef<GameStateFrame>
+            Name = "GameStateFrame"
+            Empty = {
+                FrameNumber = FrameNumber.GetDefault()
+                TeamId = TeamId.GetDefault()
+                Friendlies = Friendlies.GetDefault()
+                Enemies = Enemies.GetDefault()
+                Economy = Economy.GetDefault()
+                }
+            Size = fun (m: GameStateFrame) ->
+                0
+                + FrameNumber.CalcFieldSize m.FrameNumber
+                + TeamId.CalcFieldSize m.TeamId
+                + Friendlies.CalcFieldSize m.Friendlies
+                + Enemies.CalcFieldSize m.Enemies
+                + Economy.CalcFieldSize m.Economy
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameStateFrame) ->
+                FrameNumber.WriteField w m.FrameNumber
+                TeamId.WriteField w m.TeamId
+                Friendlies.WriteField w m.Friendlies
+                Enemies.WriteField w m.Enemies
+                Economy.WriteField w m.Economy
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameStateFrame.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeFrameNumber = FrameNumber.WriteJsonField o
+                let writeTeamId = TeamId.WriteJsonField o
+                let writeFriendlies = Friendlies.WriteJsonField o
+                let writeEnemies = Enemies.WriteJsonField o
+                let writeEconomy = Economy.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameStateFrame) =
+                    writeFrameNumber w m.FrameNumber
+                    writeTeamId w m.TeamId
+                    writeFriendlies w m.Friendlies
+                    writeEnemies w m.Enemies
+                    writeEconomy w m.Economy
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameStateFrame =
+                    match kvPair.Key with
+                    | "frameNumber" -> { value with FrameNumber = FrameNumber.ReadJsonField kvPair.Value }
+                    | "teamId" -> { value with TeamId = TeamId.ReadJsonField kvPair.Value }
+                    | "friendlies" -> { value with Friendlies = Friendlies.ReadJsonField kvPair.Value }
+                    | "enemies" -> { value with Enemies = Enemies.ReadJsonField kvPair.Value }
+                    | "economy" -> { value with Economy = Economy.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameStateFrame.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameStateFrame.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventInit =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable TeamId: int // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.TeamId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventInit = {
+            TeamId = x.TeamId
+            }
+
+type private _GameEventInit = GameEventInit
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventInit = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("teamId")>] TeamId: int // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventInit>> =
+        lazy
+        // Field Definitions
+        let TeamId = FieldCodec.Primitive ValueCodec.Int32 (1, "teamId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventInit>
+            Name = "GameEventInit"
+            Empty = {
+                TeamId = TeamId.GetDefault()
+                }
+            Size = fun (m: GameEventInit) ->
+                0
+                + TeamId.CalcFieldSize m.TeamId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventInit) ->
+                TeamId.WriteField w m.TeamId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventInit.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeTeamId = TeamId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventInit) =
+                    writeTeamId w m.TeamId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventInit =
+                    match kvPair.Key with
+                    | "teamId" -> { value with TeamId = TeamId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventInit.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventInit.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventUnitCreated =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable DefId: int // (2)
+            val mutable BuilderUnitId: int // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.DefId <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.BuilderUnitId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventUnitCreated = {
+            UnitId = x.UnitId
+            DefId = x.DefId
+            BuilderUnitId = x.BuilderUnitId
+            }
+
+type private _GameEventUnitCreated = GameEventUnitCreated
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventUnitCreated = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("defId")>] DefId: int // (2)
+    /// <summary>0 if no builder (e.g., commander).</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("builderUnitId")>] BuilderUnitId: int // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventUnitCreated>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let DefId = FieldCodec.Primitive ValueCodec.Int32 (2, "defId")
+        let BuilderUnitId = FieldCodec.Primitive ValueCodec.Int32 (3, "builderUnitId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventUnitCreated>
+            Name = "GameEventUnitCreated"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                DefId = DefId.GetDefault()
+                BuilderUnitId = BuilderUnitId.GetDefault()
+                }
+            Size = fun (m: GameEventUnitCreated) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + DefId.CalcFieldSize m.DefId
+                + BuilderUnitId.CalcFieldSize m.BuilderUnitId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventUnitCreated) ->
+                UnitId.WriteField w m.UnitId
+                DefId.WriteField w m.DefId
+                BuilderUnitId.WriteField w m.BuilderUnitId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventUnitCreated.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writeDefId = DefId.WriteJsonField o
+                let writeBuilderUnitId = BuilderUnitId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventUnitCreated) =
+                    writeUnitId w m.UnitId
+                    writeDefId w m.DefId
+                    writeBuilderUnitId w m.BuilderUnitId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventUnitCreated =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "defId" -> { value with DefId = DefId.ReadJsonField kvPair.Value }
+                    | "builderUnitId" -> { value with BuilderUnitId = BuilderUnitId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventUnitCreated.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventUnitCreated.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventUnitFinished =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable DefId: int // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.DefId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventUnitFinished = {
+            UnitId = x.UnitId
+            DefId = x.DefId
+            }
+
+type private _GameEventUnitFinished = GameEventUnitFinished
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventUnitFinished = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("defId")>] DefId: int // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventUnitFinished>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let DefId = FieldCodec.Primitive ValueCodec.Int32 (2, "defId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventUnitFinished>
+            Name = "GameEventUnitFinished"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                DefId = DefId.GetDefault()
+                }
+            Size = fun (m: GameEventUnitFinished) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + DefId.CalcFieldSize m.DefId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventUnitFinished) ->
+                UnitId.WriteField w m.UnitId
+                DefId.WriteField w m.DefId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventUnitFinished.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writeDefId = DefId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventUnitFinished) =
+                    writeUnitId w m.UnitId
+                    writeDefId w m.DefId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventUnitFinished =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "defId" -> { value with DefId = DefId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventUnitFinished.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventUnitFinished.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventUnitIdle =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventUnitIdle = {
+            UnitId = x.UnitId
+            }
+
+type private _GameEventUnitIdle = GameEventUnitIdle
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventUnitIdle = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventUnitIdle>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventUnitIdle>
+            Name = "GameEventUnitIdle"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                }
+            Size = fun (m: GameEventUnitIdle) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventUnitIdle) ->
+                UnitId.WriteField w m.UnitId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventUnitIdle.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventUnitIdle) =
+                    writeUnitId w m.UnitId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventUnitIdle =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventUnitIdle.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventUnitIdle.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventUnitDestroyed =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable AttackerUnitId: int // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.AttackerUnitId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventUnitDestroyed = {
+            UnitId = x.UnitId
+            AttackerUnitId = x.AttackerUnitId
+            }
+
+type private _GameEventUnitDestroyed = GameEventUnitDestroyed
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventUnitDestroyed = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("attackerUnitId")>] AttackerUnitId: int // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventUnitDestroyed>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let AttackerUnitId = FieldCodec.Primitive ValueCodec.Int32 (2, "attackerUnitId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventUnitDestroyed>
+            Name = "GameEventUnitDestroyed"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                AttackerUnitId = AttackerUnitId.GetDefault()
+                }
+            Size = fun (m: GameEventUnitDestroyed) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + AttackerUnitId.CalcFieldSize m.AttackerUnitId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventUnitDestroyed) ->
+                UnitId.WriteField w m.UnitId
+                AttackerUnitId.WriteField w m.AttackerUnitId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventUnitDestroyed.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writeAttackerUnitId = AttackerUnitId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventUnitDestroyed) =
+                    writeUnitId w m.UnitId
+                    writeAttackerUnitId w m.AttackerUnitId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventUnitDestroyed =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "attackerUnitId" -> { value with AttackerUnitId = AttackerUnitId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventUnitDestroyed.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventUnitDestroyed.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventUnitGiven =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable OldTeamId: int // (2)
+            val mutable NewTeamId: int // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.OldTeamId <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.NewTeamId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventUnitGiven = {
+            UnitId = x.UnitId
+            OldTeamId = x.OldTeamId
+            NewTeamId = x.NewTeamId
+            }
+
+type private _GameEventUnitGiven = GameEventUnitGiven
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventUnitGiven = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("oldTeamId")>] OldTeamId: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("newTeamId")>] NewTeamId: int // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventUnitGiven>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let OldTeamId = FieldCodec.Primitive ValueCodec.Int32 (2, "oldTeamId")
+        let NewTeamId = FieldCodec.Primitive ValueCodec.Int32 (3, "newTeamId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventUnitGiven>
+            Name = "GameEventUnitGiven"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                OldTeamId = OldTeamId.GetDefault()
+                NewTeamId = NewTeamId.GetDefault()
+                }
+            Size = fun (m: GameEventUnitGiven) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + OldTeamId.CalcFieldSize m.OldTeamId
+                + NewTeamId.CalcFieldSize m.NewTeamId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventUnitGiven) ->
+                UnitId.WriteField w m.UnitId
+                OldTeamId.WriteField w m.OldTeamId
+                NewTeamId.WriteField w m.NewTeamId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventUnitGiven.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writeOldTeamId = OldTeamId.WriteJsonField o
+                let writeNewTeamId = NewTeamId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventUnitGiven) =
+                    writeUnitId w m.UnitId
+                    writeOldTeamId w m.OldTeamId
+                    writeNewTeamId w m.NewTeamId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventUnitGiven =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "oldTeamId" -> { value with OldTeamId = OldTeamId.ReadJsonField kvPair.Value }
+                    | "newTeamId" -> { value with NewTeamId = NewTeamId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventUnitGiven.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventUnitGiven.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventUnitCaptured =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable OldTeamId: int // (2)
+            val mutable NewTeamId: int // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.OldTeamId <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.NewTeamId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventUnitCaptured = {
+            UnitId = x.UnitId
+            OldTeamId = x.OldTeamId
+            NewTeamId = x.NewTeamId
+            }
+
+type private _GameEventUnitCaptured = GameEventUnitCaptured
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventUnitCaptured = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("oldTeamId")>] OldTeamId: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("newTeamId")>] NewTeamId: int // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventUnitCaptured>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let OldTeamId = FieldCodec.Primitive ValueCodec.Int32 (2, "oldTeamId")
+        let NewTeamId = FieldCodec.Primitive ValueCodec.Int32 (3, "newTeamId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventUnitCaptured>
+            Name = "GameEventUnitCaptured"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                OldTeamId = OldTeamId.GetDefault()
+                NewTeamId = NewTeamId.GetDefault()
+                }
+            Size = fun (m: GameEventUnitCaptured) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + OldTeamId.CalcFieldSize m.OldTeamId
+                + NewTeamId.CalcFieldSize m.NewTeamId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventUnitCaptured) ->
+                UnitId.WriteField w m.UnitId
+                OldTeamId.WriteField w m.OldTeamId
+                NewTeamId.WriteField w m.NewTeamId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventUnitCaptured.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writeOldTeamId = OldTeamId.WriteJsonField o
+                let writeNewTeamId = NewTeamId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventUnitCaptured) =
+                    writeUnitId w m.UnitId
+                    writeOldTeamId w m.OldTeamId
+                    writeNewTeamId w m.NewTeamId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventUnitCaptured =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "oldTeamId" -> { value with OldTeamId = OldTeamId.ReadJsonField kvPair.Value }
+                    | "newTeamId" -> { value with NewTeamId = NewTeamId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventUnitCaptured.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventUnitCaptured.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnemyEnterLos =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable EnemyId: int // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.EnemyId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnemyEnterLos = {
+            EnemyId = x.EnemyId
+            }
+
+type private _GameEventEnemyEnterLos = GameEventEnemyEnterLos
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnemyEnterLos = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("enemyId")>] EnemyId: int // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnemyEnterLos>> =
+        lazy
+        // Field Definitions
+        let EnemyId = FieldCodec.Primitive ValueCodec.Int32 (1, "enemyId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnemyEnterLos>
+            Name = "GameEventEnemyEnterLos"
+            Empty = {
+                EnemyId = EnemyId.GetDefault()
+                }
+            Size = fun (m: GameEventEnemyEnterLos) ->
+                0
+                + EnemyId.CalcFieldSize m.EnemyId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnemyEnterLos) ->
+                EnemyId.WriteField w m.EnemyId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnemyEnterLos.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeEnemyId = EnemyId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnemyEnterLos) =
+                    writeEnemyId w m.EnemyId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnemyEnterLos =
+                    match kvPair.Key with
+                    | "enemyId" -> { value with EnemyId = EnemyId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnemyEnterLos.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnemyEnterLos.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnemyLeaveLos =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable EnemyId: int // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.EnemyId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveLos = {
+            EnemyId = x.EnemyId
+            }
+
+type private _GameEventEnemyLeaveLos = GameEventEnemyLeaveLos
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnemyLeaveLos = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("enemyId")>] EnemyId: int // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnemyLeaveLos>> =
+        lazy
+        // Field Definitions
+        let EnemyId = FieldCodec.Primitive ValueCodec.Int32 (1, "enemyId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnemyLeaveLos>
+            Name = "GameEventEnemyLeaveLos"
+            Empty = {
+                EnemyId = EnemyId.GetDefault()
+                }
+            Size = fun (m: GameEventEnemyLeaveLos) ->
+                0
+                + EnemyId.CalcFieldSize m.EnemyId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnemyLeaveLos) ->
+                EnemyId.WriteField w m.EnemyId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveLos.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeEnemyId = EnemyId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnemyLeaveLos) =
+                    writeEnemyId w m.EnemyId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnemyLeaveLos =
+                    match kvPair.Key with
+                    | "enemyId" -> { value with EnemyId = EnemyId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnemyLeaveLos.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnemyLeaveLos.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnemyEnterRadar =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable EnemyId: int // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.EnemyId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnemyEnterRadar = {
+            EnemyId = x.EnemyId
+            }
+
+type private _GameEventEnemyEnterRadar = GameEventEnemyEnterRadar
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnemyEnterRadar = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("enemyId")>] EnemyId: int // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnemyEnterRadar>> =
+        lazy
+        // Field Definitions
+        let EnemyId = FieldCodec.Primitive ValueCodec.Int32 (1, "enemyId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnemyEnterRadar>
+            Name = "GameEventEnemyEnterRadar"
+            Empty = {
+                EnemyId = EnemyId.GetDefault()
+                }
+            Size = fun (m: GameEventEnemyEnterRadar) ->
+                0
+                + EnemyId.CalcFieldSize m.EnemyId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnemyEnterRadar) ->
+                EnemyId.WriteField w m.EnemyId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnemyEnterRadar.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeEnemyId = EnemyId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnemyEnterRadar) =
+                    writeEnemyId w m.EnemyId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnemyEnterRadar =
+                    match kvPair.Key with
+                    | "enemyId" -> { value with EnemyId = EnemyId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnemyEnterRadar.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnemyEnterRadar.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnemyLeaveRadar =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable EnemyId: int // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.EnemyId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveRadar = {
+            EnemyId = x.EnemyId
+            }
+
+type private _GameEventEnemyLeaveRadar = GameEventEnemyLeaveRadar
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnemyLeaveRadar = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("enemyId")>] EnemyId: int // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnemyLeaveRadar>> =
+        lazy
+        // Field Definitions
+        let EnemyId = FieldCodec.Primitive ValueCodec.Int32 (1, "enemyId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnemyLeaveRadar>
+            Name = "GameEventEnemyLeaveRadar"
+            Empty = {
+                EnemyId = EnemyId.GetDefault()
+                }
+            Size = fun (m: GameEventEnemyLeaveRadar) ->
+                0
+                + EnemyId.CalcFieldSize m.EnemyId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnemyLeaveRadar) ->
+                EnemyId.WriteField w m.EnemyId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveRadar.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeEnemyId = EnemyId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnemyLeaveRadar) =
+                    writeEnemyId w m.EnemyId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnemyLeaveRadar =
+                    match kvPair.Key with
+                    | "enemyId" -> { value with EnemyId = EnemyId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnemyLeaveRadar.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnemyLeaveRadar.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnemyDestroyed =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable EnemyId: int // (1)
+            val mutable AttackerUnitId: int // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.EnemyId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.AttackerUnitId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnemyDestroyed = {
+            EnemyId = x.EnemyId
+            AttackerUnitId = x.AttackerUnitId
+            }
+
+type private _GameEventEnemyDestroyed = GameEventEnemyDestroyed
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnemyDestroyed = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("enemyId")>] EnemyId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("attackerUnitId")>] AttackerUnitId: int // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnemyDestroyed>> =
+        lazy
+        // Field Definitions
+        let EnemyId = FieldCodec.Primitive ValueCodec.Int32 (1, "enemyId")
+        let AttackerUnitId = FieldCodec.Primitive ValueCodec.Int32 (2, "attackerUnitId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnemyDestroyed>
+            Name = "GameEventEnemyDestroyed"
+            Empty = {
+                EnemyId = EnemyId.GetDefault()
+                AttackerUnitId = AttackerUnitId.GetDefault()
+                }
+            Size = fun (m: GameEventEnemyDestroyed) ->
+                0
+                + EnemyId.CalcFieldSize m.EnemyId
+                + AttackerUnitId.CalcFieldSize m.AttackerUnitId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnemyDestroyed) ->
+                EnemyId.WriteField w m.EnemyId
+                AttackerUnitId.WriteField w m.AttackerUnitId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnemyDestroyed.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeEnemyId = EnemyId.WriteJsonField o
+                let writeAttackerUnitId = AttackerUnitId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnemyDestroyed) =
+                    writeEnemyId w m.EnemyId
+                    writeAttackerUnitId w m.AttackerUnitId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnemyDestroyed =
+                    match kvPair.Key with
+                    | "enemyId" -> { value with EnemyId = EnemyId.ReadJsonField kvPair.Value }
+                    | "attackerUnitId" -> { value with AttackerUnitId = AttackerUnitId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnemyDestroyed.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnemyDestroyed.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnemyCreated =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable EnemyId: int // (1)
+            val mutable DefId: int // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.EnemyId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.DefId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnemyCreated = {
+            EnemyId = x.EnemyId
+            DefId = x.DefId
+            }
+
+type private _GameEventEnemyCreated = GameEventEnemyCreated
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnemyCreated = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("enemyId")>] EnemyId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("defId")>] DefId: int // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnemyCreated>> =
+        lazy
+        // Field Definitions
+        let EnemyId = FieldCodec.Primitive ValueCodec.Int32 (1, "enemyId")
+        let DefId = FieldCodec.Primitive ValueCodec.Int32 (2, "defId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnemyCreated>
+            Name = "GameEventEnemyCreated"
+            Empty = {
+                EnemyId = EnemyId.GetDefault()
+                DefId = DefId.GetDefault()
+                }
+            Size = fun (m: GameEventEnemyCreated) ->
+                0
+                + EnemyId.CalcFieldSize m.EnemyId
+                + DefId.CalcFieldSize m.DefId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnemyCreated) ->
+                EnemyId.WriteField w m.EnemyId
+                DefId.WriteField w m.DefId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnemyCreated.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeEnemyId = EnemyId.WriteJsonField o
+                let writeDefId = DefId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnemyCreated) =
+                    writeEnemyId w m.EnemyId
+                    writeDefId w m.DefId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnemyCreated =
+                    match kvPair.Key with
+                    | "enemyId" -> { value with EnemyId = EnemyId.ReadJsonField kvPair.Value }
+                    | "defId" -> { value with DefId = DefId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnemyCreated.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnemyCreated.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnemyFinished =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable EnemyId: int // (1)
+            val mutable DefId: int // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.EnemyId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.DefId <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnemyFinished = {
+            EnemyId = x.EnemyId
+            DefId = x.DefId
+            }
+
+type private _GameEventEnemyFinished = GameEventEnemyFinished
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnemyFinished = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("enemyId")>] EnemyId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("defId")>] DefId: int // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnemyFinished>> =
+        lazy
+        // Field Definitions
+        let EnemyId = FieldCodec.Primitive ValueCodec.Int32 (1, "enemyId")
+        let DefId = FieldCodec.Primitive ValueCodec.Int32 (2, "defId")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnemyFinished>
+            Name = "GameEventEnemyFinished"
+            Empty = {
+                EnemyId = EnemyId.GetDefault()
+                DefId = DefId.GetDefault()
+                }
+            Size = fun (m: GameEventEnemyFinished) ->
+                0
+                + EnemyId.CalcFieldSize m.EnemyId
+                + DefId.CalcFieldSize m.DefId
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnemyFinished) ->
+                EnemyId.WriteField w m.EnemyId
+                DefId.WriteField w m.DefId
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnemyFinished.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeEnemyId = EnemyId.WriteJsonField o
+                let writeDefId = DefId.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnemyFinished) =
+                    writeEnemyId w m.EnemyId
+                    writeDefId w m.DefId
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnemyFinished =
+                    match kvPair.Key with
+                    | "enemyId" -> { value with EnemyId = EnemyId.ReadJsonField kvPair.Value }
+                    | "defId" -> { value with DefId = DefId.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnemyFinished.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnemyFinished.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventUpdate =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Frame: uint32 // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Frame <- ValueCodec.UInt32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventUpdate = {
+            Frame = x.Frame
+            }
+
+type private _GameEventUpdate = GameEventUpdate
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventUpdate = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("frame")>] Frame: uint32 // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventUpdate>> =
+        lazy
+        // Field Definitions
+        let Frame = FieldCodec.Primitive ValueCodec.UInt32 (1, "frame")
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventUpdate>
+            Name = "GameEventUpdate"
+            Empty = {
+                Frame = Frame.GetDefault()
+                }
+            Size = fun (m: GameEventUpdate) ->
+                0
+                + Frame.CalcFieldSize m.Frame
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventUpdate) ->
+                Frame.WriteField w m.Frame
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventUpdate.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeFrame = Frame.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventUpdate) =
+                    writeFrame w m.Frame
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventUpdate =
+                    match kvPair.Key with
+                    | "frame" -> { value with Frame = Frame.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventUpdate.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventUpdate.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventShutdown =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GameEventShutdown.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GameEventShutdown = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GameEventShutdown>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventShutdown>
+            Name = "GameEventShutdown"
+            Empty = GameEventShutdown.empty
+            Size = fun (m: GameEventShutdown) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventShutdown) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GameEventShutdown.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GameEventShutdown.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameEventEnvelope =
+
+    [<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.OneofConverter<PayloadCase>>)>]
+    [<CompilationRepresentation(CompilationRepresentationFlags.UseNullAsTrueValue)>]
+    [<StructuralEquality;StructuralComparison>]
+    [<RequireQualifiedAccess>]
+    type PayloadCase =
+    | None
+    | [<System.Text.Json.Serialization.JsonPropertyName("init")>] Init of Fsbar.Hub.Scripting.V1.GameEventInit
+    | [<System.Text.Json.Serialization.JsonPropertyName("unitCreated")>] UnitCreated of Fsbar.Hub.Scripting.V1.GameEventUnitCreated
+    | [<System.Text.Json.Serialization.JsonPropertyName("unitFinished")>] UnitFinished of Fsbar.Hub.Scripting.V1.GameEventUnitFinished
+    | [<System.Text.Json.Serialization.JsonPropertyName("unitIdle")>] UnitIdle of Fsbar.Hub.Scripting.V1.GameEventUnitIdle
+    | [<System.Text.Json.Serialization.JsonPropertyName("unitDestroyed")>] UnitDestroyed of Fsbar.Hub.Scripting.V1.GameEventUnitDestroyed
+    | [<System.Text.Json.Serialization.JsonPropertyName("unitGiven")>] UnitGiven of Fsbar.Hub.Scripting.V1.GameEventUnitGiven
+    | [<System.Text.Json.Serialization.JsonPropertyName("unitCaptured")>] UnitCaptured of Fsbar.Hub.Scripting.V1.GameEventUnitCaptured
+    | [<System.Text.Json.Serialization.JsonPropertyName("enemyEnterLos")>] EnemyEnterLos of Fsbar.Hub.Scripting.V1.GameEventEnemyEnterLos
+    | [<System.Text.Json.Serialization.JsonPropertyName("enemyLeaveLos")>] EnemyLeaveLos of Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveLos
+    | [<System.Text.Json.Serialization.JsonPropertyName("enemyEnterRadar")>] EnemyEnterRadar of Fsbar.Hub.Scripting.V1.GameEventEnemyEnterRadar
+    | [<System.Text.Json.Serialization.JsonPropertyName("enemyLeaveRadar")>] EnemyLeaveRadar of Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveRadar
+    | [<System.Text.Json.Serialization.JsonPropertyName("enemyDestroyed")>] EnemyDestroyed of Fsbar.Hub.Scripting.V1.GameEventEnemyDestroyed
+    | [<System.Text.Json.Serialization.JsonPropertyName("enemyCreated")>] EnemyCreated of Fsbar.Hub.Scripting.V1.GameEventEnemyCreated
+    | [<System.Text.Json.Serialization.JsonPropertyName("enemyFinished")>] EnemyFinished of Fsbar.Hub.Scripting.V1.GameEventEnemyFinished
+    | [<System.Text.Json.Serialization.JsonPropertyName("update")>] Update of Fsbar.Hub.Scripting.V1.GameEventUpdate
+    | [<System.Text.Json.Serialization.JsonPropertyName("shutdown")>] Shutdown of Fsbar.Hub.Scripting.V1.GameEventShutdown
+    with
+        static member OneofCodec : Lazy<OneofCodec<PayloadCase>> = 
+            lazy
+            let Init = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventInit> (1, "init")
+            let UnitCreated = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitCreated> (2, "unitCreated")
+            let UnitFinished = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitFinished> (3, "unitFinished")
+            let UnitIdle = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitIdle> (4, "unitIdle")
+            let UnitDestroyed = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitDestroyed> (5, "unitDestroyed")
+            let UnitGiven = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitGiven> (6, "unitGiven")
+            let UnitCaptured = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitCaptured> (7, "unitCaptured")
+            let EnemyEnterLos = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyEnterLos> (8, "enemyEnterLos")
+            let EnemyLeaveLos = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveLos> (9, "enemyLeaveLos")
+            let EnemyEnterRadar = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyEnterRadar> (10, "enemyEnterRadar")
+            let EnemyLeaveRadar = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveRadar> (11, "enemyLeaveRadar")
+            let EnemyDestroyed = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyDestroyed> (12, "enemyDestroyed")
+            let EnemyCreated = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyCreated> (13, "enemyCreated")
+            let EnemyFinished = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyFinished> (14, "enemyFinished")
+            let Update = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUpdate> (15, "update")
+            let Shutdown = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventShutdown> (16, "shutdown")
+            let Payload = FieldCodec.Oneof "payload" (FSharp.Collections.Map [
+                ("init", fun node -> PayloadCase.Init (Init.ReadJsonField node))
+                ("unitCreated", fun node -> PayloadCase.UnitCreated (UnitCreated.ReadJsonField node))
+                ("unitFinished", fun node -> PayloadCase.UnitFinished (UnitFinished.ReadJsonField node))
+                ("unitIdle", fun node -> PayloadCase.UnitIdle (UnitIdle.ReadJsonField node))
+                ("unitDestroyed", fun node -> PayloadCase.UnitDestroyed (UnitDestroyed.ReadJsonField node))
+                ("unitGiven", fun node -> PayloadCase.UnitGiven (UnitGiven.ReadJsonField node))
+                ("unitCaptured", fun node -> PayloadCase.UnitCaptured (UnitCaptured.ReadJsonField node))
+                ("enemyEnterLos", fun node -> PayloadCase.EnemyEnterLos (EnemyEnterLos.ReadJsonField node))
+                ("enemyLeaveLos", fun node -> PayloadCase.EnemyLeaveLos (EnemyLeaveLos.ReadJsonField node))
+                ("enemyEnterRadar", fun node -> PayloadCase.EnemyEnterRadar (EnemyEnterRadar.ReadJsonField node))
+                ("enemyLeaveRadar", fun node -> PayloadCase.EnemyLeaveRadar (EnemyLeaveRadar.ReadJsonField node))
+                ("enemyDestroyed", fun node -> PayloadCase.EnemyDestroyed (EnemyDestroyed.ReadJsonField node))
+                ("enemyCreated", fun node -> PayloadCase.EnemyCreated (EnemyCreated.ReadJsonField node))
+                ("enemyFinished", fun node -> PayloadCase.EnemyFinished (EnemyFinished.ReadJsonField node))
+                ("update", fun node -> PayloadCase.Update (Update.ReadJsonField node))
+                ("shutdown", fun node -> PayloadCase.Shutdown (Shutdown.ReadJsonField node))
+                ])
+            Payload
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Payload: OptionBuilder<Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase>
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Payload.Set (PayloadCase.Init (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventInit>.ReadValue reader))
+            | 2 -> x.Payload.Set (PayloadCase.UnitCreated (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitCreated>.ReadValue reader))
+            | 3 -> x.Payload.Set (PayloadCase.UnitFinished (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitFinished>.ReadValue reader))
+            | 4 -> x.Payload.Set (PayloadCase.UnitIdle (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitIdle>.ReadValue reader))
+            | 5 -> x.Payload.Set (PayloadCase.UnitDestroyed (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitDestroyed>.ReadValue reader))
+            | 6 -> x.Payload.Set (PayloadCase.UnitGiven (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitGiven>.ReadValue reader))
+            | 7 -> x.Payload.Set (PayloadCase.UnitCaptured (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitCaptured>.ReadValue reader))
+            | 8 -> x.Payload.Set (PayloadCase.EnemyEnterLos (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyEnterLos>.ReadValue reader))
+            | 9 -> x.Payload.Set (PayloadCase.EnemyLeaveLos (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveLos>.ReadValue reader))
+            | 10 -> x.Payload.Set (PayloadCase.EnemyEnterRadar (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyEnterRadar>.ReadValue reader))
+            | 11 -> x.Payload.Set (PayloadCase.EnemyLeaveRadar (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveRadar>.ReadValue reader))
+            | 12 -> x.Payload.Set (PayloadCase.EnemyDestroyed (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyDestroyed>.ReadValue reader))
+            | 13 -> x.Payload.Set (PayloadCase.EnemyCreated (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyCreated>.ReadValue reader))
+            | 14 -> x.Payload.Set (PayloadCase.EnemyFinished (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyFinished>.ReadValue reader))
+            | 15 -> x.Payload.Set (PayloadCase.Update (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUpdate>.ReadValue reader))
+            | 16 -> x.Payload.Set (PayloadCase.Shutdown (ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventShutdown>.ReadValue reader))
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GameEventEnvelope = {
+            Payload = x.Payload.Build |> (Option.defaultValue PayloadCase.None)
+            }
+
+type private _GameEventEnvelope = GameEventEnvelope
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameEventEnvelope = {
+    // Field Declarations
+    Payload: Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameEventEnvelope>> =
+        lazy
+        // Field Definitions
+        let Init = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventInit> (1, "init")
+        let UnitCreated = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitCreated> (2, "unitCreated")
+        let UnitFinished = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitFinished> (3, "unitFinished")
+        let UnitIdle = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitIdle> (4, "unitIdle")
+        let UnitDestroyed = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitDestroyed> (5, "unitDestroyed")
+        let UnitGiven = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitGiven> (6, "unitGiven")
+        let UnitCaptured = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUnitCaptured> (7, "unitCaptured")
+        let EnemyEnterLos = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyEnterLos> (8, "enemyEnterLos")
+        let EnemyLeaveLos = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveLos> (9, "enemyLeaveLos")
+        let EnemyEnterRadar = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyEnterRadar> (10, "enemyEnterRadar")
+        let EnemyLeaveRadar = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyLeaveRadar> (11, "enemyLeaveRadar")
+        let EnemyDestroyed = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyDestroyed> (12, "enemyDestroyed")
+        let EnemyCreated = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyCreated> (13, "enemyCreated")
+        let EnemyFinished = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventEnemyFinished> (14, "enemyFinished")
+        let Update = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventUpdate> (15, "update")
+        let Shutdown = FieldCodec.OneofCase "payload" ValueCodec.Message<Fsbar.Hub.Scripting.V1.GameEventShutdown> (16, "shutdown")
+        let Payload = FieldCodec.Oneof "payload" (FSharp.Collections.Map [
+            ("init", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Init (Init.ReadJsonField node))
+            ("unitCreated", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCreated (UnitCreated.ReadJsonField node))
+            ("unitFinished", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitFinished (UnitFinished.ReadJsonField node))
+            ("unitIdle", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitIdle (UnitIdle.ReadJsonField node))
+            ("unitDestroyed", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitDestroyed (UnitDestroyed.ReadJsonField node))
+            ("unitGiven", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitGiven (UnitGiven.ReadJsonField node))
+            ("unitCaptured", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCaptured (UnitCaptured.ReadJsonField node))
+            ("enemyEnterLos", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterLos (EnemyEnterLos.ReadJsonField node))
+            ("enemyLeaveLos", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveLos (EnemyLeaveLos.ReadJsonField node))
+            ("enemyEnterRadar", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterRadar (EnemyEnterRadar.ReadJsonField node))
+            ("enemyLeaveRadar", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveRadar (EnemyLeaveRadar.ReadJsonField node))
+            ("enemyDestroyed", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyDestroyed (EnemyDestroyed.ReadJsonField node))
+            ("enemyCreated", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyCreated (EnemyCreated.ReadJsonField node))
+            ("enemyFinished", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyFinished (EnemyFinished.ReadJsonField node))
+            ("update", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Update (Update.ReadJsonField node))
+            ("shutdown", fun node -> Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Shutdown (Shutdown.ReadJsonField node))
+            ])
+        // Proto Definition Implementation
+        { // ProtoDef<GameEventEnvelope>
+            Name = "GameEventEnvelope"
+            Empty = {
+                Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.None
+                }
+            Size = fun (m: GameEventEnvelope) ->
+                0
+                + match m.Payload with
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.None -> 0
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Init v -> Init.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCreated v -> UnitCreated.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitFinished v -> UnitFinished.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitIdle v -> UnitIdle.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitDestroyed v -> UnitDestroyed.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitGiven v -> UnitGiven.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCaptured v -> UnitCaptured.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterLos v -> EnemyEnterLos.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveLos v -> EnemyLeaveLos.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterRadar v -> EnemyEnterRadar.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveRadar v -> EnemyLeaveRadar.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyDestroyed v -> EnemyDestroyed.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyCreated v -> EnemyCreated.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyFinished v -> EnemyFinished.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Update v -> Update.CalcFieldSize v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Shutdown v -> Shutdown.CalcFieldSize v
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameEventEnvelope) ->
+                (match m.Payload with
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.None -> ()
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Init v -> Init.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCreated v -> UnitCreated.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitFinished v -> UnitFinished.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitIdle v -> UnitIdle.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitDestroyed v -> UnitDestroyed.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitGiven v -> UnitGiven.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCaptured v -> UnitCaptured.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterLos v -> EnemyEnterLos.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveLos v -> EnemyLeaveLos.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterRadar v -> EnemyEnterRadar.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveRadar v -> EnemyLeaveRadar.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyDestroyed v -> EnemyDestroyed.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyCreated v -> EnemyCreated.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyFinished v -> EnemyFinished.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Update v -> Update.WriteField w v
+                | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Shutdown v -> Shutdown.WriteField w v
+                )
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GameEventEnvelope.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writePayloadNone = Payload.WriteJsonNoneCase o
+                let writeInit = Init.WriteJsonField o
+                let writeUnitCreated = UnitCreated.WriteJsonField o
+                let writeUnitFinished = UnitFinished.WriteJsonField o
+                let writeUnitIdle = UnitIdle.WriteJsonField o
+                let writeUnitDestroyed = UnitDestroyed.WriteJsonField o
+                let writeUnitGiven = UnitGiven.WriteJsonField o
+                let writeUnitCaptured = UnitCaptured.WriteJsonField o
+                let writeEnemyEnterLos = EnemyEnterLos.WriteJsonField o
+                let writeEnemyLeaveLos = EnemyLeaveLos.WriteJsonField o
+                let writeEnemyEnterRadar = EnemyEnterRadar.WriteJsonField o
+                let writeEnemyLeaveRadar = EnemyLeaveRadar.WriteJsonField o
+                let writeEnemyDestroyed = EnemyDestroyed.WriteJsonField o
+                let writeEnemyCreated = EnemyCreated.WriteJsonField o
+                let writeEnemyFinished = EnemyFinished.WriteJsonField o
+                let writeUpdate = Update.WriteJsonField o
+                let writeShutdown = Shutdown.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameEventEnvelope) =
+                    (match m.Payload with
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.None -> writePayloadNone w
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Init v -> writeInit w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCreated v -> writeUnitCreated w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitFinished v -> writeUnitFinished w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitIdle v -> writeUnitIdle w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitDestroyed v -> writeUnitDestroyed w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitGiven v -> writeUnitGiven w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCaptured v -> writeUnitCaptured w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterLos v -> writeEnemyEnterLos w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveLos v -> writeEnemyLeaveLos w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterRadar v -> writeEnemyEnterRadar w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveRadar v -> writeEnemyLeaveRadar w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyDestroyed v -> writeEnemyDestroyed w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyCreated v -> writeEnemyCreated w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyFinished v -> writeEnemyFinished w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Update v -> writeUpdate w v
+                    | Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Shutdown v -> writeShutdown w v
+                    )
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameEventEnvelope =
+                    match kvPair.Key with
+                    | "init" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Init (Init.ReadJsonField kvPair.Value) }
+                    | "unitCreated" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCreated (UnitCreated.ReadJsonField kvPair.Value) }
+                    | "unitFinished" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitFinished (UnitFinished.ReadJsonField kvPair.Value) }
+                    | "unitIdle" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitIdle (UnitIdle.ReadJsonField kvPair.Value) }
+                    | "unitDestroyed" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitDestroyed (UnitDestroyed.ReadJsonField kvPair.Value) }
+                    | "unitGiven" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitGiven (UnitGiven.ReadJsonField kvPair.Value) }
+                    | "unitCaptured" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.UnitCaptured (UnitCaptured.ReadJsonField kvPair.Value) }
+                    | "enemyEnterLos" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterLos (EnemyEnterLos.ReadJsonField kvPair.Value) }
+                    | "enemyLeaveLos" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveLos (EnemyLeaveLos.ReadJsonField kvPair.Value) }
+                    | "enemyEnterRadar" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyEnterRadar (EnemyEnterRadar.ReadJsonField kvPair.Value) }
+                    | "enemyLeaveRadar" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyLeaveRadar (EnemyLeaveRadar.ReadJsonField kvPair.Value) }
+                    | "enemyDestroyed" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyDestroyed (EnemyDestroyed.ReadJsonField kvPair.Value) }
+                    | "enemyCreated" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyCreated (EnemyCreated.ReadJsonField kvPair.Value) }
+                    | "enemyFinished" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.EnemyFinished (EnemyFinished.ReadJsonField kvPair.Value) }
+                    | "update" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Update (Update.ReadJsonField kvPair.Value) }
+                    | "shutdown" -> { value with Payload = Fsbar.Hub.Scripting.V1.GameEventEnvelope.PayloadCase.Shutdown (Shutdown.ReadJsonField kvPair.Value) }
+                    | "payload" -> { value with Payload = Payload.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameEventEnvelope.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GameEventEnvelope.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetMapInfoRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GetMapInfoRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GetMapInfoRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GetMapInfoRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GetMapInfoRequest>
+            Name = "GetMapInfoRequest"
+            Empty = GetMapInfoRequest.empty
+            Size = fun (m: GetMapInfoRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetMapInfoRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GetMapInfoRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GetMapInfoRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetMapInfoResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Width: int // (1)
+            val mutable Height: int // (2)
+            val mutable MapName: string // (3)
+            val mutable DataDir: string // (4)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Width <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Height <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.MapName <- ValueCodec.String.ReadValue reader
+            | 4 -> x.DataDir <- ValueCodec.String.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GetMapInfoResponse = {
+            Width = x.Width
+            Height = x.Height
+            MapName = x.MapName |> orEmptyString
+            DataDir = x.DataDir |> orEmptyString
+            }
+
+type private _GetMapInfoResponse = GetMapInfoResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GetMapInfoResponse = {
+    // Field Declarations
+    /// <summary>
+    /// Width/height in heightmap squares (matches Callbacks.getMapWidth /
+    /// getMapHeight). World size = width * 8, height * 8 elmos.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("width")>] Width: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("height")>] Height: int // (2)
+    /// <summary>Active map's internal name (best-effort; empty when no session).</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("mapName")>] MapName: string // (3)
+    /// <summary>BAR data directory for the running engine.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("dataDir")>] DataDir: string // (4)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GetMapInfoResponse>> =
+        lazy
+        // Field Definitions
+        let Width = FieldCodec.Primitive ValueCodec.Int32 (1, "width")
+        let Height = FieldCodec.Primitive ValueCodec.Int32 (2, "height")
+        let MapName = FieldCodec.Primitive ValueCodec.String (3, "mapName")
+        let DataDir = FieldCodec.Primitive ValueCodec.String (4, "dataDir")
+        // Proto Definition Implementation
+        { // ProtoDef<GetMapInfoResponse>
+            Name = "GetMapInfoResponse"
+            Empty = {
+                Width = Width.GetDefault()
+                Height = Height.GetDefault()
+                MapName = MapName.GetDefault()
+                DataDir = DataDir.GetDefault()
+                }
+            Size = fun (m: GetMapInfoResponse) ->
+                0
+                + Width.CalcFieldSize m.Width
+                + Height.CalcFieldSize m.Height
+                + MapName.CalcFieldSize m.MapName
+                + DataDir.CalcFieldSize m.DataDir
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetMapInfoResponse) ->
+                Width.WriteField w m.Width
+                Height.WriteField w m.Height
+                MapName.WriteField w m.MapName
+                DataDir.WriteField w m.DataDir
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GetMapInfoResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeWidth = Width.WriteJsonField o
+                let writeHeight = Height.WriteJsonField o
+                let writeMapName = MapName.WriteJsonField o
+                let writeDataDir = DataDir.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GetMapInfoResponse) =
+                    writeWidth w m.Width
+                    writeHeight w m.Height
+                    writeMapName w m.MapName
+                    writeDataDir w m.DataDir
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GetMapInfoResponse =
+                    match kvPair.Key with
+                    | "width" -> { value with Width = Width.ReadJsonField kvPair.Value }
+                    | "height" -> { value with Height = Height.ReadJsonField kvPair.Value }
+                    | "mapName" -> { value with MapName = MapName.ReadJsonField kvPair.Value }
+                    | "dataDir" -> { value with DataDir = DataDir.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GetMapInfoResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GetMapInfoResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetHeightmapRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GetHeightmapRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GetHeightmapRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GetHeightmapRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GetHeightmapRequest>
+            Name = "GetHeightmapRequest"
+            Empty = GetHeightmapRequest.empty
+            Size = fun (m: GetHeightmapRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetHeightmapRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GetHeightmapRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GetHeightmapRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module HeightmapResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Width: int // (1)
+            val mutable Height: int // (2)
+            val mutable Heights: RepeatedBuilder<float32> // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Width <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Height <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Heights.AddRange ((ValueCodec.Packed ValueCodec.Float).ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.HeightmapResponse = {
+            Width = x.Width
+            Height = x.Height
+            Heights = x.Heights.Build
+            }
+
+type private _HeightmapResponse = HeightmapResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type HeightmapResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("width")>] Width: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("height")>] Height: int // (2)
+    /// <summary>Row-major, length = width * height.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("heights")>] Heights: float32 list // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<HeightmapResponse>> =
+        lazy
+        // Field Definitions
+        let Width = FieldCodec.Primitive ValueCodec.Int32 (1, "width")
+        let Height = FieldCodec.Primitive ValueCodec.Int32 (2, "height")
+        let Heights = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Float) (3, "heights")
+        // Proto Definition Implementation
+        { // ProtoDef<HeightmapResponse>
+            Name = "HeightmapResponse"
+            Empty = {
+                Width = Width.GetDefault()
+                Height = Height.GetDefault()
+                Heights = Heights.GetDefault()
+                }
+            Size = fun (m: HeightmapResponse) ->
+                0
+                + Width.CalcFieldSize m.Width
+                + Height.CalcFieldSize m.Height
+                + Heights.CalcFieldSize m.Heights
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: HeightmapResponse) ->
+                Width.WriteField w m.Width
+                Height.WriteField w m.Height
+                Heights.WriteField w m.Heights
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.HeightmapResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeWidth = Width.WriteJsonField o
+                let writeHeight = Height.WriteJsonField o
+                let writeHeights = Heights.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: HeightmapResponse) =
+                    writeWidth w m.Width
+                    writeHeight w m.Height
+                    writeHeights w m.Heights
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : HeightmapResponse =
+                    match kvPair.Key with
+                    | "width" -> { value with Width = Width.ReadJsonField kvPair.Value }
+                    | "height" -> { value with Height = Height.ReadJsonField kvPair.Value }
+                    | "heights" -> { value with Heights = Heights.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _HeightmapResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._HeightmapResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetCornersHeightmapRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GetCornersHeightmapRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GetCornersHeightmapRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GetCornersHeightmapRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GetCornersHeightmapRequest>
+            Name = "GetCornersHeightmapRequest"
+            Empty = GetCornersHeightmapRequest.empty
+            Size = fun (m: GetCornersHeightmapRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetCornersHeightmapRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GetCornersHeightmapRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GetCornersHeightmapRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module CornersHeightmapResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Width: int // (1)
+            val mutable Height: int // (2)
+            val mutable Heights: RepeatedBuilder<float32> // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Width <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Height <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Heights.AddRange ((ValueCodec.Packed ValueCodec.Float).ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.CornersHeightmapResponse = {
+            Width = x.Width
+            Height = x.Height
+            Heights = x.Heights.Build
+            }
+
+type private _CornersHeightmapResponse = CornersHeightmapResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type CornersHeightmapResponse = {
+    // Field Declarations
+    /// <summary>Width + 1 by Height + 1 vertex resolution.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("width")>] Width: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("height")>] Height: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("heights")>] Heights: float32 list // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<CornersHeightmapResponse>> =
+        lazy
+        // Field Definitions
+        let Width = FieldCodec.Primitive ValueCodec.Int32 (1, "width")
+        let Height = FieldCodec.Primitive ValueCodec.Int32 (2, "height")
+        let Heights = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Float) (3, "heights")
+        // Proto Definition Implementation
+        { // ProtoDef<CornersHeightmapResponse>
+            Name = "CornersHeightmapResponse"
+            Empty = {
+                Width = Width.GetDefault()
+                Height = Height.GetDefault()
+                Heights = Heights.GetDefault()
+                }
+            Size = fun (m: CornersHeightmapResponse) ->
+                0
+                + Width.CalcFieldSize m.Width
+                + Height.CalcFieldSize m.Height
+                + Heights.CalcFieldSize m.Heights
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: CornersHeightmapResponse) ->
+                Width.WriteField w m.Width
+                Height.WriteField w m.Height
+                Heights.WriteField w m.Heights
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.CornersHeightmapResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeWidth = Width.WriteJsonField o
+                let writeHeight = Height.WriteJsonField o
+                let writeHeights = Heights.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: CornersHeightmapResponse) =
+                    writeWidth w m.Width
+                    writeHeight w m.Height
+                    writeHeights w m.Heights
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : CornersHeightmapResponse =
+                    match kvPair.Key with
+                    | "width" -> { value with Width = Width.ReadJsonField kvPair.Value }
+                    | "height" -> { value with Height = Height.ReadJsonField kvPair.Value }
+                    | "heights" -> { value with Heights = Heights.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _CornersHeightmapResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._CornersHeightmapResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetSlopeMapRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GetSlopeMapRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GetSlopeMapRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GetSlopeMapRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GetSlopeMapRequest>
+            Name = "GetSlopeMapRequest"
+            Empty = GetSlopeMapRequest.empty
+            Size = fun (m: GetSlopeMapRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetSlopeMapRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GetSlopeMapRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GetSlopeMapRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module SlopeMapResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Width: int // (1)
+            val mutable Height: int // (2)
+            val mutable Slopes: RepeatedBuilder<float32> // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Width <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Height <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Slopes.AddRange ((ValueCodec.Packed ValueCodec.Float).ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.SlopeMapResponse = {
+            Width = x.Width
+            Height = x.Height
+            Slopes = x.Slopes.Build
+            }
+
+type private _SlopeMapResponse = SlopeMapResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type SlopeMapResponse = {
+    // Field Declarations
+    /// <summary>Half heightmap resolution.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("width")>] Width: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("height")>] Height: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("slopes")>] Slopes: float32 list // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<SlopeMapResponse>> =
+        lazy
+        // Field Definitions
+        let Width = FieldCodec.Primitive ValueCodec.Int32 (1, "width")
+        let Height = FieldCodec.Primitive ValueCodec.Int32 (2, "height")
+        let Slopes = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Float) (3, "slopes")
+        // Proto Definition Implementation
+        { // ProtoDef<SlopeMapResponse>
+            Name = "SlopeMapResponse"
+            Empty = {
+                Width = Width.GetDefault()
+                Height = Height.GetDefault()
+                Slopes = Slopes.GetDefault()
+                }
+            Size = fun (m: SlopeMapResponse) ->
+                0
+                + Width.CalcFieldSize m.Width
+                + Height.CalcFieldSize m.Height
+                + Slopes.CalcFieldSize m.Slopes
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: SlopeMapResponse) ->
+                Width.WriteField w m.Width
+                Height.WriteField w m.Height
+                Slopes.WriteField w m.Slopes
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.SlopeMapResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeWidth = Width.WriteJsonField o
+                let writeHeight = Height.WriteJsonField o
+                let writeSlopes = Slopes.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: SlopeMapResponse) =
+                    writeWidth w m.Width
+                    writeHeight w m.Height
+                    writeSlopes w m.Slopes
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : SlopeMapResponse =
+                    match kvPair.Key with
+                    | "width" -> { value with Width = Width.ReadJsonField kvPair.Value }
+                    | "height" -> { value with Height = Height.ReadJsonField kvPair.Value }
+                    | "slopes" -> { value with Slopes = Slopes.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _SlopeMapResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._SlopeMapResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetLosMapRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GetLosMapRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GetLosMapRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GetLosMapRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GetLosMapRequest>
+            Name = "GetLosMapRequest"
+            Empty = GetLosMapRequest.empty
+            Size = fun (m: GetLosMapRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetLosMapRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GetLosMapRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GetLosMapRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module LosMapResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Width: int // (1)
+            val mutable Height: int // (2)
+            val mutable Values: RepeatedBuilder<int> // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Width <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Height <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Values.AddRange ((ValueCodec.Packed ValueCodec.Int32).ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.LosMapResponse = {
+            Width = x.Width
+            Height = x.Height
+            Values = x.Values.Build
+            }
+
+type private _LosMapResponse = LosMapResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type LosMapResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("width")>] Width: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("height")>] Height: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("values")>] Values: int list // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<LosMapResponse>> =
+        lazy
+        // Field Definitions
+        let Width = FieldCodec.Primitive ValueCodec.Int32 (1, "width")
+        let Height = FieldCodec.Primitive ValueCodec.Int32 (2, "height")
+        let Values = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Int32) (3, "values")
+        // Proto Definition Implementation
+        { // ProtoDef<LosMapResponse>
+            Name = "LosMapResponse"
+            Empty = {
+                Width = Width.GetDefault()
+                Height = Height.GetDefault()
+                Values = Values.GetDefault()
+                }
+            Size = fun (m: LosMapResponse) ->
+                0
+                + Width.CalcFieldSize m.Width
+                + Height.CalcFieldSize m.Height
+                + Values.CalcFieldSize m.Values
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: LosMapResponse) ->
+                Width.WriteField w m.Width
+                Height.WriteField w m.Height
+                Values.WriteField w m.Values
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.LosMapResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeWidth = Width.WriteJsonField o
+                let writeHeight = Height.WriteJsonField o
+                let writeValues = Values.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: LosMapResponse) =
+                    writeWidth w m.Width
+                    writeHeight w m.Height
+                    writeValues w m.Values
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : LosMapResponse =
+                    match kvPair.Key with
+                    | "width" -> { value with Width = Width.ReadJsonField kvPair.Value }
+                    | "height" -> { value with Height = Height.ReadJsonField kvPair.Value }
+                    | "values" -> { value with Values = Values.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _LosMapResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._LosMapResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetRadarMapRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GetRadarMapRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GetRadarMapRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GetRadarMapRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GetRadarMapRequest>
+            Name = "GetRadarMapRequest"
+            Empty = GetRadarMapRequest.empty
+            Size = fun (m: GetRadarMapRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetRadarMapRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GetRadarMapRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GetRadarMapRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module RadarMapResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Width: int // (1)
+            val mutable Height: int // (2)
+            val mutable Values: RepeatedBuilder<int> // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Width <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Height <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Values.AddRange ((ValueCodec.Packed ValueCodec.Int32).ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.RadarMapResponse = {
+            Width = x.Width
+            Height = x.Height
+            Values = x.Values.Build
+            }
+
+type private _RadarMapResponse = RadarMapResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type RadarMapResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("width")>] Width: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("height")>] Height: int // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("values")>] Values: int list // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<RadarMapResponse>> =
+        lazy
+        // Field Definitions
+        let Width = FieldCodec.Primitive ValueCodec.Int32 (1, "width")
+        let Height = FieldCodec.Primitive ValueCodec.Int32 (2, "height")
+        let Values = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Int32) (3, "values")
+        // Proto Definition Implementation
+        { // ProtoDef<RadarMapResponse>
+            Name = "RadarMapResponse"
+            Empty = {
+                Width = Width.GetDefault()
+                Height = Height.GetDefault()
+                Values = Values.GetDefault()
+                }
+            Size = fun (m: RadarMapResponse) ->
+                0
+                + Width.CalcFieldSize m.Width
+                + Height.CalcFieldSize m.Height
+                + Values.CalcFieldSize m.Values
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: RadarMapResponse) ->
+                Width.WriteField w m.Width
+                Height.WriteField w m.Height
+                Values.WriteField w m.Values
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.RadarMapResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeWidth = Width.WriteJsonField o
+                let writeHeight = Height.WriteJsonField o
+                let writeValues = Values.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: RadarMapResponse) =
+                    writeWidth w m.Width
+                    writeHeight w m.Height
+                    writeValues w m.Values
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : RadarMapResponse =
+                    match kvPair.Key with
+                    | "width" -> { value with Width = Width.ReadJsonField kvPair.Value }
+                    | "height" -> { value with Height = Height.ReadJsonField kvPair.Value }
+                    | "values" -> { value with Values = Values.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _RadarMapResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._RadarMapResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetResourceMapRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = GetResourceMapRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type GetResourceMapRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<GetResourceMapRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<GetResourceMapRequest>
+            Name = "GetResourceMapRequest"
+            Empty = GetResourceMapRequest.empty
+            Size = fun (m: GetResourceMapRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetResourceMapRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                GetResourceMapRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> GetResourceMapRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module ResourceMapResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Width: int // (1)
+            val mutable Height: int // (2)
+            val mutable Values: RepeatedBuilder<int> // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Width <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Height <- ValueCodec.Int32.ReadValue reader
+            | 3 -> x.Values.AddRange ((ValueCodec.Packed ValueCodec.Int32).ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.ResourceMapResponse = {
+            Width = x.Width
+            Height = x.Height
+            Values = x.Values.Build
+            }
+
+type private _ResourceMapResponse = ResourceMapResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type ResourceMapResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("width")>] Width: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("height")>] Height: int // (2)
+    /// <summary>
+    /// Engine reports integer intensities; widened to int32 to match the
+    /// Callbacks.getResourceMap return type.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("values")>] Values: int list // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<ResourceMapResponse>> =
+        lazy
+        // Field Definitions
+        let Width = FieldCodec.Primitive ValueCodec.Int32 (1, "width")
+        let Height = FieldCodec.Primitive ValueCodec.Int32 (2, "height")
+        let Values = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Int32) (3, "values")
+        // Proto Definition Implementation
+        { // ProtoDef<ResourceMapResponse>
+            Name = "ResourceMapResponse"
+            Empty = {
+                Width = Width.GetDefault()
+                Height = Height.GetDefault()
+                Values = Values.GetDefault()
+                }
+            Size = fun (m: ResourceMapResponse) ->
+                0
+                + Width.CalcFieldSize m.Width
+                + Height.CalcFieldSize m.Height
+                + Values.CalcFieldSize m.Values
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: ResourceMapResponse) ->
+                Width.WriteField w m.Width
+                Height.WriteField w m.Height
+                Values.WriteField w m.Values
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.ResourceMapResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeWidth = Width.WriteJsonField o
+                let writeHeight = Height.WriteJsonField o
+                let writeValues = Values.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: ResourceMapResponse) =
+                    writeWidth w m.Width
+                    writeHeight w m.Height
+                    writeValues w m.Values
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : ResourceMapResponse =
+                    match kvPair.Key with
+                    | "width" -> { value with Width = Width.ReadJsonField kvPair.Value }
+                    | "height" -> { value with Height = Height.ReadJsonField kvPair.Value }
+                    | "values" -> { value with Values = Values.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _ResourceMapResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._ResourceMapResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module ListMetalSpotsRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | _ -> reader.SkipLastField()
+        member x.Build = ListMetalSpotsRequest.empty
+
+[<StructuralEquality;StructuralComparison>]
+type ListMetalSpotsRequest = | Unused
+    with
+    static member empty = Unused 
+    static member Proto : Lazy<ProtoDef<ListMetalSpotsRequest>> =
+        lazy
+        // Proto Definition Implementation
+        { // ProtoDef<ListMetalSpotsRequest>
+            Name = "ListMetalSpotsRequest"
+            Empty = ListMetalSpotsRequest.empty
+            Size = fun (m: ListMetalSpotsRequest) ->
+                0
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: ListMetalSpotsRequest) ->
+                ()
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable tag = 0
+                while read r &tag do
+                    r.SkipLastField()
+                ListMetalSpotsRequest.empty
+            EncodeJson = fun _ _ _ -> ()
+            DecodeJson = fun _ -> ListMetalSpotsRequest.empty
+        }
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module MetalSpot =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable X: float32 // (1)
+            val mutable Y: float32 // (2)
+            val mutable Z: float32 // (3)
+            val mutable MetalValue: float32 // (4)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.X <- ValueCodec.Float.ReadValue reader
+            | 2 -> x.Y <- ValueCodec.Float.ReadValue reader
+            | 3 -> x.Z <- ValueCodec.Float.ReadValue reader
+            | 4 -> x.MetalValue <- ValueCodec.Float.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.MetalSpot = {
+            X = x.X
+            Y = x.Y
+            Z = x.Z
+            MetalValue = x.MetalValue
+            }
+
+type private _MetalSpot = MetalSpot
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type MetalSpot = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("x")>] X: float32 // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("y")>] Y: float32 // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("z")>] Z: float32 // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("metalValue")>] MetalValue: float32 // (4)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<MetalSpot>> =
+        lazy
+        // Field Definitions
+        let X = FieldCodec.Primitive ValueCodec.Float (1, "x")
+        let Y = FieldCodec.Primitive ValueCodec.Float (2, "y")
+        let Z = FieldCodec.Primitive ValueCodec.Float (3, "z")
+        let MetalValue = FieldCodec.Primitive ValueCodec.Float (4, "metalValue")
+        // Proto Definition Implementation
+        { // ProtoDef<MetalSpot>
+            Name = "MetalSpot"
+            Empty = {
+                X = X.GetDefault()
+                Y = Y.GetDefault()
+                Z = Z.GetDefault()
+                MetalValue = MetalValue.GetDefault()
+                }
+            Size = fun (m: MetalSpot) ->
+                0
+                + X.CalcFieldSize m.X
+                + Y.CalcFieldSize m.Y
+                + Z.CalcFieldSize m.Z
+                + MetalValue.CalcFieldSize m.MetalValue
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: MetalSpot) ->
+                X.WriteField w m.X
+                Y.WriteField w m.Y
+                Z.WriteField w m.Z
+                MetalValue.WriteField w m.MetalValue
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.MetalSpot.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeX = X.WriteJsonField o
+                let writeY = Y.WriteJsonField o
+                let writeZ = Z.WriteJsonField o
+                let writeMetalValue = MetalValue.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: MetalSpot) =
+                    writeX w m.X
+                    writeY w m.Y
+                    writeZ w m.Z
+                    writeMetalValue w m.MetalValue
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : MetalSpot =
+                    match kvPair.Key with
+                    | "x" -> { value with X = X.ReadJsonField kvPair.Value }
+                    | "y" -> { value with Y = Y.ReadJsonField kvPair.Value }
+                    | "z" -> { value with Z = Z.ReadJsonField kvPair.Value }
+                    | "metalValue" -> { value with MetalValue = MetalValue.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _MetalSpot.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._MetalSpot.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module MetalSpotsResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Spots: RepeatedBuilder<Fsbar.Hub.Scripting.V1.MetalSpot> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Spots.Add (ValueCodec.Message<Fsbar.Hub.Scripting.V1.MetalSpot>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.MetalSpotsResponse = {
+            Spots = x.Spots.Build
+            }
+
+type private _MetalSpotsResponse = MetalSpotsResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type MetalSpotsResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("spots")>] Spots: Fsbar.Hub.Scripting.V1.MetalSpot list // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<MetalSpotsResponse>> =
+        lazy
+        // Field Definitions
+        let Spots = FieldCodec.Repeated ValueCodec.Message<Fsbar.Hub.Scripting.V1.MetalSpot> (1, "spots")
+        // Proto Definition Implementation
+        { // ProtoDef<MetalSpotsResponse>
+            Name = "MetalSpotsResponse"
+            Empty = {
+                Spots = Spots.GetDefault()
+                }
+            Size = fun (m: MetalSpotsResponse) ->
+                0
+                + Spots.CalcFieldSize m.Spots
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: MetalSpotsResponse) ->
+                Spots.WriteField w m.Spots
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.MetalSpotsResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeSpots = Spots.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: MetalSpotsResponse) =
+                    writeSpots w m.Spots
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : MetalSpotsResponse =
+                    match kvPair.Key with
+                    | "spots" -> { value with Spots = Spots.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _MetalSpotsResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._MetalSpotsResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module CostWire =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Metal: float32 // (1)
+            val mutable Energy: float32 // (2)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Metal <- ValueCodec.Float.ReadValue reader
+            | 2 -> x.Energy <- ValueCodec.Float.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.CostWire = {
+            Metal = x.Metal
+            Energy = x.Energy
+            }
+
+type private _CostWire = CostWire
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type CostWire = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("metal")>] Metal: float32 // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("energy")>] Energy: float32 // (2)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<CostWire>> =
+        lazy
+        // Field Definitions
+        let Metal = FieldCodec.Primitive ValueCodec.Float (1, "metal")
+        let Energy = FieldCodec.Primitive ValueCodec.Float (2, "energy")
+        // Proto Definition Implementation
+        { // ProtoDef<CostWire>
+            Name = "CostWire"
+            Empty = {
+                Metal = Metal.GetDefault()
+                Energy = Energy.GetDefault()
+                }
+            Size = fun (m: CostWire) ->
+                0
+                + Metal.CalcFieldSize m.Metal
+                + Energy.CalcFieldSize m.Energy
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: CostWire) ->
+                Metal.WriteField w m.Metal
+                Energy.WriteField w m.Energy
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.CostWire.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeMetal = Metal.WriteJsonField o
+                let writeEnergy = Energy.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: CostWire) =
+                    writeMetal w m.Metal
+                    writeEnergy w m.Energy
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : CostWire =
+                    match kvPair.Key with
+                    | "metal" -> { value with Metal = Metal.ReadJsonField kvPair.Value }
+                    | "energy" -> { value with Energy = Energy.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _CostWire.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._CostWire.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module UnitDefInfoExtended =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable DefId: int // (1)
+            val mutable InternalName: string // (2)
+            val mutable DisplayName: string // (3)
+            val mutable Faction: string // (4)
+            val mutable Cost: OptionBuilder<Fsbar.Hub.Scripting.V1.CostWire> // (5)
+            val mutable BuildTime: float32 // (6)
+            val mutable BuildSpeed: float32 // (7)
+            val mutable SightRangeElmo: float32 // (8)
+            val mutable MaxWeaponRange: float32 // (9)
+            val mutable FootprintX: int // (10)
+            val mutable FootprintZ: int // (11)
+            val mutable BuildOptions: RepeatedBuilder<int> // (12)
+            val mutable MaxHealth: int // (13)
+            val mutable WeaponRangesElmo: RepeatedBuilder<float32> // (14)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.DefId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.InternalName <- ValueCodec.String.ReadValue reader
+            | 3 -> x.DisplayName <- ValueCodec.String.ReadValue reader
+            | 4 -> x.Faction <- ValueCodec.String.ReadValue reader
+            | 5 -> x.Cost.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.CostWire>.ReadValue reader)
+            | 6 -> x.BuildTime <- ValueCodec.Float.ReadValue reader
+            | 7 -> x.BuildSpeed <- ValueCodec.Float.ReadValue reader
+            | 8 -> x.SightRangeElmo <- ValueCodec.Float.ReadValue reader
+            | 9 -> x.MaxWeaponRange <- ValueCodec.Float.ReadValue reader
+            | 10 -> x.FootprintX <- ValueCodec.Int32.ReadValue reader
+            | 11 -> x.FootprintZ <- ValueCodec.Int32.ReadValue reader
+            | 12 -> x.BuildOptions.AddRange ((ValueCodec.Packed ValueCodec.Int32).ReadValue reader)
+            | 13 -> x.MaxHealth <- ValueCodec.Int32.ReadValue reader
+            | 14 -> x.WeaponRangesElmo.AddRange ((ValueCodec.Packed ValueCodec.Float).ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.UnitDefInfoExtended = {
+            DefId = x.DefId
+            InternalName = x.InternalName |> orEmptyString
+            DisplayName = x.DisplayName |> orEmptyString
+            Faction = x.Faction |> orEmptyString
+            Cost = x.Cost.Build
+            BuildTime = x.BuildTime
+            BuildSpeed = x.BuildSpeed
+            SightRangeElmo = x.SightRangeElmo
+            MaxWeaponRange = x.MaxWeaponRange
+            FootprintX = x.FootprintX
+            FootprintZ = x.FootprintZ
+            BuildOptions = x.BuildOptions.Build
+            MaxHealth = x.MaxHealth
+            WeaponRangesElmo = x.WeaponRangesElmo.Build
+            }
+
+type private _UnitDefInfoExtended = UnitDefInfoExtended
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type UnitDefInfoExtended = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("defId")>] DefId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("internalName")>] InternalName: string // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("displayName")>] DisplayName: string // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("faction")>] Faction: string // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("cost")>] Cost: Fsbar.Hub.Scripting.V1.CostWire option // (5)
+    [<System.Text.Json.Serialization.JsonPropertyName("buildTime")>] BuildTime: float32 // (6)
+    [<System.Text.Json.Serialization.JsonPropertyName("buildSpeed")>] BuildSpeed: float32 // (7)
+    [<System.Text.Json.Serialization.JsonPropertyName("sightRangeElmo")>] SightRangeElmo: float32 // (8)
+    /// <summary>0 for units without weapons.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("maxWeaponRange")>] MaxWeaponRange: float32 // (9)
+    [<System.Text.Json.Serialization.JsonPropertyName("footprintX")>] FootprintX: int // (10)
+    [<System.Text.Json.Serialization.JsonPropertyName("footprintZ")>] FootprintZ: int // (11)
+    /// <summary>Def ids this unit can build. Empty for non-builders.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("buildOptions")>] BuildOptions: int list // (12)
+    [<System.Text.Json.Serialization.JsonPropertyName("maxHealth")>] MaxHealth: int // (13)
+    /// <summary>All weapon ranges in elmos (mirrors EncyclopediaEntryWire).</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("weaponRangesElmo")>] WeaponRangesElmo: float32 list // (14)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<UnitDefInfoExtended>> =
+        lazy
+        // Field Definitions
+        let DefId = FieldCodec.Primitive ValueCodec.Int32 (1, "defId")
+        let InternalName = FieldCodec.Primitive ValueCodec.String (2, "internalName")
+        let DisplayName = FieldCodec.Primitive ValueCodec.String (3, "displayName")
+        let Faction = FieldCodec.Primitive ValueCodec.String (4, "faction")
+        let Cost = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.CostWire> (5, "cost")
+        let BuildTime = FieldCodec.Primitive ValueCodec.Float (6, "buildTime")
+        let BuildSpeed = FieldCodec.Primitive ValueCodec.Float (7, "buildSpeed")
+        let SightRangeElmo = FieldCodec.Primitive ValueCodec.Float (8, "sightRangeElmo")
+        let MaxWeaponRange = FieldCodec.Primitive ValueCodec.Float (9, "maxWeaponRange")
+        let FootprintX = FieldCodec.Primitive ValueCodec.Int32 (10, "footprintX")
+        let FootprintZ = FieldCodec.Primitive ValueCodec.Int32 (11, "footprintZ")
+        let BuildOptions = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Int32) (12, "buildOptions")
+        let MaxHealth = FieldCodec.Primitive ValueCodec.Int32 (13, "maxHealth")
+        let WeaponRangesElmo = FieldCodec.Primitive (ValueCodec.Packed ValueCodec.Float) (14, "weaponRangesElmo")
+        // Proto Definition Implementation
+        { // ProtoDef<UnitDefInfoExtended>
+            Name = "UnitDefInfoExtended"
+            Empty = {
+                DefId = DefId.GetDefault()
+                InternalName = InternalName.GetDefault()
+                DisplayName = DisplayName.GetDefault()
+                Faction = Faction.GetDefault()
+                Cost = Cost.GetDefault()
+                BuildTime = BuildTime.GetDefault()
+                BuildSpeed = BuildSpeed.GetDefault()
+                SightRangeElmo = SightRangeElmo.GetDefault()
+                MaxWeaponRange = MaxWeaponRange.GetDefault()
+                FootprintX = FootprintX.GetDefault()
+                FootprintZ = FootprintZ.GetDefault()
+                BuildOptions = BuildOptions.GetDefault()
+                MaxHealth = MaxHealth.GetDefault()
+                WeaponRangesElmo = WeaponRangesElmo.GetDefault()
+                }
+            Size = fun (m: UnitDefInfoExtended) ->
+                0
+                + DefId.CalcFieldSize m.DefId
+                + InternalName.CalcFieldSize m.InternalName
+                + DisplayName.CalcFieldSize m.DisplayName
+                + Faction.CalcFieldSize m.Faction
+                + Cost.CalcFieldSize m.Cost
+                + BuildTime.CalcFieldSize m.BuildTime
+                + BuildSpeed.CalcFieldSize m.BuildSpeed
+                + SightRangeElmo.CalcFieldSize m.SightRangeElmo
+                + MaxWeaponRange.CalcFieldSize m.MaxWeaponRange
+                + FootprintX.CalcFieldSize m.FootprintX
+                + FootprintZ.CalcFieldSize m.FootprintZ
+                + BuildOptions.CalcFieldSize m.BuildOptions
+                + MaxHealth.CalcFieldSize m.MaxHealth
+                + WeaponRangesElmo.CalcFieldSize m.WeaponRangesElmo
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: UnitDefInfoExtended) ->
+                DefId.WriteField w m.DefId
+                InternalName.WriteField w m.InternalName
+                DisplayName.WriteField w m.DisplayName
+                Faction.WriteField w m.Faction
+                Cost.WriteField w m.Cost
+                BuildTime.WriteField w m.BuildTime
+                BuildSpeed.WriteField w m.BuildSpeed
+                SightRangeElmo.WriteField w m.SightRangeElmo
+                MaxWeaponRange.WriteField w m.MaxWeaponRange
+                FootprintX.WriteField w m.FootprintX
+                FootprintZ.WriteField w m.FootprintZ
+                BuildOptions.WriteField w m.BuildOptions
+                MaxHealth.WriteField w m.MaxHealth
+                WeaponRangesElmo.WriteField w m.WeaponRangesElmo
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.UnitDefInfoExtended.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeDefId = DefId.WriteJsonField o
+                let writeInternalName = InternalName.WriteJsonField o
+                let writeDisplayName = DisplayName.WriteJsonField o
+                let writeFaction = Faction.WriteJsonField o
+                let writeCost = Cost.WriteJsonField o
+                let writeBuildTime = BuildTime.WriteJsonField o
+                let writeBuildSpeed = BuildSpeed.WriteJsonField o
+                let writeSightRangeElmo = SightRangeElmo.WriteJsonField o
+                let writeMaxWeaponRange = MaxWeaponRange.WriteJsonField o
+                let writeFootprintX = FootprintX.WriteJsonField o
+                let writeFootprintZ = FootprintZ.WriteJsonField o
+                let writeBuildOptions = BuildOptions.WriteJsonField o
+                let writeMaxHealth = MaxHealth.WriteJsonField o
+                let writeWeaponRangesElmo = WeaponRangesElmo.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: UnitDefInfoExtended) =
+                    writeDefId w m.DefId
+                    writeInternalName w m.InternalName
+                    writeDisplayName w m.DisplayName
+                    writeFaction w m.Faction
+                    writeCost w m.Cost
+                    writeBuildTime w m.BuildTime
+                    writeBuildSpeed w m.BuildSpeed
+                    writeSightRangeElmo w m.SightRangeElmo
+                    writeMaxWeaponRange w m.MaxWeaponRange
+                    writeFootprintX w m.FootprintX
+                    writeFootprintZ w m.FootprintZ
+                    writeBuildOptions w m.BuildOptions
+                    writeMaxHealth w m.MaxHealth
+                    writeWeaponRangesElmo w m.WeaponRangesElmo
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : UnitDefInfoExtended =
+                    match kvPair.Key with
+                    | "defId" -> { value with DefId = DefId.ReadJsonField kvPair.Value }
+                    | "internalName" -> { value with InternalName = InternalName.ReadJsonField kvPair.Value }
+                    | "displayName" -> { value with DisplayName = DisplayName.ReadJsonField kvPair.Value }
+                    | "faction" -> { value with Faction = Faction.ReadJsonField kvPair.Value }
+                    | "cost" -> { value with Cost = Cost.ReadJsonField kvPair.Value }
+                    | "buildTime" -> { value with BuildTime = BuildTime.ReadJsonField kvPair.Value }
+                    | "buildSpeed" -> { value with BuildSpeed = BuildSpeed.ReadJsonField kvPair.Value }
+                    | "sightRangeElmo" -> { value with SightRangeElmo = SightRangeElmo.ReadJsonField kvPair.Value }
+                    | "maxWeaponRange" -> { value with MaxWeaponRange = MaxWeaponRange.ReadJsonField kvPair.Value }
+                    | "footprintX" -> { value with FootprintX = FootprintX.ReadJsonField kvPair.Value }
+                    | "footprintZ" -> { value with FootprintZ = FootprintZ.ReadJsonField kvPair.Value }
+                    | "buildOptions" -> { value with BuildOptions = BuildOptions.ReadJsonField kvPair.Value }
+                    | "maxHealth" -> { value with MaxHealth = MaxHealth.ReadJsonField kvPair.Value }
+                    | "weaponRangesElmo" -> { value with WeaponRangesElmo = WeaponRangesElmo.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _UnitDefInfoExtended.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._UnitDefInfoExtended.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GetUnitDefExtendedResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitDef: OptionBuilder<Fsbar.Hub.Scripting.V1.UnitDefInfoExtended> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitDef.Set (ValueCodec.Message<Fsbar.Hub.Scripting.V1.UnitDefInfoExtended>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.GetUnitDefExtendedResponse = {
+            UnitDef = x.UnitDef.Build
+            }
+
+type private _GetUnitDefExtendedResponse = GetUnitDefExtendedResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GetUnitDefExtendedResponse = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitDef")>] UnitDef: Fsbar.Hub.Scripting.V1.UnitDefInfoExtended option // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GetUnitDefExtendedResponse>> =
+        lazy
+        // Field Definitions
+        let UnitDef = FieldCodec.Optional ValueCodec.Message<Fsbar.Hub.Scripting.V1.UnitDefInfoExtended> (1, "unitDef")
+        // Proto Definition Implementation
+        { // ProtoDef<GetUnitDefExtendedResponse>
+            Name = "GetUnitDefExtendedResponse"
+            Empty = {
+                UnitDef = UnitDef.GetDefault()
+                }
+            Size = fun (m: GetUnitDefExtendedResponse) ->
+                0
+                + UnitDef.CalcFieldSize m.UnitDef
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GetUnitDefExtendedResponse) ->
+                UnitDef.WriteField w m.UnitDef
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.GetUnitDefExtendedResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitDef = UnitDef.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GetUnitDefExtendedResponse) =
+                    writeUnitDef w m.UnitDef
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GetUnitDefExtendedResponse =
+                    match kvPair.Key with
+                    | "unitDef" -> { value with UnitDef = UnitDef.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GetUnitDefExtendedResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._GetUnitDefExtendedResponse.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module SendCommandBatchRequest =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Commands: RepeatedBuilder<Highbar.AICommand> // (1)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Commands.Add (ValueCodec.Message<Highbar.AICommand>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.SendCommandBatchRequest = {
+            Commands = x.Commands.Build
+            }
+
+type private _SendCommandBatchRequest = SendCommandBatchRequest
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type SendCommandBatchRequest = {
+    // Field Declarations
+    /// <summary>≤1024 commands; above cap → whole-batch rejection (FR-008).</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("commands")>] Commands: Highbar.AICommand list // (1)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<SendCommandBatchRequest>> =
+        lazy
+        // Field Definitions
+        let Commands = FieldCodec.Repeated ValueCodec.Message<Highbar.AICommand> (1, "commands")
+        // Proto Definition Implementation
+        { // ProtoDef<SendCommandBatchRequest>
+            Name = "SendCommandBatchRequest"
+            Empty = {
+                Commands = Commands.GetDefault()
+                }
+            Size = fun (m: SendCommandBatchRequest) ->
+                0
+                + Commands.CalcFieldSize m.Commands
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: SendCommandBatchRequest) ->
+                Commands.WriteField w m.Commands
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.SendCommandBatchRequest.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeCommands = Commands.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: SendCommandBatchRequest) =
+                    writeCommands w m.Commands
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : SendCommandBatchRequest =
+                    match kvPair.Key with
+                    | "commands" -> { value with Commands = Commands.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _SendCommandBatchRequest.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._SendCommandBatchRequest.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module CommandOutcome =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Index: int // (1)
+            val mutable Accepted: bool // (2)
+            val mutable Diagnostic: string // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Index <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Accepted <- ValueCodec.Bool.ReadValue reader
+            | 3 -> x.Diagnostic <- ValueCodec.String.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.CommandOutcome = {
+            Index = x.Index
+            Accepted = x.Accepted
+            Diagnostic = x.Diagnostic |> orEmptyString
+            }
+
+type private _CommandOutcome = CommandOutcome
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type CommandOutcome = {
+    // Field Declarations
+    /// <summary>Zero-based index into SendCommandBatchRequest.commands.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("index")>] Index: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("accepted")>] Accepted: bool // (2)
+    /// <summary>Empty when accepted; human-readable reason when rejected.</summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("diagnostic")>] Diagnostic: string // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<CommandOutcome>> =
+        lazy
+        // Field Definitions
+        let Index = FieldCodec.Primitive ValueCodec.Int32 (1, "index")
+        let Accepted = FieldCodec.Primitive ValueCodec.Bool (2, "accepted")
+        let Diagnostic = FieldCodec.Primitive ValueCodec.String (3, "diagnostic")
+        // Proto Definition Implementation
+        { // ProtoDef<CommandOutcome>
+            Name = "CommandOutcome"
+            Empty = {
+                Index = Index.GetDefault()
+                Accepted = Accepted.GetDefault()
+                Diagnostic = Diagnostic.GetDefault()
+                }
+            Size = fun (m: CommandOutcome) ->
+                0
+                + Index.CalcFieldSize m.Index
+                + Accepted.CalcFieldSize m.Accepted
+                + Diagnostic.CalcFieldSize m.Diagnostic
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: CommandOutcome) ->
+                Index.WriteField w m.Index
+                Accepted.WriteField w m.Accepted
+                Diagnostic.WriteField w m.Diagnostic
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.CommandOutcome.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeIndex = Index.WriteJsonField o
+                let writeAccepted = Accepted.WriteJsonField o
+                let writeDiagnostic = Diagnostic.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: CommandOutcome) =
+                    writeIndex w m.Index
+                    writeAccepted w m.Accepted
+                    writeDiagnostic w m.Diagnostic
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : CommandOutcome =
+                    match kvPair.Key with
+                    | "index" -> { value with Index = Index.ReadJsonField kvPair.Value }
+                    | "accepted" -> { value with Accepted = Accepted.ReadJsonField kvPair.Value }
+                    | "diagnostic" -> { value with Diagnostic = Diagnostic.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _CommandOutcome.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._CommandOutcome.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module SendCommandBatchResponse =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable ForwardedAtFrame: int // (1)
+            val mutable Outcomes: RepeatedBuilder<Fsbar.Hub.Scripting.V1.CommandOutcome> // (2)
+            val mutable BatchDiagnostic: string // (3)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.ForwardedAtFrame <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Outcomes.Add (ValueCodec.Message<Fsbar.Hub.Scripting.V1.CommandOutcome>.ReadValue reader)
+            | 3 -> x.BatchDiagnostic <- ValueCodec.String.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Fsbar.Hub.Scripting.V1.SendCommandBatchResponse = {
+            ForwardedAtFrame = x.ForwardedAtFrame
+            Outcomes = x.Outcomes.Build
+            BatchDiagnostic = x.BatchDiagnostic |> orEmptyString
+            }
+
+type private _SendCommandBatchResponse = SendCommandBatchResponse
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type SendCommandBatchResponse = {
+    // Field Declarations
+    /// <summary>
+    /// Engine frame at which the accepted commands were forwarded. 0 when
+    /// the whole batch was rejected (oversize, no session, etc.).
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("forwardedAtFrame")>] ForwardedAtFrame: int // (1)
+    /// <summary>
+    /// 1:1 with request.commands when the batch was accepted at the
+    /// size-cap gate. Empty when the whole batch was rejected.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("outcomes")>] Outcomes: Fsbar.Hub.Scripting.V1.CommandOutcome list // (2)
+    /// <summary>
+    /// Populated when the whole batch was rejected (e.g., oversize,
+    /// no-session). Names the cap and received size when applicable.
+    /// </summary>
+    [<System.Text.Json.Serialization.JsonPropertyName("batchDiagnostic")>] BatchDiagnostic: string // (3)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<SendCommandBatchResponse>> =
+        lazy
+        // Field Definitions
+        let ForwardedAtFrame = FieldCodec.Primitive ValueCodec.Int32 (1, "forwardedAtFrame")
+        let Outcomes = FieldCodec.Repeated ValueCodec.Message<Fsbar.Hub.Scripting.V1.CommandOutcome> (2, "outcomes")
+        let BatchDiagnostic = FieldCodec.Primitive ValueCodec.String (3, "batchDiagnostic")
+        // Proto Definition Implementation
+        { // ProtoDef<SendCommandBatchResponse>
+            Name = "SendCommandBatchResponse"
+            Empty = {
+                ForwardedAtFrame = ForwardedAtFrame.GetDefault()
+                Outcomes = Outcomes.GetDefault()
+                BatchDiagnostic = BatchDiagnostic.GetDefault()
+                }
+            Size = fun (m: SendCommandBatchResponse) ->
+                0
+                + ForwardedAtFrame.CalcFieldSize m.ForwardedAtFrame
+                + Outcomes.CalcFieldSize m.Outcomes
+                + BatchDiagnostic.CalcFieldSize m.BatchDiagnostic
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: SendCommandBatchResponse) ->
+                ForwardedAtFrame.WriteField w m.ForwardedAtFrame
+                Outcomes.WriteField w m.Outcomes
+                BatchDiagnostic.WriteField w m.BatchDiagnostic
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Fsbar.Hub.Scripting.V1.SendCommandBatchResponse.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeForwardedAtFrame = ForwardedAtFrame.WriteJsonField o
+                let writeOutcomes = Outcomes.WriteJsonField o
+                let writeBatchDiagnostic = BatchDiagnostic.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: SendCommandBatchResponse) =
+                    writeForwardedAtFrame w m.ForwardedAtFrame
+                    writeOutcomes w m.Outcomes
+                    writeBatchDiagnostic w m.BatchDiagnostic
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : SendCommandBatchResponse =
+                    match kvPair.Key with
+                    | "forwardedAtFrame" -> { value with ForwardedAtFrame = ForwardedAtFrame.ReadJsonField kvPair.Value }
+                    | "outcomes" -> { value with Outcomes = Outcomes.ReadJsonField kvPair.Value }
+                    | "batchDiagnostic" -> { value with BatchDiagnostic = BatchDiagnostic.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _SendCommandBatchResponse.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Fsbar.Hub.Scripting.V1._SendCommandBatchResponse.Proto.Value.Empty
+
 module ScriptingService =
     let private __Marshaller__fsbar_hub_scripting_v1_GameFrameMessage = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.GameFrameMessage) -> FsGrpc.Protobuf.encode x),
@@ -9399,6 +13083,46 @@ module ScriptingService =
     )
     let private __Marshaller__fsbar_hub_scripting_v1_ClearLayersResponse = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.ClearLayersResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetMapInfoResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetMapInfoResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_HeightmapResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.HeightmapResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_CornersHeightmapResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.CornersHeightmapResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_SlopeMapResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.SlopeMapResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_LosMapResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.LosMapResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_RadarMapResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.RadarMapResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_ResourceMapResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.ResourceMapResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_MetalSpotsResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.MetalSpotsResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetUnitDefExtendedResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetUnitDefExtendedResponse) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_SendCommandBatchResponse = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.SendCommandBatchResponse) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
     )
     let private __Marshaller__fsbar_hub_scripting_v1_LogEntryMessage = Grpc.Core.Marshallers.Create(
@@ -9551,6 +13275,42 @@ module ScriptingService =
     )
     let private __Marshaller__fsbar_hub_scripting_v1_ClearLayersRequest = Grpc.Core.Marshallers.Create(
         (fun (x: Fsbar.Hub.Scripting.V1.ClearLayersRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetMapInfoRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetMapInfoRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetHeightmapRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetHeightmapRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetCornersHeightmapRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetCornersHeightmapRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetSlopeMapRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetSlopeMapRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetLosMapRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetLosMapRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetRadarMapRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetRadarMapRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_GetResourceMapRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.GetResourceMapRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_ListMetalSpotsRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.ListMetalSpotsRequest) -> FsGrpc.Protobuf.encode x),
+        (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
+    )
+    let private __Marshaller__fsbar_hub_scripting_v1_SendCommandBatchRequest = Grpc.Core.Marshallers.Create(
+        (fun (x: Fsbar.Hub.Scripting.V1.SendCommandBatchRequest) -> FsGrpc.Protobuf.encode x),
         (fun (arr: byte array) -> FsGrpc.Protobuf.decode arr)
     )
     let private __Marshaller__fsbar_hub_scripting_v1_StreamHubLogRequest = Grpc.Core.Marshallers.Create(
@@ -9853,6 +13613,86 @@ module ScriptingService =
             __Marshaller__fsbar_hub_scripting_v1_ClearLayersRequest,
             __Marshaller__fsbar_hub_scripting_v1_ClearLayersResponse
         )
+    let private __Method_GetMapInfo =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetMapInfoRequest,Fsbar.Hub.Scripting.V1.GetMapInfoResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetMapInfo",
+            __Marshaller__fsbar_hub_scripting_v1_GetMapInfoRequest,
+            __Marshaller__fsbar_hub_scripting_v1_GetMapInfoResponse
+        )
+    let private __Method_GetHeightmap =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetHeightmapRequest,Fsbar.Hub.Scripting.V1.HeightmapResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetHeightmap",
+            __Marshaller__fsbar_hub_scripting_v1_GetHeightmapRequest,
+            __Marshaller__fsbar_hub_scripting_v1_HeightmapResponse
+        )
+    let private __Method_GetCornersHeightmap =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetCornersHeightmapRequest,Fsbar.Hub.Scripting.V1.CornersHeightmapResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetCornersHeightmap",
+            __Marshaller__fsbar_hub_scripting_v1_GetCornersHeightmapRequest,
+            __Marshaller__fsbar_hub_scripting_v1_CornersHeightmapResponse
+        )
+    let private __Method_GetSlopeMap =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetSlopeMapRequest,Fsbar.Hub.Scripting.V1.SlopeMapResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetSlopeMap",
+            __Marshaller__fsbar_hub_scripting_v1_GetSlopeMapRequest,
+            __Marshaller__fsbar_hub_scripting_v1_SlopeMapResponse
+        )
+    let private __Method_GetLosMap =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetLosMapRequest,Fsbar.Hub.Scripting.V1.LosMapResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetLosMap",
+            __Marshaller__fsbar_hub_scripting_v1_GetLosMapRequest,
+            __Marshaller__fsbar_hub_scripting_v1_LosMapResponse
+        )
+    let private __Method_GetRadarMap =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetRadarMapRequest,Fsbar.Hub.Scripting.V1.RadarMapResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetRadarMap",
+            __Marshaller__fsbar_hub_scripting_v1_GetRadarMapRequest,
+            __Marshaller__fsbar_hub_scripting_v1_RadarMapResponse
+        )
+    let private __Method_GetResourceMap =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetResourceMapRequest,Fsbar.Hub.Scripting.V1.ResourceMapResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetResourceMap",
+            __Marshaller__fsbar_hub_scripting_v1_GetResourceMapRequest,
+            __Marshaller__fsbar_hub_scripting_v1_ResourceMapResponse
+        )
+    let private __Method_ListMetalSpots =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.ListMetalSpotsRequest,Fsbar.Hub.Scripting.V1.MetalSpotsResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "ListMetalSpots",
+            __Marshaller__fsbar_hub_scripting_v1_ListMetalSpotsRequest,
+            __Marshaller__fsbar_hub_scripting_v1_MetalSpotsResponse
+        )
+    let private __Method_GetUnitDefExtended =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.GetUnitDefRequest,Fsbar.Hub.Scripting.V1.GetUnitDefExtendedResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "GetUnitDefExtended",
+            __Marshaller__fsbar_hub_scripting_v1_GetUnitDefRequest,
+            __Marshaller__fsbar_hub_scripting_v1_GetUnitDefExtendedResponse
+        )
+    let private __Method_SendCommandBatch =
+        Grpc.Core.Method<Fsbar.Hub.Scripting.V1.SendCommandBatchRequest,Fsbar.Hub.Scripting.V1.SendCommandBatchResponse>(
+            Grpc.Core.MethodType.Unary,
+            "fsbar.hub.scripting.v1.ScriptingService",
+            "SendCommandBatch",
+            __Marshaller__fsbar_hub_scripting_v1_SendCommandBatchRequest,
+            __Marshaller__fsbar_hub_scripting_v1_SendCommandBatchResponse
+        )
     let private __Method_StreamHubLog =
         Grpc.Core.Method<Fsbar.Hub.Scripting.V1.StreamHubLogRequest,Fsbar.Hub.Scripting.V1.LogEntryMessage>(
             Grpc.Core.MethodType.DuplexStreaming,
@@ -9901,6 +13741,16 @@ module ScriptingService =
         abstract member DeleteLayer : Fsbar.Hub.Scripting.V1.DeleteLayerRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.DeleteLayerResponse>
         abstract member ListLayers : Fsbar.Hub.Scripting.V1.ListLayersRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.ListLayersResponse>
         abstract member ClearLayers : Fsbar.Hub.Scripting.V1.ClearLayersRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.ClearLayersResponse>
+        abstract member GetMapInfo : Fsbar.Hub.Scripting.V1.GetMapInfoRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.GetMapInfoResponse>
+        abstract member GetHeightmap : Fsbar.Hub.Scripting.V1.GetHeightmapRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.HeightmapResponse>
+        abstract member GetCornersHeightmap : Fsbar.Hub.Scripting.V1.GetCornersHeightmapRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.CornersHeightmapResponse>
+        abstract member GetSlopeMap : Fsbar.Hub.Scripting.V1.GetSlopeMapRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.SlopeMapResponse>
+        abstract member GetLosMap : Fsbar.Hub.Scripting.V1.GetLosMapRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.LosMapResponse>
+        abstract member GetRadarMap : Fsbar.Hub.Scripting.V1.GetRadarMapRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.RadarMapResponse>
+        abstract member GetResourceMap : Fsbar.Hub.Scripting.V1.GetResourceMapRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.ResourceMapResponse>
+        abstract member ListMetalSpots : Fsbar.Hub.Scripting.V1.ListMetalSpotsRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.MetalSpotsResponse>
+        abstract member GetUnitDefExtended : Fsbar.Hub.Scripting.V1.GetUnitDefRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.GetUnitDefExtendedResponse>
+        abstract member SendCommandBatch : Fsbar.Hub.Scripting.V1.SendCommandBatchRequest -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task<Fsbar.Hub.Scripting.V1.SendCommandBatchResponse>
         abstract member StreamHubLog : Grpc.Core.IAsyncStreamReader<Fsbar.Hub.Scripting.V1.StreamHubLogRequest> -> Grpc.Core.IServerStreamWriter<Fsbar.Hub.Scripting.V1.LogEntryMessage> -> Grpc.Core.ServerCallContext -> System.Threading.Tasks.Task
         static member BindService (serviceBinder: Grpc.Core.ServiceBinderBase) (serviceImpl: ServiceBase) =
             let serviceMethodOrNull =
@@ -10090,6 +13940,56 @@ module ScriptingService =
             serviceBinder.AddMethod(__Method_ClearLayers, serviceMethodOrNull) |> ignore
             let serviceMethodOrNull =
                 match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetMapInfoRequest,Fsbar.Hub.Scripting.V1.GetMapInfoResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetMapInfoRequest,Fsbar.Hub.Scripting.V1.GetMapInfoResponse>(serviceImpl.GetMapInfo)
+            serviceBinder.AddMethod(__Method_GetMapInfo, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetHeightmapRequest,Fsbar.Hub.Scripting.V1.HeightmapResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetHeightmapRequest,Fsbar.Hub.Scripting.V1.HeightmapResponse>(serviceImpl.GetHeightmap)
+            serviceBinder.AddMethod(__Method_GetHeightmap, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetCornersHeightmapRequest,Fsbar.Hub.Scripting.V1.CornersHeightmapResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetCornersHeightmapRequest,Fsbar.Hub.Scripting.V1.CornersHeightmapResponse>(serviceImpl.GetCornersHeightmap)
+            serviceBinder.AddMethod(__Method_GetCornersHeightmap, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetSlopeMapRequest,Fsbar.Hub.Scripting.V1.SlopeMapResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetSlopeMapRequest,Fsbar.Hub.Scripting.V1.SlopeMapResponse>(serviceImpl.GetSlopeMap)
+            serviceBinder.AddMethod(__Method_GetSlopeMap, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetLosMapRequest,Fsbar.Hub.Scripting.V1.LosMapResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetLosMapRequest,Fsbar.Hub.Scripting.V1.LosMapResponse>(serviceImpl.GetLosMap)
+            serviceBinder.AddMethod(__Method_GetLosMap, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetRadarMapRequest,Fsbar.Hub.Scripting.V1.RadarMapResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetRadarMapRequest,Fsbar.Hub.Scripting.V1.RadarMapResponse>(serviceImpl.GetRadarMap)
+            serviceBinder.AddMethod(__Method_GetRadarMap, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetResourceMapRequest,Fsbar.Hub.Scripting.V1.ResourceMapResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetResourceMapRequest,Fsbar.Hub.Scripting.V1.ResourceMapResponse>(serviceImpl.GetResourceMap)
+            serviceBinder.AddMethod(__Method_GetResourceMap, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ListMetalSpotsRequest,Fsbar.Hub.Scripting.V1.MetalSpotsResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.ListMetalSpotsRequest,Fsbar.Hub.Scripting.V1.MetalSpotsResponse>(serviceImpl.ListMetalSpots)
+            serviceBinder.AddMethod(__Method_ListMetalSpots, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetUnitDefRequest,Fsbar.Hub.Scripting.V1.GetUnitDefExtendedResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.GetUnitDefRequest,Fsbar.Hub.Scripting.V1.GetUnitDefExtendedResponse>(serviceImpl.GetUnitDefExtended)
+            serviceBinder.AddMethod(__Method_GetUnitDefExtended, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
+                | null -> Unchecked.defaultof<Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.SendCommandBatchRequest,Fsbar.Hub.Scripting.V1.SendCommandBatchResponse>>
+                | _ -> Grpc.Core.UnaryServerMethod<Fsbar.Hub.Scripting.V1.SendCommandBatchRequest,Fsbar.Hub.Scripting.V1.SendCommandBatchResponse>(serviceImpl.SendCommandBatch)
+            serviceBinder.AddMethod(__Method_SendCommandBatch, serviceMethodOrNull) |> ignore
+            let serviceMethodOrNull =
+                match box serviceImpl with
                 | null -> Unchecked.defaultof<Grpc.Core.DuplexStreamingServerMethod<Fsbar.Hub.Scripting.V1.StreamHubLogRequest,Fsbar.Hub.Scripting.V1.LogEntryMessage>>
                 | _ -> Grpc.Core.DuplexStreamingServerMethod<Fsbar.Hub.Scripting.V1.StreamHubLogRequest,Fsbar.Hub.Scripting.V1.LogEntryMessage>(serviceImpl.StreamHubLog)
             serviceBinder.AddMethod(__Method_StreamHubLog, serviceMethodOrNull) |> ignore
@@ -10242,5 +14142,45 @@ module ScriptingService =
             this.CallInvoker.BlockingUnaryCall(__Method_ClearLayers, Unchecked.defaultof<string>, callOptions, request)
         member this.ClearLayersAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ClearLayersRequest) =
             this.CallInvoker.AsyncUnaryCall(__Method_ClearLayers, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetMapInfo (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetMapInfoRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetMapInfo, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetMapInfoAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetMapInfoRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetMapInfo, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetHeightmap (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetHeightmapRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetHeightmap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetHeightmapAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetHeightmapRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetHeightmap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetCornersHeightmap (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetCornersHeightmapRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetCornersHeightmap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetCornersHeightmapAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetCornersHeightmapRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetCornersHeightmap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetSlopeMap (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetSlopeMapRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetSlopeMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetSlopeMapAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetSlopeMapRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetSlopeMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetLosMap (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetLosMapRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetLosMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetLosMapAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetLosMapRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetLosMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetRadarMap (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetRadarMapRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetRadarMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetRadarMapAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetRadarMapRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetRadarMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetResourceMap (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetResourceMapRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetResourceMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetResourceMapAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetResourceMapRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetResourceMap, Unchecked.defaultof<string>, callOptions, request)
+        member this.ListMetalSpots (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ListMetalSpotsRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_ListMetalSpots, Unchecked.defaultof<string>, callOptions, request)
+        member this.ListMetalSpotsAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.ListMetalSpotsRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_ListMetalSpots, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetUnitDefExtended (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetUnitDefRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_GetUnitDefExtended, Unchecked.defaultof<string>, callOptions, request)
+        member this.GetUnitDefExtendedAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.GetUnitDefRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_GetUnitDefExtended, Unchecked.defaultof<string>, callOptions, request)
+        member this.SendCommandBatch (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.SendCommandBatchRequest) =
+            this.CallInvoker.BlockingUnaryCall(__Method_SendCommandBatch, Unchecked.defaultof<string>, callOptions, request)
+        member this.SendCommandBatchAsync (callOptions: Grpc.Core.CallOptions) (request: Fsbar.Hub.Scripting.V1.SendCommandBatchRequest) =
+            this.CallInvoker.AsyncUnaryCall(__Method_SendCommandBatch, Unchecked.defaultof<string>, callOptions, request)
         member this.StreamHubLogAsync (callOptions: Grpc.Core.CallOptions) =
             this.CallInvoker.AsyncDuplexStreamingCall(__Method_StreamHubLog, Unchecked.defaultof<string>, callOptions)

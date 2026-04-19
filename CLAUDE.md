@@ -63,7 +63,23 @@ across surfaces is a contract (SC-003).
 Hub-GUI action plus `StreamRenderFrames`, `StreamHubStateEvents`, and
 `StreamLogs` (feature 042). Client-side overlays go through
 `OverlayLayerStore` with the FR-026 cap matrix. FSI walkthroughs:
-`scripts/examples/{16..22}-hub-*.fsx`.
+`scripts/examples/{16..24}-hub-*.fsx`.
+
+**Full-fledged scripting client** (feature 046) — `StreamGameFrames`
+now carries `GameStateFrame` + typed `GameEventEnvelope[]` per tick,
+projected from `BarClient.GameState` (feature 045 single source of
+truth). Enemy health uses `oneof health_info { float health;
+EnemyHealthUnknown unknown; }` so radar-only / frozen-last-known is
+distinguishable from `health = 0`. Unary map RPCs (`GetMapInfo`,
+`GetHeightmap`, `GetCornersHeightmap`, `GetSlopeMap`, `GetLosMap`,
+`GetRadarMap`, `GetResourceMap`, `ListMetalSpots`) read from the
+warmup-cached `RunningSession.MapGrid` + `MetalSpots` — grid payloads
+use `repeated float`/`int32` + width/height; Hub scripting channel is
+configured with 64 MiB `MaxReceive/SendMessageSize`.
+`GetUnitDefExtended` merges the BarData encyclopedia with the live
+`UnitDefCache`. `SendCommandBatch` accepts ≤1024 `AICommand`s per
+call (oversize rejected whole) and returns one `forwarded_at_frame` +
+1:1 `CommandOutcome[]`. Walkthrough: `scripts/examples/24-hub-full-client.fsx`.
 
 **Hub admin channel** (feature 039) — loopback UDP autohost channel to
 the engine for pause / resume / speed / force-end / admin message.
@@ -112,3 +128,10 @@ Procedural workflows live as `.claude/skills/` — invoke via `/skill`:
 | Regenerate `UnitLabels.generated.fs` | `unit-labels-regen` |
 | Regenerate committed map-cache JSON | `map-cache-refresh` |
 | Headless BAR engine REPL with viz | `repl` / `repl-graphical` |
+
+## Active Technologies
+- F# 9 on .NET 10.0 (Constitution §Engineering Constraints) + FsGrpc 1.0.6, Grpc.AspNetCore 2.67.0, SkiaSharp 2.88.6, BarData (local nupkg) (046-scripting-full-client)
+- N/A — live session state is in-process (`BarClient.GameState`) (046-scripting-full-client)
+
+## Recent Changes
+- 046-scripting-full-client: Added F# 9 on .NET 10.0 (Constitution §Engineering Constraints) + FsGrpc 1.0.6, Grpc.AspNetCore 2.67.0, SkiaSharp 2.88.6, BarData (local nupkg)

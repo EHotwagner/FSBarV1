@@ -313,6 +313,14 @@ let main _argv =
                 webBuilder.Services.AddSingleton<CorrelationId.ServerInterceptor>() |> ignore
                 webBuilder.Services.AddSingleton<DispatchTracer.DebugDispatchInterceptor>(dispatchTracer) |> ignore
                 webBuilder.Services.AddGrpc(fun o ->
+                    // Feature 046 FR-006 — map-grid unary RPCs (heightmap,
+                    // slope, LOS, radar, resource, corners heightmap) can
+                    // produce multi-MiB payloads on worst-case SupportedMap
+                    // grids. 64 MiB comfortably fits any current map and
+                    // leaves headroom for future larger maps without
+                    // needing another bump.
+                    o.MaxReceiveMessageSize <- Nullable(64 * 1024 * 1024)
+                    o.MaxSendMessageSize <- Nullable(64 * 1024 * 1024)
                     o.Interceptors.Add<CorrelationId.ServerInterceptor>() |> ignore
                     o.Interceptors.Add<DispatchTracer.DebugDispatchInterceptor>() |> ignore)
                 |> ignore

@@ -8,4 +8,5 @@ open System.Runtime.CompilerServices
 // The tests live in a separate assembly, so we open the internal
 // surface to it explicitly.
 [<assembly: InternalsVisibleTo("FSBar.Hub.Tests")>]
+[<assembly: InternalsVisibleTo("FSBar.Hub.LiveTests")>]
 do ()

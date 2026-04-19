@@ -18,7 +18,7 @@ open FSBar.Client
 open FSBar.Hub
 open Fsbar.Hub.Scripting.V1
 
-module private HeadlessOrchestrationFixtures =
+module HeadlessOrchestrationFixtures =
 
     let defaultDataDir =
         Path.Combine(
@@ -63,7 +63,15 @@ module private HeadlessOrchestrationFixtures =
     let makeService (install: BarInstall.BarInstall) =
         let bus = HubEvents.create ()
         let sm = SessionManager.create install bus.Sink
-        let unitDefs () = FSBar.Client.UnitDefCache.empty
+        // Mirror the real Program.fs thunk so the UnitDefCache is read
+        // from the live BarClient when a session is Running — needed by
+        // feature-046 US3 GetUnitDefExtended.
+        let unitDefs () =
+            match sm.State with
+            | SessionManager.Running rs ->
+                try rs.BarClient.GameState.UnitDefs
+                with _ -> FSBar.Client.UnitDefCache.empty
+            | _ -> FSBar.Client.UnitDefCache.empty
         let store =
             HubStateStore.create bus.Sink
                 { ActiveTab = FSBar.Hub.HubTab.Setup
