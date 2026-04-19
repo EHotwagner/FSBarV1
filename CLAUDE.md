@@ -91,7 +91,9 @@ automatically.
 
 Auto-detected at runtime by `EngineDiscovery` (scans
 `~/.local/state/Beyond All Reason/engine/recoil_*/`, picks latest).
-Override via `HIGHBAR_TEST_ENGINE` or `tests/engine-version.json`.
+Override via `FSBAR_TEST_ENGINE` (preferred), `HIGHBAR_TEST_ENGINE`
+(legacy alias — if both set, `FSBAR_TEST_ENGINE` wins and a warning is
+emitted), or `tests/engine-version.json`.
 
 - Data dir: `~/.local/state/Beyond All Reason`
 - Engine dir: `…/engine/recoil_<YYYY.MM.DD>/`

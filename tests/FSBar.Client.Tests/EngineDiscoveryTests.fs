@@ -166,3 +166,64 @@ let ``resolveEngine_no_engine_error_lists_searched_locations`` () =
         Assert.Equal(AutoDetected, resolution.Source)
     finally
         Environment.SetEnvironmentVariable("HIGHBAR_TEST_ENGINE", prev)
+
+// --- Spec 045 US2: FSBAR_TEST_ENGINE / HIGHBAR_TEST_ENGINE alias ---
+
+// Scoped env-var swap helper that restores every variable it touches.
+type private EnvSwap(pairs: (string * string) seq) =
+    let originals =
+        pairs
+        |> Seq.map (fun (k, _) -> k, Environment.GetEnvironmentVariable(k))
+        |> Seq.toList
+    do
+        for (k, v) in pairs do
+            Environment.SetEnvironmentVariable(k, v)
+    interface IDisposable with
+        member _.Dispose () =
+            for (k, v) in originals do
+                Environment.SetEnvironmentVariable(k, v)
+
+[<Fact>]
+let ``resolveOverrideEnvVar_only_FSBAR_set_wins`` () =
+    use _ = new EnvSwap([ "FSBAR_TEST_ENGINE", "/tmp/fsbar-path"
+                          "HIGHBAR_TEST_ENGINE", null ])
+    let r = EngineDiscovery.resolveOverrideEnvVar ()
+    Assert.Equal(Some "/tmp/fsbar-path", r.Value)
+    Assert.Equal(Some "FSBAR_TEST_ENGINE", r.SourceName)
+    Assert.Equal(None, r.Conflict)
+
+[<Fact>]
+let ``resolveOverrideEnvVar_only_HIGHBAR_set_used_as_legacy`` () =
+    use _ = new EnvSwap([ "FSBAR_TEST_ENGINE", null
+                          "HIGHBAR_TEST_ENGINE", "/tmp/legacy-path" ])
+    let r = EngineDiscovery.resolveOverrideEnvVar ()
+    Assert.Equal(Some "/tmp/legacy-path", r.Value)
+    Assert.Equal(Some "HIGHBAR_TEST_ENGINE", r.SourceName)
+    Assert.Equal(None, r.Conflict)
+
+[<Fact>]
+let ``resolveOverrideEnvVar_both_set_differently_FSBAR_wins_conflict_reported`` () =
+    use _ = new EnvSwap([ "FSBAR_TEST_ENGINE", "/tmp/fsbar-path"
+                          "HIGHBAR_TEST_ENGINE", "/tmp/legacy-path" ])
+    let r = EngineDiscovery.resolveOverrideEnvVar ()
+    Assert.Equal(Some "/tmp/fsbar-path", r.Value)
+    Assert.Equal(Some "FSBAR_TEST_ENGINE", r.SourceName)
+    Assert.Equal(Some ("/tmp/fsbar-path", "/tmp/legacy-path"), r.Conflict)
+
+[<Fact>]
+let ``resolveOverrideEnvVar_neither_set_returns_none`` () =
+    use _ = new EnvSwap([ "FSBAR_TEST_ENGINE", null
+                          "HIGHBAR_TEST_ENGINE", null ])
+    let r = EngineDiscovery.resolveOverrideEnvVar ()
+    Assert.Equal(None, r.Value)
+    Assert.Equal(None, r.SourceName)
+    Assert.Equal(None, r.Conflict)
+
+[<Fact>]
+let ``resolveOverrideEnvVar_both_set_to_same_value_no_conflict`` () =
+    use _ = new EnvSwap([ "FSBAR_TEST_ENGINE", "/tmp/same-path"
+                          "HIGHBAR_TEST_ENGINE", "/tmp/same-path" ])
+    let r = EngineDiscovery.resolveOverrideEnvVar ()
+    Assert.Equal(Some "/tmp/same-path", r.Value)
+    Assert.Equal(Some "FSBAR_TEST_ENGINE", r.SourceName)
+    Assert.Equal(None, r.Conflict)

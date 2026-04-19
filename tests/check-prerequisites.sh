@@ -3,15 +3,17 @@
 # Usage: check-prerequisites.sh [--json]
 #
 # Checks:
-#   - Engine binary exists (via HIGHBAR_TEST_ENGINE, engine-version.json, or auto-detect)
+#   - Engine binary exists (via FSBAR_TEST_ENGINE / HIGHBAR_TEST_ENGINE, engine-version.json, or auto-detect)
 #   - SPRING_DATADIR auto-detection
 #   - Game archive exists in SPRING_DATADIR/packages/
 #   - Map file exists in SPRING_DATADIR/maps/
 #
-# Engine resolution priority:
-#   1. HIGHBAR_TEST_ENGINE environment variable (full binary path)
-#   2. engine-version.json config file (version + binary name)
-#   3. Auto-detect from ~/.local/state/Beyond All Reason/engine/recoil_*/
+# Engine resolution priority (spec 045 US2):
+#   1. FSBAR_TEST_ENGINE environment variable (preferred; full binary path)
+#   2. HIGHBAR_TEST_ENGINE environment variable (legacy alias — if both set,
+#      FSBAR_TEST_ENGINE wins and a single warning is emitted)
+#   3. engine-version.json config file (version + binary name)
+#   4. Auto-detect from ~/.local/state/Beyond All Reason/engine/recoil_*/
 #
 # Exit codes:
 #   0 - All prerequisites met
@@ -59,15 +61,30 @@ CHECKS=()
 
 # Check 1: Engine binary
 RESOLVED_ENGINE=""
-ENGINE_PATH="${HIGHBAR_TEST_ENGINE:-}"
+# Spec 045 US2: FSBAR_TEST_ENGINE preferred; HIGHBAR_TEST_ENGINE legacy alias.
+_FSBAR_VAR="${FSBAR_TEST_ENGINE:-}"
+_HIGHBAR_VAR="${HIGHBAR_TEST_ENGINE:-}"
+if [ -n "${_FSBAR_VAR}" ] && [ -n "${_HIGHBAR_VAR}" ] && [ "${_FSBAR_VAR}" != "${_HIGHBAR_VAR}" ]; then
+    ${JSON_MODE} || echo "WARNING: both FSBAR_TEST_ENGINE (${_FSBAR_VAR}) and HIGHBAR_TEST_ENGINE (${_HIGHBAR_VAR}) are set. FSBAR_TEST_ENGINE wins." >&2
+fi
+if [ -n "${_FSBAR_VAR}" ]; then
+    ENGINE_PATH="${_FSBAR_VAR}"
+    ENV_VAR_NAME="FSBAR_TEST_ENGINE"
+elif [ -n "${_HIGHBAR_VAR}" ]; then
+    ENGINE_PATH="${_HIGHBAR_VAR}"
+    ENV_VAR_NAME="HIGHBAR_TEST_ENGINE"
+else
+    ENGINE_PATH=""
+    ENV_VAR_NAME=""
+fi
 if [ -n "${ENGINE_PATH}" ]; then
-    # Priority 1: HIGHBAR_TEST_ENGINE env var
+    # Priority 1/2: env-var override (FSBAR_TEST_ENGINE or HIGHBAR_TEST_ENGINE)
     if [ -x "${ENGINE_PATH}" ]; then
         RESOLVED_ENGINE="${ENGINE_PATH}"
-        CHECKS+=("{\"name\":\"engine_binary\",\"passed\":true,\"detail\":\"${ENGINE_BINARY} found at ${ENGINE_PATH} (via HIGHBAR_TEST_ENGINE)\"}")
+        CHECKS+=("{\"name\":\"engine_binary\",\"passed\":true,\"detail\":\"${ENGINE_BINARY} found at ${ENGINE_PATH} (via ${ENV_VAR_NAME})\"}")
     else
         ALL_PASSED=false
-        CHECKS+=("{\"name\":\"engine_binary\",\"passed\":false,\"detail\":\"HIGHBAR_TEST_ENGINE set but not executable: ${ENGINE_PATH}\"}")
+        CHECKS+=("{\"name\":\"engine_binary\",\"passed\":false,\"detail\":\"${ENV_VAR_NAME} set but not executable: ${ENGINE_PATH}\"}")
     fi
 elif ${HAS_CONFIG} && [ -n "${ENGINE_VERSION}" ]; then
     # Priority 2: engine-version.json config file
@@ -115,7 +132,7 @@ else
             CHECKS+=("{\"name\":\"engine_binary\",\"passed\":true,\"detail\":\"${ENGINE_BINARY} found on PATH at ${_PATH_ENGINE}\"}")
         else
             ALL_PASSED=false
-            CHECKS+=("{\"name\":\"engine_binary\",\"passed\":false,\"detail\":\"${ENGINE_BINARY} not found. Searched: HIGHBAR_TEST_ENGINE (not set), ${BAR_DATA_DIR}/engine/recoil_*/, PATH\"}")
+            CHECKS+=("{\"name\":\"engine_binary\",\"passed\":false,\"detail\":\"${ENGINE_BINARY} not found. Searched: FSBAR_TEST_ENGINE / HIGHBAR_TEST_ENGINE (both unset), ${BAR_DATA_DIR}/engine/recoil_*/, PATH\"}")
         fi
     fi
 fi

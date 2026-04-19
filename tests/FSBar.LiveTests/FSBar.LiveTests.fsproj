@@ -15,6 +15,7 @@
     <Compile Include="BarbRushTests.fs" />
     <Compile Include="LiveMapGridTests.fs" />
     <Compile Include="LiveMapQueryTests.fs" />
+    <Compile Include="GameStateSnapshotLiveTests.fs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -123,11 +123,53 @@ module EngineDiscovery =
                 "Engine version %s is corrupted: binary at %s is not executable"
                 versionString binaryPath
 
+    /// Reads both FSBAR_TEST_ENGINE (preferred) and HIGHBAR_TEST_ENGINE
+    /// (legacy). Returns which one won and a conflict record if both
+    /// were set to different non-empty values.
+    let resolveOverrideEnvVar () =
+        let fsbar =
+            match Environment.GetEnvironmentVariable("FSBAR_TEST_ENGINE") with
+            | null | "" -> None
+            | v -> Some v
+        let highbar =
+            match Environment.GetEnvironmentVariable("HIGHBAR_TEST_ENGINE") with
+            | null | "" -> None
+            | v -> Some v
+        match fsbar, highbar with
+        | Some f, Some h when f <> h ->
+            {| Value = Some f
+               SourceName = Some "FSBAR_TEST_ENGINE"
+               Conflict = Some (f, h) |}
+        | Some f, _ ->
+            {| Value = Some f
+               SourceName = Some "FSBAR_TEST_ENGINE"
+               Conflict = None |}
+        | None, Some h ->
+            {| Value = Some h
+               SourceName = Some "HIGHBAR_TEST_ENGINE"
+               Conflict = None |}
+        | None, None ->
+            {| Value = None
+               SourceName = None
+               Conflict = None |}
+
+    // Emits the conflict warning at most once per process so repeated
+    // resolveFromEnvVar / resolveEngine calls do not spam diagnostics.
+    let mutable private conflictWarningEmitted = false
+
     let resolveFromEnvVar () =
-        match Environment.GetEnvironmentVariable("HIGHBAR_TEST_ENGINE") with
-        | null | "" -> None
-        | path ->
-            validateEngine path "env:HIGHBAR_TEST_ENGINE"
+        let result = resolveOverrideEnvVar ()
+        match result.Conflict with
+        | Some (f, h) when not conflictWarningEmitted ->
+            conflictWarningEmitted <- true
+            eprintfn "[EngineDiscovery] WARNING: both FSBAR_TEST_ENGINE (%s) and HIGHBAR_TEST_ENGINE (%s) are set. FSBAR_TEST_ENGINE wins." f h
+        | _ -> ()
+        match result.Value, result.SourceName with
+        | None, _ -> None
+        | Some _, None -> None
+        | Some path, Some varName ->
+            let label = sprintf "env:%s" varName
+            validateEngine path label
             // Derive version and datadir from the binary path
             let binDir = Path.GetDirectoryName(path)
             let dirName = Path.GetFileName(binDir)
@@ -202,7 +244,11 @@ module EngineDiscovery =
                     }
 
     let sourceLabel = function
-        | OverrideEnvVar -> "env:HIGHBAR_TEST_ENGINE"
+        | OverrideEnvVar ->
+            let r = resolveOverrideEnvVar ()
+            match r.SourceName with
+            | Some name -> sprintf "env:%s" name
+            | None -> "env:FSBAR_TEST_ENGINE"
         | ConfigFile -> "engine-version.json"
         | AutoDetected -> "auto-detected"
 
@@ -238,7 +284,7 @@ module EngineDiscovery =
         | None ->
             let searched = standardDataDir ()
             failwithf
-                "No BAR engine found. Searched locations:\n  - HIGHBAR_TEST_ENGINE (not set)\n  - %s (not found or missing maps/packages)\nInstall Beyond All Reason or set HIGHBAR_TEST_ENGINE."
+                "No BAR engine found. Searched locations:\n  - FSBAR_TEST_ENGINE / HIGHBAR_TEST_ENGINE (both unset)\n  - %s (not found or missing maps/packages)\nInstall Beyond All Reason or set FSBAR_TEST_ENGINE."
                 searched
         | Some dataDir ->
             let engines = discoverEngines dataDir
@@ -250,7 +296,7 @@ module EngineDiscovery =
                     | Some p -> sprintf "\n  - %s (not found)" p
                     | None -> ""
                 failwithf
-                    "No BAR engine found. Searched locations:\n  - HIGHBAR_TEST_ENGINE (not set)%s\n  - %s (no recoil_* directories)\nInstall Beyond All Reason or set HIGHBAR_TEST_ENGINE."
+                    "No BAR engine found. Searched locations:\n  - FSBAR_TEST_ENGINE / HIGHBAR_TEST_ENGINE (both unset)%s\n  - %s (no recoil_* directories)\nInstall Beyond All Reason or set FSBAR_TEST_ENGINE."
                     configNote engineDir
             | latest :: _ ->
                 // Validate that at least one binary exists

@@ -39,7 +39,55 @@ message CallbackResult {
     bytes bytes_value = 5;
     FloatArray float_array_value = 6;
     IntArray int_array_value = 7;
+    GameStateSnapshot snapshot_value = 8;
   }
+}
+
+// Per-tick batched GameState snapshot (spec 045 / HighBarV2 032).
+// Returned by CALLBACK_GAME_GET_STATE=15 in a single RPC round-trip,
+// collapsing per-unit refreshUnit + per-resource Economy_* calls.
+message FriendlyUnit {
+  int32 unit_id = 1;
+  Vector3 position = 2;
+  float health = 3;
+  int32 unit_def_id = 4;
+  int32 team = 5;
+}
+
+message LosEnemyUnit {
+  int32 unit_id = 1;
+  Vector3 position = 2;
+  float health = 3;
+  int32 unit_def_id = 4;
+  int32 team = 5;
+}
+
+// NOTE: no health field by design — radar-only contacts cannot have a
+// concrete health value and the client must never synthesize one.
+message RadarOnlyEnemyUnit {
+  int32 unit_id = 1;
+  Vector3 position = 2;
+  int32 unit_def_id = 3;
+  int32 team = 4;
+}
+
+message EconomyRecord {
+  float metal_current = 1;
+  float metal_income = 2;
+  float metal_usage = 3;
+  float metal_storage = 4;
+  float energy_current = 5;
+  float energy_income = 6;
+  float energy_usage = 7;
+  float energy_storage = 8;
+}
+
+message GameStateSnapshot {
+  int32 frame = 1;
+  repeated FriendlyUnit friendlies = 2;
+  repeated LosEnemyUnit los_enemies = 3;
+  repeated RadarOnlyEnemyUnit radar_only_enemies = 4;
+  EconomyRecord economy = 5;
 }
 
 // Array types for map data and bulk queries
@@ -68,6 +116,7 @@ enum CallbackId {
   CALLBACK_GAME_GET_TEAM_COUNT = 12;
   CALLBACK_GAME_GET_ALLY_TEAM_COUNT = 13;
   CALLBACK_GAME_GET_PLAYER_COUNT = 14;
+  CALLBACK_GAME_GET_STATE = 15;
 
   // Unit
   CALLBACK_UNIT_GET_POS = 20;

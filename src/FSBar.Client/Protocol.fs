@@ -29,6 +29,16 @@ type HandshakeInfo = {
 type ProtocolMismatchException(message: string, ?innerException: exn) =
     inherit exn(message, defaultArg innerException null)
 
+/// Raised when the HighBar proxy does not advertise a callback id that
+/// FSBar requires. The only current user is the per-tick
+/// <c>CALLBACK_GAME_GET_STATE = 15</c> (spec 045); pre-0.1.5 proxies
+/// reject it with "Unknown callback id" and the session terminates.
+/// No legacy fallback — batched snapshot is the sole supported refresh
+/// path.
+type ProxyVersionMismatchException(message: string, requiredVersion: string, ?innerException: exn) =
+    inherit exn(message, defaultArg innerException null)
+    member _.RequiredVersion = requiredVersion
+
 module Protocol =
 
     let protocolVersion = 1u

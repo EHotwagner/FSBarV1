@@ -3,6 +3,48 @@ namespace FSBar.Client
 open System.Net.Sockets
 open Highbar
 
+type FriendlyUnitSnapshot = {
+    UnitId: int
+    Position: float32 * float32 * float32
+    Health: float32
+    UnitDefId: int
+    Team: int
+}
+
+type LosEnemySnapshot = {
+    UnitId: int
+    Position: float32 * float32 * float32
+    Health: float32
+    UnitDefId: int
+    Team: int
+}
+
+type RadarOnlyEnemySnapshot = {
+    UnitId: int
+    Position: float32 * float32 * float32
+    UnitDefId: int
+    Team: int
+}
+
+type EconomyRecordSnapshot = {
+    MetalCurrent: float32
+    MetalIncome: float32
+    MetalUsage: float32
+    MetalStorage: float32
+    EnergyCurrent: float32
+    EnergyIncome: float32
+    EnergyUsage: float32
+    EnergyStorage: float32
+}
+
+type GameStateSnapshotResult = {
+    Frame: int
+    Friendlies: FriendlyUnitSnapshot list
+    LosEnemies: LosEnemySnapshot list
+    RadarOnlyEnemies: RadarOnlyEnemySnapshot list
+    Economy: EconomyRecordSnapshot
+}
+
 /// <summary>
 /// Engine callback functions that query live game state via the HighBar V2 proxy.
 /// Each function sends a callback request over the Unix domain socket and returns the parsed result.
@@ -307,3 +349,68 @@ module Callbacks =
     let getResourceMap (stream: NetworkStream) : int list =
         Protocol.sendCallback stream (uint32 CallbackId.CallbackMapGetResourceMap) []
         |> getIntArray
+
+    // --- Batched per-tick snapshot (spec 045 / HighBarV2 032) ---
+
+    let private vec3ToTuple (v: Vector3 option) : float32 * float32 * float32 =
+        match v with
+        | Some p -> (p.X, p.Y, p.Z)
+        | None -> (0.0f, 0.0f, 0.0f)
+
+    let private mapFriendly (f: FriendlyUnit) : FriendlyUnitSnapshot =
+        { UnitId = f.UnitId
+          Position = vec3ToTuple f.Position
+          Health = f.Health
+          UnitDefId = f.UnitDefId
+          Team = f.Team }
+
+    let private mapLosEnemy (e: LosEnemyUnit) : LosEnemySnapshot =
+        { UnitId = e.UnitId
+          Position = vec3ToTuple e.Position
+          Health = e.Health
+          UnitDefId = e.UnitDefId
+          Team = e.Team }
+
+    let private mapRadarEnemy (e: RadarOnlyEnemyUnit) : RadarOnlyEnemySnapshot =
+        { UnitId = e.UnitId
+          Position = vec3ToTuple e.Position
+          UnitDefId = e.UnitDefId
+          Team = e.Team }
+
+    let private mapEconomy (e: EconomyRecord option) : EconomyRecordSnapshot =
+        match e with
+        | Some r ->
+            { MetalCurrent = r.MetalCurrent; MetalIncome = r.MetalIncome
+              MetalUsage = r.MetalUsage;     MetalStorage = r.MetalStorage
+              EnergyCurrent = r.EnergyCurrent; EnergyIncome = r.EnergyIncome
+              EnergyUsage = r.EnergyUsage;   EnergyStorage = r.EnergyStorage }
+        | None ->
+            { MetalCurrent = 0.0f; MetalIncome = 0.0f; MetalUsage = 0.0f; MetalStorage = 0.0f
+              EnergyCurrent = 0.0f; EnergyIncome = 0.0f; EnergyUsage = 0.0f; EnergyStorage = 0.0f }
+
+    let getGameStateSnapshot (stream: NetworkStream) : GameStateSnapshotResult =
+        let resp = Protocol.sendCallback stream (uint32 CallbackId.CallbackGameGetState) []
+        if not resp.Success then
+            let msg = resp.ErrorMessage
+            if msg.StartsWith("Unknown callback id") then
+                raise (ProxyVersionMismatchException(
+                    sprintf "HighBar proxy does not advertise CALLBACK_GAME_GET_STATE (id=15). Required: HighBarV2 >= 0.1.5. Upgrade the proxy binary. Proxy said: %s" msg,
+                    "0.1.5"))
+            else
+                raise (System.InvalidOperationException(
+                    sprintf "CALLBACK_GAME_GET_STATE failed: %s" msg))
+        match resp.Result with
+        | Some r ->
+            match r.Value with
+            | CallbackResult.ValueCase.SnapshotValue snap ->
+                { Frame = snap.Frame
+                  Friendlies = snap.Friendlies |> List.map mapFriendly
+                  LosEnemies = snap.LosEnemies |> List.map mapLosEnemy
+                  RadarOnlyEnemies = snap.RadarOnlyEnemies |> List.map mapRadarEnemy
+                  Economy = mapEconomy snap.Economy }
+            | _ ->
+                raise (System.InvalidOperationException(
+                    "CALLBACK_GAME_GET_STATE returned an unexpected result variant (expected snapshot_value)."))
+        | None ->
+            raise (System.InvalidOperationException(
+                "CALLBACK_GAME_GET_STATE returned success=true but no result payload."))

@@ -26,7 +26,7 @@ type DiscoveredGame = {
 
 /// <summary>Indicates how the engine was resolved.</summary>
 type ResolutionSource =
-    /// <summary>Resolved via HIGHBAR_TEST_ENGINE environment variable.</summary>
+    /// <summary>Resolved via FSBAR_TEST_ENGINE (preferred) or HIGHBAR_TEST_ENGINE (legacy) environment variable.</summary>
     | OverrideEnvVar
     /// <summary>Resolved via engine-version.json configuration file.</summary>
     | ConfigFile
@@ -78,8 +78,21 @@ module EngineDiscovery =
     val validateEngine: binaryPath: string -> versionString: string -> unit
 
     /// <summary>
+    /// Resolves which env-var override path to use (spec 045 FR-009).
+    /// Prefers <c>FSBAR_TEST_ENGINE</c>; falls back to the legacy
+    /// <c>HIGHBAR_TEST_ENGINE</c>. When both are set to different
+    /// non-empty values, <c>FSBAR_TEST_ENGINE</c> wins and
+    /// <c>Conflict</c> is populated with <c>(fsbarValue, highbarValue)</c>.
+    /// </summary>
+    val resolveOverrideEnvVar:
+        unit ->
+            {| Value: string option
+               SourceName: string option
+               Conflict: (string * string) option |}
+
+    /// <summary>
     /// Resolves the engine to use by checking, in order:
-    /// (1) HIGHBAR_TEST_ENGINE environment variable,
+    /// (1) FSBAR_TEST_ENGINE / HIGHBAR_TEST_ENGINE environment variable,
     /// (2) engine-version.json config file (if configPath is provided),
     /// (3) automatic detection from the standard BAR data directory.
     /// Logs the resolved version and source. Raises an exception if no engine is found.

@@ -2,6 +2,60 @@ namespace FSBar.Client
 
 open System.Net.Sockets
 
+/// Friendly unit entry in a <c>GameStateSnapshotResult</c> (spec 045).
+type FriendlyUnitSnapshot = {
+    UnitId: int
+    Position: float32 * float32 * float32
+    Health: float32
+    UnitDefId: int
+    Team: int
+}
+
+/// LOS-visible enemy entry in a <c>GameStateSnapshotResult</c>. Has a
+/// concrete <c>Health</c> because the engine reports it.
+type LosEnemySnapshot = {
+    UnitId: int
+    Position: float32 * float32 * float32
+    Health: float32
+    UnitDefId: int
+    Team: int
+}
+
+/// Radar-only enemy entry in a <c>GameStateSnapshotResult</c>. Carries
+/// NO <c>Health</c> field by design — radar contacts cannot have a
+/// concrete health value and callers must never synthesize one.
+type RadarOnlyEnemySnapshot = {
+    UnitId: int
+    Position: float32 * float32 * float32
+    UnitDefId: int
+    Team: int
+}
+
+/// Eight-field resource snapshot returned inside a
+/// <c>GameStateSnapshotResult</c>.
+type EconomyRecordSnapshot = {
+    MetalCurrent: float32
+    MetalIncome: float32
+    MetalUsage: float32
+    MetalStorage: float32
+    EnergyCurrent: float32
+    EnergyIncome: float32
+    EnergyUsage: float32
+    EnergyStorage: float32
+}
+
+/// Per-tick atomic game-state snapshot returned by
+/// <c>CALLBACK_GAME_GET_STATE = 15</c>. Replaces the legacy per-unit /
+/// per-enemy / per-resource refresh loop in
+/// <c>GameState.processEvent</c>'s <c>GameEvent.Update</c> branch.
+type GameStateSnapshotResult = {
+    Frame: int
+    Friendlies: FriendlyUnitSnapshot list
+    LosEnemies: LosEnemySnapshot list
+    RadarOnlyEnemies: RadarOnlyEnemySnapshot list
+    Economy: EconomyRecordSnapshot
+}
+
 /// <summary>
 /// Engine callback functions that query live game state via the HighBar V2 proxy.
 /// Each function sends a callback request over the Unix domain socket and returns the parsed result.
@@ -175,3 +229,23 @@ module Callbacks =
     /// <param name="stream">Active network stream to the HighBar V2 proxy.</param>
     /// <returns>Flat list of resource density values in row-major order.</returns>
     val getResourceMap: stream: NetworkStream -> int list
+
+    /// <summary>
+    /// Issues one <c>CALLBACK_GAME_GET_STATE = 15</c> RPC and returns a
+    /// per-tick atomic snapshot: friendlies + LOS enemies + radar-only
+    /// enemies + 8-field economy record (spec 045, HighBarV2 032).
+    /// Replaces the legacy per-unit / per-enemy / per-resource refresh
+    /// loop — exactly one RPC regardless of army size.
+    /// </summary>
+    /// <remarks>
+    /// <para>Raises <see cref="T:FSBar.Client.ProxyVersionMismatchException"/>
+    /// when the proxy rejects callback 15 with "Unknown callback id" —
+    /// no legacy fallback.</para>
+    /// <para>Raises <see cref="T:System.InvalidOperationException"/> with
+    /// a descriptive message on other failures (cap exceeded, proxy
+    /// error). The caller's prior <c>GameState</c> is left untouched;
+    /// no partial application.</para>
+    /// <para>Raises <see cref="T:FSBar.Client.EngineDisconnectedException"/>
+    /// on connection loss (unchanged).</para>
+    /// </remarks>
+    val getGameStateSnapshot: stream: NetworkStream -> GameStateSnapshotResult

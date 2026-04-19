@@ -92,7 +92,7 @@ dotnet fsdocs watch   # http://localhost:8901
 ./tests/check-prerequisites.sh           # verify BAR + proxy
 ```
 
-Live tests auto-detect the engine under `~/.local/state/Beyond All Reason/engine/recoil_*`. Pin via `HIGHBAR_TEST_ENGINE` or `tests/engine-version.json`.
+Live tests auto-detect the engine under `~/.local/state/Beyond All Reason/engine/recoil_*`. Pin via `FSBAR_TEST_ENGINE` (preferred), `HIGHBAR_TEST_ENGINE` (legacy alias), or `tests/engine-version.json`.
 
 ## License
 

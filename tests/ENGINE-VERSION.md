@@ -16,9 +16,12 @@ If `engine-version.json` is absent, the system auto-detects:
 
 ## Resolution priority
 
-1. `HIGHBAR_TEST_ENGINE` environment variable (full binary path)
-2. `engine-version.json` (version + binary name)
-3. Auto-detect from standard BAR data directory
+1. `FSBAR_TEST_ENGINE` environment variable (preferred; full binary path)
+2. `HIGHBAR_TEST_ENGINE` environment variable (legacy alias — if both
+   variables are set to different values, `FSBAR_TEST_ENGINE` wins and a
+   single warning is emitted)
+3. `engine-version.json` (version + binary name)
+4. Auto-detect from standard BAR data directory
 
 ## Format
 

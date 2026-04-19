@@ -53,20 +53,108 @@ module GameState =
           UnitDefs = UnitDefCache.empty
           Events = [] }
 
-    let refreshEconomy (stream: NetworkStream) (resourceId: int) : EconomySnapshot =
-        { Current = Callbacks.getEconomyCurrent stream resourceId
-          Income = Callbacks.getEconomyIncome stream resourceId
-          Usage = Callbacks.getEconomyUsage stream resourceId
-          Storage = Callbacks.getEconomyStorage stream resourceId }
+    /// Pure mapper from a batched <c>GameStateSnapshotResult</c> to an
+    /// updated <c>GameState</c>. Extracted from the <c>GameEvent.Update</c>
+    /// branch so it can be unit-tested without a live stream. Preserves
+    /// <c>MaxHealth</c>, <c>IsFinished</c>, and <c>IsIdle</c> from prior
+    /// state where available; clears <c>InLOS</c>/<c>InRadar</c>/<c>Health</c>
+    /// on enemies absent from the snapshot (they keep their last-known
+    /// position per FR-007).
+    let applySnapshot (state: GameState) (snap: GameStateSnapshotResult) : GameState =
+        let updatedUnits =
+            snap.Friendlies
+            |> List.map (fun f ->
+                let prior = Map.tryFind f.UnitId state.Units
+                let posChanged =
+                    match prior with
+                    | Some p -> p.Position <> f.Position
+                    | None -> true
+                let maxHealth =
+                    match prior with
+                    | Some p -> p.MaxHealth
+                    | None -> 0.0f
+                let isFinished =
+                    match prior with
+                    | Some p -> p.IsFinished
+                    | None -> false
+                let isIdle =
+                    match prior with
+                    | Some p -> if posChanged then false else p.IsIdle
+                    | None -> false
+                f.UnitId,
+                { UnitId = f.UnitId
+                  DefId = f.UnitDefId
+                  Position = f.Position
+                  Health = f.Health
+                  MaxHealth = maxHealth
+                  IsFinished = isFinished
+                  IsIdle = isIdle })
+            |> Map.ofList
 
-    let refreshUnit (stream: NetworkStream) (unit: TrackedUnit) : TrackedUnit =
-        let pos = Callbacks.getUnitPos stream unit.UnitId
-        let health = Callbacks.getUnitHealth stream unit.UnitId
-        let posChanged = pos <> unit.Position
-        { unit with
-            Position = pos
-            Health = health
-            IsIdle = if posChanged then false else unit.IsIdle }
+        let baseline =
+            state.Enemies
+            |> Map.map (fun _ e ->
+                { e with InLOS = false; InRadar = false; Health = None })
+
+        let withLos =
+            snap.LosEnemies
+            |> List.fold (fun acc l ->
+                let prior = Map.tryFind l.UnitId acc
+                let updated =
+                    match prior with
+                    | Some e ->
+                        { e with
+                            InLOS = true
+                            Position = l.Position
+                            Health = Some l.Health
+                            DefId = Some l.UnitDefId }
+                    | None ->
+                        { EnemyId = l.UnitId
+                          DefId = Some l.UnitDefId
+                          Position = l.Position
+                          Health = Some l.Health
+                          InLOS = true
+                          InRadar = false }
+                Map.add l.UnitId updated acc) baseline
+
+        let updatedEnemies =
+            snap.RadarOnlyEnemies
+            |> List.fold (fun acc r ->
+                let prior = Map.tryFind r.UnitId acc
+                let updated =
+                    match prior with
+                    | Some e ->
+                        { e with
+                            InRadar = true
+                            Position = r.Position
+                            Health = None
+                            DefId = e.DefId |> Option.orElse (Some r.UnitDefId) }
+                    | None ->
+                        { EnemyId = r.UnitId
+                          DefId = Some r.UnitDefId
+                          Position = r.Position
+                          Health = None
+                          InLOS = false
+                          InRadar = true }
+                Map.add r.UnitId updated acc) withLos
+
+        let eco = snap.Economy
+        let metal : EconomySnapshot =
+            { Current = eco.MetalCurrent
+              Income = eco.MetalIncome
+              Usage = eco.MetalUsage
+              Storage = eco.MetalStorage }
+        let energy : EconomySnapshot =
+            { Current = eco.EnergyCurrent
+              Income = eco.EnergyIncome
+              Usage = eco.EnergyUsage
+              Storage = eco.EnergyStorage }
+
+        { state with
+            Units = updatedUnits
+            Enemies = updatedEnemies
+            Metal = metal
+            Energy = energy }
 
     let processEvent (state: GameState) (stream: NetworkStream) (evt: GameEvent) : GameState =
         match evt with
@@ -187,32 +275,14 @@ module GameState =
             | None -> state
 
         | GameEvent.Update _ ->
-            // Refresh positions and health for all tracked friendly units
-            let updatedUnits =
-                state.Units
-                |> Map.map (fun _id unit -> refreshUnit stream unit)
-            // Refresh enemy positions: in-LOS enemies get exact pos, in-radar-
-            // only get jittered radar pos from the engine. Once contact is lost
-            // (neither LOS nor radar), we keep the last-known position frozen.
-            let updatedEnemies =
-                state.Enemies
-                |> Map.map (fun _id enemy ->
-                    if enemy.InLOS || enemy.InRadar then
-                        let pos = Callbacks.getUnitPos stream enemy.EnemyId
-                        let health =
-                            if enemy.InLOS then Some (Callbacks.getUnitHealth stream enemy.EnemyId)
-                            else enemy.Health
-                        { enemy with Position = pos; Health = health }
-                    else enemy)
-            let metal = refreshEconomy stream 0
-            let energy = refreshEconomy stream 1
-            { state with
-                Units = updatedUnits
-                Enemies = updatedEnemies
-                Metal = metal
-                Energy = energy }
+            // Spec 045: single-RPC batched snapshot replaces the legacy
+            // per-unit / per-enemy / per-resource refresh. Any snapshot
+            // failure leaves prior state untouched and propagates.
+            let snap = Callbacks.getGameStateSnapshot stream
+            applySnapshot state snap
 
         | _ -> state
+
 
     let processFrame (state: GameState) (frame: GameFrame) (stream: NetworkStream) : GameState =
         let mutable s = { state with FrameNumber = frame.FrameNumber; Events = frame.Events }

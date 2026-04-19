@@ -21,6 +21,7 @@ type CallbackId =
 | [<FsGrpc.Protobuf.ProtobufName("CALLBACK_GAME_GET_TEAM_COUNT")>] CallbackGameGetTeamCount = 12
 | [<FsGrpc.Protobuf.ProtobufName("CALLBACK_GAME_GET_ALLY_TEAM_COUNT")>] CallbackGameGetAllyTeamCount = 13
 | [<FsGrpc.Protobuf.ProtobufName("CALLBACK_GAME_GET_PLAYER_COUNT")>] CallbackGameGetPlayerCount = 14
+| [<FsGrpc.Protobuf.ProtobufName("CALLBACK_GAME_GET_STATE")>] CallbackGameGetState = 15
 /// <summary>Unit</summary>
 | [<FsGrpc.Protobuf.ProtobufName("CALLBACK_UNIT_GET_POS")>] CallbackUnitGetPos = 20
 | [<FsGrpc.Protobuf.ProtobufName("CALLBACK_UNIT_GET_HEALTH")>] CallbackUnitGetHealth = 21
@@ -399,6 +400,7 @@ module CallbackResult =
     | [<System.Text.Json.Serialization.JsonPropertyName("bytesValue")>] BytesValue of FsGrpc.Bytes
     | [<System.Text.Json.Serialization.JsonPropertyName("floatArrayValue")>] FloatArrayValue of Highbar.FloatArray
     | [<System.Text.Json.Serialization.JsonPropertyName("intArrayValue")>] IntArrayValue of Highbar.IntArray
+    | [<System.Text.Json.Serialization.JsonPropertyName("snapshotValue")>] SnapshotValue of Highbar.GameStateSnapshot
     with
         static member OneofCodec : Lazy<OneofCodec<ValueCase>> = 
             lazy
@@ -409,6 +411,7 @@ module CallbackResult =
             let BytesValue = FieldCodec.OneofCase "value" ValueCodec.Bytes (5, "bytesValue")
             let FloatArrayValue = FieldCodec.OneofCase "value" ValueCodec.Message<Highbar.FloatArray> (6, "floatArrayValue")
             let IntArrayValue = FieldCodec.OneofCase "value" ValueCodec.Message<Highbar.IntArray> (7, "intArrayValue")
+            let SnapshotValue = FieldCodec.OneofCase "value" ValueCodec.Message<Highbar.GameStateSnapshot> (8, "snapshotValue")
             let Value = FieldCodec.Oneof "value" (FSharp.Collections.Map [
                 ("intValue", fun node -> ValueCase.IntValue (IntValue.ReadJsonField node))
                 ("floatValue", fun node -> ValueCase.FloatValue (FloatValue.ReadJsonField node))
@@ -417,6 +420,7 @@ module CallbackResult =
                 ("bytesValue", fun node -> ValueCase.BytesValue (BytesValue.ReadJsonField node))
                 ("floatArrayValue", fun node -> ValueCase.FloatArrayValue (FloatArrayValue.ReadJsonField node))
                 ("intArrayValue", fun node -> ValueCase.IntArrayValue (IntArrayValue.ReadJsonField node))
+                ("snapshotValue", fun node -> ValueCase.SnapshotValue (SnapshotValue.ReadJsonField node))
                 ])
             Value
 
@@ -435,6 +439,7 @@ module CallbackResult =
             | 5 -> x.Value.Set (ValueCase.BytesValue (ValueCodec.Bytes.ReadValue reader))
             | 6 -> x.Value.Set (ValueCase.FloatArrayValue (ValueCodec.Message<Highbar.FloatArray>.ReadValue reader))
             | 7 -> x.Value.Set (ValueCase.IntArrayValue (ValueCodec.Message<Highbar.IntArray>.ReadValue reader))
+            | 8 -> x.Value.Set (ValueCase.SnapshotValue (ValueCodec.Message<Highbar.GameStateSnapshot>.ReadValue reader))
             | _ -> reader.SkipLastField()
         member x.Build : Highbar.CallbackResult = {
             Value = x.Value.Build |> (Option.defaultValue ValueCase.None)
@@ -460,6 +465,7 @@ type CallbackResult = {
         let BytesValue = FieldCodec.OneofCase "value" ValueCodec.Bytes (5, "bytesValue")
         let FloatArrayValue = FieldCodec.OneofCase "value" ValueCodec.Message<Highbar.FloatArray> (6, "floatArrayValue")
         let IntArrayValue = FieldCodec.OneofCase "value" ValueCodec.Message<Highbar.IntArray> (7, "intArrayValue")
+        let SnapshotValue = FieldCodec.OneofCase "value" ValueCodec.Message<Highbar.GameStateSnapshot> (8, "snapshotValue")
         let Value = FieldCodec.Oneof "value" (FSharp.Collections.Map [
             ("intValue", fun node -> Highbar.CallbackResult.ValueCase.IntValue (IntValue.ReadJsonField node))
             ("floatValue", fun node -> Highbar.CallbackResult.ValueCase.FloatValue (FloatValue.ReadJsonField node))
@@ -468,6 +474,7 @@ type CallbackResult = {
             ("bytesValue", fun node -> Highbar.CallbackResult.ValueCase.BytesValue (BytesValue.ReadJsonField node))
             ("floatArrayValue", fun node -> Highbar.CallbackResult.ValueCase.FloatArrayValue (FloatArrayValue.ReadJsonField node))
             ("intArrayValue", fun node -> Highbar.CallbackResult.ValueCase.IntArrayValue (IntArrayValue.ReadJsonField node))
+            ("snapshotValue", fun node -> Highbar.CallbackResult.ValueCase.SnapshotValue (SnapshotValue.ReadJsonField node))
             ])
         // Proto Definition Implementation
         { // ProtoDef<CallbackResult>
@@ -486,6 +493,7 @@ type CallbackResult = {
                     | Highbar.CallbackResult.ValueCase.BytesValue v -> BytesValue.CalcFieldSize v
                     | Highbar.CallbackResult.ValueCase.FloatArrayValue v -> FloatArrayValue.CalcFieldSize v
                     | Highbar.CallbackResult.ValueCase.IntArrayValue v -> IntArrayValue.CalcFieldSize v
+                    | Highbar.CallbackResult.ValueCase.SnapshotValue v -> SnapshotValue.CalcFieldSize v
             Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: CallbackResult) ->
                 (match m.Value with
                 | Highbar.CallbackResult.ValueCase.None -> ()
@@ -496,6 +504,7 @@ type CallbackResult = {
                 | Highbar.CallbackResult.ValueCase.BytesValue v -> BytesValue.WriteField w v
                 | Highbar.CallbackResult.ValueCase.FloatArrayValue v -> FloatArrayValue.WriteField w v
                 | Highbar.CallbackResult.ValueCase.IntArrayValue v -> IntArrayValue.WriteField w v
+                | Highbar.CallbackResult.ValueCase.SnapshotValue v -> SnapshotValue.WriteField w v
                 )
             Decode = fun (r: Google.Protobuf.CodedInputStream) ->
                 let mutable builder = new Highbar.CallbackResult.Builder()
@@ -512,6 +521,7 @@ type CallbackResult = {
                 let writeBytesValue = BytesValue.WriteJsonField o
                 let writeFloatArrayValue = FloatArrayValue.WriteJsonField o
                 let writeIntArrayValue = IntArrayValue.WriteJsonField o
+                let writeSnapshotValue = SnapshotValue.WriteJsonField o
                 let encode (w: System.Text.Json.Utf8JsonWriter) (m: CallbackResult) =
                     (match m.Value with
                     | Highbar.CallbackResult.ValueCase.None -> writeValueNone w
@@ -522,6 +532,7 @@ type CallbackResult = {
                     | Highbar.CallbackResult.ValueCase.BytesValue v -> writeBytesValue w v
                     | Highbar.CallbackResult.ValueCase.FloatArrayValue v -> writeFloatArrayValue w v
                     | Highbar.CallbackResult.ValueCase.IntArrayValue v -> writeIntArrayValue w v
+                    | Highbar.CallbackResult.ValueCase.SnapshotValue v -> writeSnapshotValue w v
                     )
                 encode
             DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
@@ -534,12 +545,574 @@ type CallbackResult = {
                     | "bytesValue" -> { value with Value = Highbar.CallbackResult.ValueCase.BytesValue (BytesValue.ReadJsonField kvPair.Value) }
                     | "floatArrayValue" -> { value with Value = Highbar.CallbackResult.ValueCase.FloatArrayValue (FloatArrayValue.ReadJsonField kvPair.Value) }
                     | "intArrayValue" -> { value with Value = Highbar.CallbackResult.ValueCase.IntArrayValue (IntArrayValue.ReadJsonField kvPair.Value) }
+                    | "snapshotValue" -> { value with Value = Highbar.CallbackResult.ValueCase.SnapshotValue (SnapshotValue.ReadJsonField kvPair.Value) }
                     | "value" -> { value with Value = Value.ReadJsonField kvPair.Value }
                     | _ -> value
                 Seq.fold update _CallbackResult.empty (node.AsObject ())
         }
     static member empty
         with get() = Highbar._CallbackResult.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module FriendlyUnit =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable Position: OptionBuilder<Highbar.Vector3> // (2)
+            val mutable Health: float32 // (3)
+            val mutable UnitDefId: int // (4)
+            val mutable Team: int // (5)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Position.Set (ValueCodec.Message<Highbar.Vector3>.ReadValue reader)
+            | 3 -> x.Health <- ValueCodec.Float.ReadValue reader
+            | 4 -> x.UnitDefId <- ValueCodec.Int32.ReadValue reader
+            | 5 -> x.Team <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Highbar.FriendlyUnit = {
+            UnitId = x.UnitId
+            Position = x.Position.Build
+            Health = x.Health
+            UnitDefId = x.UnitDefId
+            Team = x.Team
+            }
+
+/// <summary>
+/// Per-tick batched GameState snapshot (spec 045 / HighBarV2 032).
+/// Returned by CALLBACK_GAME_GET_STATE=15 in a single RPC round-trip,
+/// collapsing per-unit refreshUnit + per-resource Economy_* calls.
+/// </summary>
+type private _FriendlyUnit = FriendlyUnit
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type FriendlyUnit = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("position")>] Position: Highbar.Vector3 option // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("health")>] Health: float32 // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("unitDefId")>] UnitDefId: int // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("team")>] Team: int // (5)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<FriendlyUnit>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let Position = FieldCodec.Optional ValueCodec.Message<Highbar.Vector3> (2, "position")
+        let Health = FieldCodec.Primitive ValueCodec.Float (3, "health")
+        let UnitDefId = FieldCodec.Primitive ValueCodec.Int32 (4, "unitDefId")
+        let Team = FieldCodec.Primitive ValueCodec.Int32 (5, "team")
+        // Proto Definition Implementation
+        { // ProtoDef<FriendlyUnit>
+            Name = "FriendlyUnit"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                Position = Position.GetDefault()
+                Health = Health.GetDefault()
+                UnitDefId = UnitDefId.GetDefault()
+                Team = Team.GetDefault()
+                }
+            Size = fun (m: FriendlyUnit) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + Position.CalcFieldSize m.Position
+                + Health.CalcFieldSize m.Health
+                + UnitDefId.CalcFieldSize m.UnitDefId
+                + Team.CalcFieldSize m.Team
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: FriendlyUnit) ->
+                UnitId.WriteField w m.UnitId
+                Position.WriteField w m.Position
+                Health.WriteField w m.Health
+                UnitDefId.WriteField w m.UnitDefId
+                Team.WriteField w m.Team
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Highbar.FriendlyUnit.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writePosition = Position.WriteJsonField o
+                let writeHealth = Health.WriteJsonField o
+                let writeUnitDefId = UnitDefId.WriteJsonField o
+                let writeTeam = Team.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: FriendlyUnit) =
+                    writeUnitId w m.UnitId
+                    writePosition w m.Position
+                    writeHealth w m.Health
+                    writeUnitDefId w m.UnitDefId
+                    writeTeam w m.Team
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : FriendlyUnit =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "position" -> { value with Position = Position.ReadJsonField kvPair.Value }
+                    | "health" -> { value with Health = Health.ReadJsonField kvPair.Value }
+                    | "unitDefId" -> { value with UnitDefId = UnitDefId.ReadJsonField kvPair.Value }
+                    | "team" -> { value with Team = Team.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _FriendlyUnit.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Highbar._FriendlyUnit.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module LosEnemyUnit =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable Position: OptionBuilder<Highbar.Vector3> // (2)
+            val mutable Health: float32 // (3)
+            val mutable UnitDefId: int // (4)
+            val mutable Team: int // (5)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Position.Set (ValueCodec.Message<Highbar.Vector3>.ReadValue reader)
+            | 3 -> x.Health <- ValueCodec.Float.ReadValue reader
+            | 4 -> x.UnitDefId <- ValueCodec.Int32.ReadValue reader
+            | 5 -> x.Team <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Highbar.LosEnemyUnit = {
+            UnitId = x.UnitId
+            Position = x.Position.Build
+            Health = x.Health
+            UnitDefId = x.UnitDefId
+            Team = x.Team
+            }
+
+type private _LosEnemyUnit = LosEnemyUnit
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type LosEnemyUnit = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("position")>] Position: Highbar.Vector3 option // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("health")>] Health: float32 // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("unitDefId")>] UnitDefId: int // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("team")>] Team: int // (5)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<LosEnemyUnit>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let Position = FieldCodec.Optional ValueCodec.Message<Highbar.Vector3> (2, "position")
+        let Health = FieldCodec.Primitive ValueCodec.Float (3, "health")
+        let UnitDefId = FieldCodec.Primitive ValueCodec.Int32 (4, "unitDefId")
+        let Team = FieldCodec.Primitive ValueCodec.Int32 (5, "team")
+        // Proto Definition Implementation
+        { // ProtoDef<LosEnemyUnit>
+            Name = "LosEnemyUnit"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                Position = Position.GetDefault()
+                Health = Health.GetDefault()
+                UnitDefId = UnitDefId.GetDefault()
+                Team = Team.GetDefault()
+                }
+            Size = fun (m: LosEnemyUnit) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + Position.CalcFieldSize m.Position
+                + Health.CalcFieldSize m.Health
+                + UnitDefId.CalcFieldSize m.UnitDefId
+                + Team.CalcFieldSize m.Team
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: LosEnemyUnit) ->
+                UnitId.WriteField w m.UnitId
+                Position.WriteField w m.Position
+                Health.WriteField w m.Health
+                UnitDefId.WriteField w m.UnitDefId
+                Team.WriteField w m.Team
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Highbar.LosEnemyUnit.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writePosition = Position.WriteJsonField o
+                let writeHealth = Health.WriteJsonField o
+                let writeUnitDefId = UnitDefId.WriteJsonField o
+                let writeTeam = Team.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: LosEnemyUnit) =
+                    writeUnitId w m.UnitId
+                    writePosition w m.Position
+                    writeHealth w m.Health
+                    writeUnitDefId w m.UnitDefId
+                    writeTeam w m.Team
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : LosEnemyUnit =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "position" -> { value with Position = Position.ReadJsonField kvPair.Value }
+                    | "health" -> { value with Health = Health.ReadJsonField kvPair.Value }
+                    | "unitDefId" -> { value with UnitDefId = UnitDefId.ReadJsonField kvPair.Value }
+                    | "team" -> { value with Team = Team.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _LosEnemyUnit.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Highbar._LosEnemyUnit.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module RadarOnlyEnemyUnit =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable UnitId: int // (1)
+            val mutable Position: OptionBuilder<Highbar.Vector3> // (2)
+            val mutable UnitDefId: int // (3)
+            val mutable Team: int // (4)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.UnitId <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Position.Set (ValueCodec.Message<Highbar.Vector3>.ReadValue reader)
+            | 3 -> x.UnitDefId <- ValueCodec.Int32.ReadValue reader
+            | 4 -> x.Team <- ValueCodec.Int32.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Highbar.RadarOnlyEnemyUnit = {
+            UnitId = x.UnitId
+            Position = x.Position.Build
+            UnitDefId = x.UnitDefId
+            Team = x.Team
+            }
+
+/// <summary>
+/// NOTE: no health field by design — radar-only contacts cannot have a
+/// concrete health value and the client must never synthesize one.
+/// </summary>
+type private _RadarOnlyEnemyUnit = RadarOnlyEnemyUnit
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type RadarOnlyEnemyUnit = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("unitId")>] UnitId: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("position")>] Position: Highbar.Vector3 option // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("unitDefId")>] UnitDefId: int // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("team")>] Team: int // (4)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<RadarOnlyEnemyUnit>> =
+        lazy
+        // Field Definitions
+        let UnitId = FieldCodec.Primitive ValueCodec.Int32 (1, "unitId")
+        let Position = FieldCodec.Optional ValueCodec.Message<Highbar.Vector3> (2, "position")
+        let UnitDefId = FieldCodec.Primitive ValueCodec.Int32 (3, "unitDefId")
+        let Team = FieldCodec.Primitive ValueCodec.Int32 (4, "team")
+        // Proto Definition Implementation
+        { // ProtoDef<RadarOnlyEnemyUnit>
+            Name = "RadarOnlyEnemyUnit"
+            Empty = {
+                UnitId = UnitId.GetDefault()
+                Position = Position.GetDefault()
+                UnitDefId = UnitDefId.GetDefault()
+                Team = Team.GetDefault()
+                }
+            Size = fun (m: RadarOnlyEnemyUnit) ->
+                0
+                + UnitId.CalcFieldSize m.UnitId
+                + Position.CalcFieldSize m.Position
+                + UnitDefId.CalcFieldSize m.UnitDefId
+                + Team.CalcFieldSize m.Team
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: RadarOnlyEnemyUnit) ->
+                UnitId.WriteField w m.UnitId
+                Position.WriteField w m.Position
+                UnitDefId.WriteField w m.UnitDefId
+                Team.WriteField w m.Team
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Highbar.RadarOnlyEnemyUnit.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeUnitId = UnitId.WriteJsonField o
+                let writePosition = Position.WriteJsonField o
+                let writeUnitDefId = UnitDefId.WriteJsonField o
+                let writeTeam = Team.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: RadarOnlyEnemyUnit) =
+                    writeUnitId w m.UnitId
+                    writePosition w m.Position
+                    writeUnitDefId w m.UnitDefId
+                    writeTeam w m.Team
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : RadarOnlyEnemyUnit =
+                    match kvPair.Key with
+                    | "unitId" -> { value with UnitId = UnitId.ReadJsonField kvPair.Value }
+                    | "position" -> { value with Position = Position.ReadJsonField kvPair.Value }
+                    | "unitDefId" -> { value with UnitDefId = UnitDefId.ReadJsonField kvPair.Value }
+                    | "team" -> { value with Team = Team.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _RadarOnlyEnemyUnit.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Highbar._RadarOnlyEnemyUnit.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module EconomyRecord =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable MetalCurrent: float32 // (1)
+            val mutable MetalIncome: float32 // (2)
+            val mutable MetalUsage: float32 // (3)
+            val mutable MetalStorage: float32 // (4)
+            val mutable EnergyCurrent: float32 // (5)
+            val mutable EnergyIncome: float32 // (6)
+            val mutable EnergyUsage: float32 // (7)
+            val mutable EnergyStorage: float32 // (8)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.MetalCurrent <- ValueCodec.Float.ReadValue reader
+            | 2 -> x.MetalIncome <- ValueCodec.Float.ReadValue reader
+            | 3 -> x.MetalUsage <- ValueCodec.Float.ReadValue reader
+            | 4 -> x.MetalStorage <- ValueCodec.Float.ReadValue reader
+            | 5 -> x.EnergyCurrent <- ValueCodec.Float.ReadValue reader
+            | 6 -> x.EnergyIncome <- ValueCodec.Float.ReadValue reader
+            | 7 -> x.EnergyUsage <- ValueCodec.Float.ReadValue reader
+            | 8 -> x.EnergyStorage <- ValueCodec.Float.ReadValue reader
+            | _ -> reader.SkipLastField()
+        member x.Build : Highbar.EconomyRecord = {
+            MetalCurrent = x.MetalCurrent
+            MetalIncome = x.MetalIncome
+            MetalUsage = x.MetalUsage
+            MetalStorage = x.MetalStorage
+            EnergyCurrent = x.EnergyCurrent
+            EnergyIncome = x.EnergyIncome
+            EnergyUsage = x.EnergyUsage
+            EnergyStorage = x.EnergyStorage
+            }
+
+type private _EconomyRecord = EconomyRecord
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type EconomyRecord = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("metalCurrent")>] MetalCurrent: float32 // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("metalIncome")>] MetalIncome: float32 // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("metalUsage")>] MetalUsage: float32 // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("metalStorage")>] MetalStorage: float32 // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyCurrent")>] EnergyCurrent: float32 // (5)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyIncome")>] EnergyIncome: float32 // (6)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyUsage")>] EnergyUsage: float32 // (7)
+    [<System.Text.Json.Serialization.JsonPropertyName("energyStorage")>] EnergyStorage: float32 // (8)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<EconomyRecord>> =
+        lazy
+        // Field Definitions
+        let MetalCurrent = FieldCodec.Primitive ValueCodec.Float (1, "metalCurrent")
+        let MetalIncome = FieldCodec.Primitive ValueCodec.Float (2, "metalIncome")
+        let MetalUsage = FieldCodec.Primitive ValueCodec.Float (3, "metalUsage")
+        let MetalStorage = FieldCodec.Primitive ValueCodec.Float (4, "metalStorage")
+        let EnergyCurrent = FieldCodec.Primitive ValueCodec.Float (5, "energyCurrent")
+        let EnergyIncome = FieldCodec.Primitive ValueCodec.Float (6, "energyIncome")
+        let EnergyUsage = FieldCodec.Primitive ValueCodec.Float (7, "energyUsage")
+        let EnergyStorage = FieldCodec.Primitive ValueCodec.Float (8, "energyStorage")
+        // Proto Definition Implementation
+        { // ProtoDef<EconomyRecord>
+            Name = "EconomyRecord"
+            Empty = {
+                MetalCurrent = MetalCurrent.GetDefault()
+                MetalIncome = MetalIncome.GetDefault()
+                MetalUsage = MetalUsage.GetDefault()
+                MetalStorage = MetalStorage.GetDefault()
+                EnergyCurrent = EnergyCurrent.GetDefault()
+                EnergyIncome = EnergyIncome.GetDefault()
+                EnergyUsage = EnergyUsage.GetDefault()
+                EnergyStorage = EnergyStorage.GetDefault()
+                }
+            Size = fun (m: EconomyRecord) ->
+                0
+                + MetalCurrent.CalcFieldSize m.MetalCurrent
+                + MetalIncome.CalcFieldSize m.MetalIncome
+                + MetalUsage.CalcFieldSize m.MetalUsage
+                + MetalStorage.CalcFieldSize m.MetalStorage
+                + EnergyCurrent.CalcFieldSize m.EnergyCurrent
+                + EnergyIncome.CalcFieldSize m.EnergyIncome
+                + EnergyUsage.CalcFieldSize m.EnergyUsage
+                + EnergyStorage.CalcFieldSize m.EnergyStorage
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: EconomyRecord) ->
+                MetalCurrent.WriteField w m.MetalCurrent
+                MetalIncome.WriteField w m.MetalIncome
+                MetalUsage.WriteField w m.MetalUsage
+                MetalStorage.WriteField w m.MetalStorage
+                EnergyCurrent.WriteField w m.EnergyCurrent
+                EnergyIncome.WriteField w m.EnergyIncome
+                EnergyUsage.WriteField w m.EnergyUsage
+                EnergyStorage.WriteField w m.EnergyStorage
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Highbar.EconomyRecord.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeMetalCurrent = MetalCurrent.WriteJsonField o
+                let writeMetalIncome = MetalIncome.WriteJsonField o
+                let writeMetalUsage = MetalUsage.WriteJsonField o
+                let writeMetalStorage = MetalStorage.WriteJsonField o
+                let writeEnergyCurrent = EnergyCurrent.WriteJsonField o
+                let writeEnergyIncome = EnergyIncome.WriteJsonField o
+                let writeEnergyUsage = EnergyUsage.WriteJsonField o
+                let writeEnergyStorage = EnergyStorage.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: EconomyRecord) =
+                    writeMetalCurrent w m.MetalCurrent
+                    writeMetalIncome w m.MetalIncome
+                    writeMetalUsage w m.MetalUsage
+                    writeMetalStorage w m.MetalStorage
+                    writeEnergyCurrent w m.EnergyCurrent
+                    writeEnergyIncome w m.EnergyIncome
+                    writeEnergyUsage w m.EnergyUsage
+                    writeEnergyStorage w m.EnergyStorage
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : EconomyRecord =
+                    match kvPair.Key with
+                    | "metalCurrent" -> { value with MetalCurrent = MetalCurrent.ReadJsonField kvPair.Value }
+                    | "metalIncome" -> { value with MetalIncome = MetalIncome.ReadJsonField kvPair.Value }
+                    | "metalUsage" -> { value with MetalUsage = MetalUsage.ReadJsonField kvPair.Value }
+                    | "metalStorage" -> { value with MetalStorage = MetalStorage.ReadJsonField kvPair.Value }
+                    | "energyCurrent" -> { value with EnergyCurrent = EnergyCurrent.ReadJsonField kvPair.Value }
+                    | "energyIncome" -> { value with EnergyIncome = EnergyIncome.ReadJsonField kvPair.Value }
+                    | "energyUsage" -> { value with EnergyUsage = EnergyUsage.ReadJsonField kvPair.Value }
+                    | "energyStorage" -> { value with EnergyStorage = EnergyStorage.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _EconomyRecord.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Highbar._EconomyRecord.Proto.Value.Empty
+
+[<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
+module GameStateSnapshot =
+
+    [<System.Runtime.CompilerServices.IsByRefLike>]
+    type Builder =
+        struct
+            val mutable Frame: int // (1)
+            val mutable Friendlies: RepeatedBuilder<Highbar.FriendlyUnit> // (2)
+            val mutable LosEnemies: RepeatedBuilder<Highbar.LosEnemyUnit> // (3)
+            val mutable RadarOnlyEnemies: RepeatedBuilder<Highbar.RadarOnlyEnemyUnit> // (4)
+            val mutable Economy: OptionBuilder<Highbar.EconomyRecord> // (5)
+        end
+        with
+        member x.Put ((tag, reader): int * Reader) =
+            match tag with
+            | 1 -> x.Frame <- ValueCodec.Int32.ReadValue reader
+            | 2 -> x.Friendlies.Add (ValueCodec.Message<Highbar.FriendlyUnit>.ReadValue reader)
+            | 3 -> x.LosEnemies.Add (ValueCodec.Message<Highbar.LosEnemyUnit>.ReadValue reader)
+            | 4 -> x.RadarOnlyEnemies.Add (ValueCodec.Message<Highbar.RadarOnlyEnemyUnit>.ReadValue reader)
+            | 5 -> x.Economy.Set (ValueCodec.Message<Highbar.EconomyRecord>.ReadValue reader)
+            | _ -> reader.SkipLastField()
+        member x.Build : Highbar.GameStateSnapshot = {
+            Frame = x.Frame
+            Friendlies = x.Friendlies.Build
+            LosEnemies = x.LosEnemies.Build
+            RadarOnlyEnemies = x.RadarOnlyEnemies.Build
+            Economy = x.Economy.Build
+            }
+
+type private _GameStateSnapshot = GameStateSnapshot
+[<System.Text.Json.Serialization.JsonConverter(typeof<FsGrpc.Json.MessageConverter>)>]
+[<FsGrpc.Protobuf.Message>]
+[<StructuralEquality;StructuralComparison>]
+type GameStateSnapshot = {
+    // Field Declarations
+    [<System.Text.Json.Serialization.JsonPropertyName("frame")>] Frame: int // (1)
+    [<System.Text.Json.Serialization.JsonPropertyName("friendlies")>] Friendlies: Highbar.FriendlyUnit list // (2)
+    [<System.Text.Json.Serialization.JsonPropertyName("losEnemies")>] LosEnemies: Highbar.LosEnemyUnit list // (3)
+    [<System.Text.Json.Serialization.JsonPropertyName("radarOnlyEnemies")>] RadarOnlyEnemies: Highbar.RadarOnlyEnemyUnit list // (4)
+    [<System.Text.Json.Serialization.JsonPropertyName("economy")>] Economy: Highbar.EconomyRecord option // (5)
+    }
+    with
+    static member Proto : Lazy<ProtoDef<GameStateSnapshot>> =
+        lazy
+        // Field Definitions
+        let Frame = FieldCodec.Primitive ValueCodec.Int32 (1, "frame")
+        let Friendlies = FieldCodec.Repeated ValueCodec.Message<Highbar.FriendlyUnit> (2, "friendlies")
+        let LosEnemies = FieldCodec.Repeated ValueCodec.Message<Highbar.LosEnemyUnit> (3, "losEnemies")
+        let RadarOnlyEnemies = FieldCodec.Repeated ValueCodec.Message<Highbar.RadarOnlyEnemyUnit> (4, "radarOnlyEnemies")
+        let Economy = FieldCodec.Optional ValueCodec.Message<Highbar.EconomyRecord> (5, "economy")
+        // Proto Definition Implementation
+        { // ProtoDef<GameStateSnapshot>
+            Name = "GameStateSnapshot"
+            Empty = {
+                Frame = Frame.GetDefault()
+                Friendlies = Friendlies.GetDefault()
+                LosEnemies = LosEnemies.GetDefault()
+                RadarOnlyEnemies = RadarOnlyEnemies.GetDefault()
+                Economy = Economy.GetDefault()
+                }
+            Size = fun (m: GameStateSnapshot) ->
+                0
+                + Frame.CalcFieldSize m.Frame
+                + Friendlies.CalcFieldSize m.Friendlies
+                + LosEnemies.CalcFieldSize m.LosEnemies
+                + RadarOnlyEnemies.CalcFieldSize m.RadarOnlyEnemies
+                + Economy.CalcFieldSize m.Economy
+            Encode = fun (w: Google.Protobuf.CodedOutputStream) (m: GameStateSnapshot) ->
+                Frame.WriteField w m.Frame
+                Friendlies.WriteField w m.Friendlies
+                LosEnemies.WriteField w m.LosEnemies
+                RadarOnlyEnemies.WriteField w m.RadarOnlyEnemies
+                Economy.WriteField w m.Economy
+            Decode = fun (r: Google.Protobuf.CodedInputStream) ->
+                let mutable builder = new Highbar.GameStateSnapshot.Builder()
+                let mutable tag = 0
+                while read r &tag do
+                    builder.Put (tag, r)
+                builder.Build
+            EncodeJson = fun (o: JsonOptions) ->
+                let writeFrame = Frame.WriteJsonField o
+                let writeFriendlies = Friendlies.WriteJsonField o
+                let writeLosEnemies = LosEnemies.WriteJsonField o
+                let writeRadarOnlyEnemies = RadarOnlyEnemies.WriteJsonField o
+                let writeEconomy = Economy.WriteJsonField o
+                let encode (w: System.Text.Json.Utf8JsonWriter) (m: GameStateSnapshot) =
+                    writeFrame w m.Frame
+                    writeFriendlies w m.Friendlies
+                    writeLosEnemies w m.LosEnemies
+                    writeRadarOnlyEnemies w m.RadarOnlyEnemies
+                    writeEconomy w m.Economy
+                encode
+            DecodeJson = fun (node: System.Text.Json.Nodes.JsonNode) ->
+                let update value (kvPair: System.Collections.Generic.KeyValuePair<string,System.Text.Json.Nodes.JsonNode>) : GameStateSnapshot =
+                    match kvPair.Key with
+                    | "frame" -> { value with Frame = Frame.ReadJsonField kvPair.Value }
+                    | "friendlies" -> { value with Friendlies = Friendlies.ReadJsonField kvPair.Value }
+                    | "losEnemies" -> { value with LosEnemies = LosEnemies.ReadJsonField kvPair.Value }
+                    | "radarOnlyEnemies" -> { value with RadarOnlyEnemies = RadarOnlyEnemies.ReadJsonField kvPair.Value }
+                    | "economy" -> { value with Economy = Economy.ReadJsonField kvPair.Value }
+                    | _ -> value
+                Seq.fold update _GameStateSnapshot.empty (node.AsObject ())
+        }
+    static member empty
+        with get() = Highbar._GameStateSnapshot.Proto.Value.Empty
 
 [<CompilationRepresentation(CompilationRepresentationFlags.ModuleSuffix)>]
 module FloatArray =

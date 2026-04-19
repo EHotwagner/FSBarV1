@@ -24,6 +24,19 @@ type ProtocolMismatchException =
     inherit exn
     new: message: string * ?innerException: exn -> ProtocolMismatchException
 
+/// <summary>
+/// Raised when the HighBar proxy does not advertise a callback id that
+/// FSBar requires (currently only <c>CALLBACK_GAME_GET_STATE = 15</c>
+/// from spec 045). Pre-0.1.5 proxies reject callback 15 with
+/// "Unknown callback id" and the session terminates — no legacy
+/// fallback. <c>RequiredVersion</c> names the minimum HighBarV2 proxy
+/// version in the message ("0.1.5").
+/// </summary>
+type ProxyVersionMismatchException =
+    inherit exn
+    new: message: string * requiredVersion: string * ?innerException: exn -> ProxyVersionMismatchException
+    member RequiredVersion: string
+
 module Protocol =
     /// <summary>
     /// When <c>false</c>, <c>sendCallback</c> silently drops events from

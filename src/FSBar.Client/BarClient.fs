@@ -287,6 +287,13 @@ type BarClient(config: EngineConfig) =
             // Preserve any units captured during mini warmup.
             gameState <- { gameState with UnitDefs = unitDefs }
 
+            // Spec 045 R4: preflight CALLBACK_GAME_GET_STATE=15 so a
+            // pre-0.1.5 proxy fails at connect-time rather than on the
+            // first GameEvent.Update. The result is discarded; the next
+            // Update tick issues its own snapshot.
+            printfn "Preflight: GameState snapshot (spec 045)..."
+            Callbacks.getGameStateSnapshot netStream |> ignore
+
             // NOTE: Protocol.replayBufferEnabled is left at its default value
             // (false) here. Any follow-up warmup work the caller performs —
             // e.g. MapGrid.loadFromEngine, getMetalSpots, or the 024 US5 tactical
