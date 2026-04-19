@@ -13,6 +13,8 @@
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="HubUiTypes.fsi" />
     <Compile Include="HubUiTypes.fs" />
+    <Compile Include="EncyclopediaFilter.fsi" />
+    <Compile Include="EncyclopediaFilter.fs" />
     <Compile Include="HubSettings.fsi" />
     <Compile Include="HubSettings.fs" />
     <Compile Include="BundledProxy.fsi" />

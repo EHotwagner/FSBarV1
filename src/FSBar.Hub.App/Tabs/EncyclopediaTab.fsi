@@ -1,57 +1,55 @@
 namespace FSBar.Hub.App.Tabs
 
 open SkiaViewer
+open Silk.NET.Input
 open FSBar.Viz
 
-/// Encyclopedia tab (feature 035-central-gui-hub T055 + T056) — a
-/// standalone browser of every unit in `BarData.AllUnitDefs`. Renders
-/// a filterable scrollable list on the left and a detail pane with
-/// the same `UnitGlyph.buildUnit` output the live viewer uses — so
-/// the glyph in the card byte-matches what the same DefId would draw
-/// in a session (SC-003).
+/// Encyclopedia tab (feature 035-central-gui-hub T055 + T056, extended
+/// by feature 044-encyclopedia-filters). Standalone browser of every
+/// unit in `BarData.AllUnitDefs`. Renders a filterable scrollable list
+/// on the left and a detail pane on the right, driven entirely by
+/// `HubState.Encyclopedia` through `HubStateStore.setEncyclopedia`
+/// (feature 041 state-routing convention, feature 044 FR-017..FR-022).
 ///
-/// Phase-3 scope: faction chip filter + alphabetical list + detail
-/// card (cost / health / build time / weapons / sight range / glyph
-/// preview). Role / tier filters and a BarData-version-change watcher
-/// (FR-022) are deferred.
+/// Feature 044 scope: adds Tier + Mobility chip rows, a free-text
+/// search input, a "N of M units shown" count, a Clear-filters
+/// button, and an empty-state panel when the active filter matches
+/// nothing. All mutations still route through
+/// `HubStateStore.setEncyclopedia`; no per-tab mutable mirror of the
+/// filter state is introduced.
 module EncyclopediaTab =
 
-    /// Pre-computed display record for one unit. Feature 038 moved
-    /// the underlying record to `FSBar.Viz.EncyclopediaData.EncyclopediaEntry`
-    /// so that `UnitDisplayAdapter.ofEncyclopediaEntry` can share it —
-    /// `UnitEntry` here is a simple alias preserved for external
-    /// callers and Hub script consumers.
+    /// Pre-computed display record for one unit. Alias preserved for
+    /// external callers and Hub script consumers.
     type UnitEntry = EncyclopediaData.EncyclopediaEntry
 
-    /// Actions the tab surfaces on mouse input. Faction-filter +
-    /// selection mutations route through `HubStateStore.setEncyclopedia`
-    /// inside `handleMouse` (feature 041 FR-019/FR-020); scroll
-    /// position is genuinely transient view state and bubbles up
-    /// here for the entrypoint to apply.
+    /// Actions the tab surfaces on input. Filter / selection
+    /// mutations route through `HubStateStore.setEncyclopedia` inside
+    /// `handleMouse` / `handleKey`; only genuinely transient view
+    /// state (scroll) bubbles up to the entrypoint.
     [<RequireQualifiedAccess>]
     type EncyclopediaTabAction =
         /// User scrolled the list.
         | ScrollList of offset: float32
 
-    /// Per-tab render state. Excludes any field already
-    /// authoritatively held by `HubStateStore.HubState.Encyclopedia` (R6).
+    /// Per-tab render state. Holds only view-local fields that are
+    /// not authoritatively owned by `HubState.Encyclopedia`:
+    /// pre-built entry list, scroll offset, and whether the search
+    /// input currently has keyboard focus.
     type EncyclopediaTabState = {
         /// All entries sorted alphabetically by InternalName.
         Entries: UnitEntry list
         /// Scroll offset into the visible list (pixels).
         ListScroll: float32
+        /// `true` when keystrokes should edit the search field.
+        SearchFocused: bool
     }
 
     /// Build the initial tab state. Synthesises `Entries` from
-    /// `BarData.AllUnitDefs`; takes ~10–20 ms on a typical dev box
-    /// — fast enough to run at hub startup.
+    /// `BarData.AllUnitDefs` (~10–20 ms).
     val init: unit -> EncyclopediaTabState
 
     /// Render the tab content into the given content rectangle.
-    /// Reads `EncyclopediaSelection` and `UnitGlyphStyle` from the
-    /// supplied `HubStateStore.T` so remote gRPC writes
-    /// (`SelectUnit`, `SetVizAttribute`) appear in the next paint
-    /// without going through the entrypoint.
     val render:
         state: EncyclopediaTabState ->
         store: FSBar.Hub.HubStateStore.T ->
@@ -61,10 +59,12 @@ module EncyclopediaTab =
         contentH: float32 ->
             Element list
 
-    /// Hit-test a mouse click. Faction-filter + selection mutations
-    /// are written back through `HubStateStore.setEncyclopedia`
-    /// before returning. Scroll-bar action bubbles up via
-    /// `EncyclopediaTabAction.ScrollList`.
+    /// Hit-test a mouse click. Chip / Clear-filters / search-focus /
+    /// selection mutations are written through
+    /// `HubStateStore.setEncyclopedia` before returning. The tab
+    /// maintains selection stickiness (feature 044 FR-011) in the
+    /// same submit that changes the filter. Returns the updated tab
+    /// state (for focus changes) and an optional bubbled action.
     val handleMouse:
         state: EncyclopediaTabState ->
         store: FSBar.Hub.HubStateStore.T ->
@@ -74,7 +74,7 @@ module EncyclopediaTab =
         contentY: float32 ->
         contentW: float32 ->
         contentH: float32 ->
-            EncyclopediaTabAction option
+            EncyclopediaTabState * EncyclopediaTabAction option
 
     /// Handle a wheel scroll on the list pane.
     val handleScroll:
@@ -88,3 +88,15 @@ module EncyclopediaTab =
         contentW: float32 ->
         contentH: float32 ->
             EncyclopediaTabAction option
+
+    /// Route a `KeyDown` event through the tab. When the search
+    /// field is focused, alphanumeric keys append, Backspace pops
+    /// the last character, Escape clears the search text, and all
+    /// other keys fall through. Returns `(state, true)` when the
+    /// key was consumed so the caller skips the global
+    /// overlay-toggle path.
+    val handleKey:
+        state: EncyclopediaTabState ->
+        store: FSBar.Hub.HubStateStore.T ->
+        key: Key ->
+            EncyclopediaTabState * bool

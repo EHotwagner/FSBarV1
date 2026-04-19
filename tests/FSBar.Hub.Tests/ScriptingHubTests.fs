@@ -65,7 +65,7 @@ let private makeService (opts: ScriptingHub.ScriptingHubOptions) =
           Camera = ViewerCamera.defaults
           Lobby = LobbyConfig.defaults
           Encyclopedia =
-              { FactionFilter = Set.empty; SelectedDefId = None }
+              EncyclopediaSelection.defaults
           PresetList = []
           Settings = HubSettings.defaults }
     let store = HubStateStore.create bus.Sink initialState

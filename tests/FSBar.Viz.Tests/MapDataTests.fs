@@ -10,7 +10,7 @@ open FSBar.Viz.Tests.VizEngineFixture
 
 [<Fact>]
 let ``save then load round-trips a MapGrid and metal spots`` () =
-    let grid = SyntheticMapGrid.build {| width = 16; height = 16; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 16; height = 16; seed = None  }
     let spots = [| (100.0f, 0.0f, 200.0f, 1.5f); (300.0f, 0.0f, 400.0f, 2.0f) |]
     let path = Path.Combine(Path.GetTempPath(), $"mapdata-test-{Guid.NewGuid()}.fsmg")
     try
@@ -57,7 +57,7 @@ let ``load with wrong version throws`` () =
 
 [<Fact>]
 let ``loaded grid dimensions match saved grid`` () =
-    let grid = SyntheticMapGrid.build {| width = 24; height = 32; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = 24; height = 32; seed = None  }
     let spots = Array.empty
     let path = Path.Combine(Path.GetTempPath(), $"mapdata-dims-{Guid.NewGuid()}.fsmg")
     try

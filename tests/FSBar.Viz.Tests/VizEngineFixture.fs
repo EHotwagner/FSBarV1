@@ -21,7 +21,7 @@ let _skiaLoaded = dlopen(nativePath + "/libSkiaSharp.so", 0x2 ||| 0x100)
 let convertToSnapshot (scene: FSBar.SyntheticData.Scene) (gs: GameState) : GameSnapshot =
     let mapW = int scene.MapWidth / 8
     let mapH = int scene.MapHeight / 8
-    let grid = SyntheticMapGrid.build {| width = mapW; height = mapH; seed = None |}
+    let grid = SyntheticMapGrid.build {  width = mapW; height = mapH; seed = None  }
 
     let units =
         let friendlyUnits =

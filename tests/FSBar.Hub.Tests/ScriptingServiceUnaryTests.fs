@@ -77,7 +77,7 @@ let private makeService () =
           VizConfig = FSBar.Viz.VizDefaults.defaultConfig
           Camera = ViewerCamera.defaults
           Lobby = LobbyConfig.defaults
-          Encyclopedia = { FactionFilter = Set.empty; SelectedDefId = None }
+          Encyclopedia = EncyclopediaSelection.defaults
           PresetList = []
           Settings = HubSettings.defaults }
     let store = HubStateStore.create bus.Sink initialState

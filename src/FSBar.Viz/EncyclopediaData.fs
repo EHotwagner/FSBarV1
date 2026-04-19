@@ -5,6 +5,7 @@ module EncyclopediaData =
     type EncyclopediaEntry = {
         DefId: int
         InternalName: string
+        HumanName: string option
         Subfolder: string
         Faction: FactionId
         Tier: Tier
@@ -17,6 +18,7 @@ module EncyclopediaData =
         FootprintZ: int
         SightRangeElmo: float32
         WeaponRangesElmo: float32 list
+        MovementClass: string option
     }
 
     let private concreteFloat (v: BarData.ValueOrExpr<float>) (fallback: float) : float =
@@ -57,6 +59,7 @@ module EncyclopediaData =
             | None -> []
         { DefId = idx
           InternalName = d.name
+          HumanName = d.printableName
           Subfolder = d.subfolder
           Faction = faction
           Tier = tier
@@ -68,7 +71,8 @@ module EncyclopediaData =
           FootprintX = max 1 (int d.footprintX)
           FootprintZ = max 1 (int d.footprintZ)
           SightRangeElmo = float32 (concreteFloat d.sightDistance 0.0)
-          WeaponRangesElmo = weaponRanges }
+          WeaponRangesElmo = weaponRanges
+          MovementClass = mClass }
 
     let buildFromBarData () : EncyclopediaEntry list =
         BarData.AllUnitDefs.all

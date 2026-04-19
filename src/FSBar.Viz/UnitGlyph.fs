@@ -84,19 +84,31 @@ module UnitGlyph =
         (category: string option)
         (logMiss: string -> unit)
         : Tier =
-        match Map.tryFind "techlevel" customParams with
-        | Some "3" -> Tier.T3
-        | Some "2" -> Tier.T2
-        | Some "1" -> Tier.T1
-        | Some _ ->
-            // Unrecognized techlevel value — fall through to category.
-            match category with
-            | Some c when c.Contains "LEVEL3" -> Tier.T3
-            | Some c when c.Contains "LEVEL2" -> Tier.T2
-            | Some c when c.Contains "LEVEL1" -> Tier.T1
+        let parseTech (raw: string) : Tier option =
+            // BarData stores techlevel as e.g. "1.0" / "2.0" / "3" — be
+            // permissive about trailing ".0", case, and whitespace.
+            match raw with
+            | "3" | "3.0" -> Some Tier.T3
+            | "2" | "2.0" -> Some Tier.T2
+            | "1" | "1.0" -> Some Tier.T1
             | _ ->
-                reportMissOnce tierMissCache "<bad techlevel>" logMiss
-                Tier.T1
+                match System.Double.TryParse(raw, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture) with
+                | true, v when v >= 2.5 -> Some Tier.T3
+                | true, v when v >= 1.5 -> Some Tier.T2
+                | true, v when v >= 0.5 -> Some Tier.T1
+                | _ -> None
+        match Map.tryFind "techlevel" customParams with
+        | Some raw ->
+            match parseTech raw with
+            | Some t -> t
+            | None ->
+                match category with
+                | Some c when c.Contains "LEVEL3" -> Tier.T3
+                | Some c when c.Contains "LEVEL2" -> Tier.T2
+                | Some c when c.Contains "LEVEL1" -> Tier.T1
+                | _ ->
+                    reportMissOnce tierMissCache "<bad techlevel>" logMiss
+                    Tier.T1
         | None ->
             match category with
             | Some c when c.Contains "LEVEL3" -> Tier.T3

@@ -89,7 +89,13 @@ let oneGapCorridor (width: int) (height: int) (gapCells: int) : MapGrid =
             slope.[wallSlopeX, z] <- 1.0f
     { grid with SlopeMap = slope }
 
-let build (parameters: {| width: int; height: int; seed: int option |}) : MapGrid =
+type BuildParameters = {
+    width: int
+    height: int
+    seed: int option
+}
+
+let build (parameters: BuildParameters) : MapGrid =
     let w = parameters.width
     let h = parameters.height
     let offset = parameters.seed |> Option.defaultValue 0 |> float32

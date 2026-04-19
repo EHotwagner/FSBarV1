@@ -194,11 +194,21 @@ module HubStateStore =
 
     let setEncyclopedia
             (store: T) (selection: EncyclopediaSelection) : SubmitOutcome =
-        commit store "setEncyclopedia"
-            (fun s -> Ok { s with Encyclopedia = selection })
-            (fun _ after ->
-                store.Events.Publish(
-                    HubEvents.EncyclopediaSelectionChanged after.Encyclopedia))
+        // Feature 044 FR-008a — sanitize SearchText at the store
+        // boundary so the predicate module can assume it arrives
+        // trimmed and length-capped.
+        let trimmed =
+            if isNull selection.SearchText then ""
+            else selection.SearchText.Trim()
+        if trimmed.Length > 128 then
+            rejectWith store "setEncyclopedia" "search text > 128 chars"
+        else
+            let sanitized = { selection with SearchText = trimmed }
+            commit store "setEncyclopedia"
+                (fun s -> Ok { s with Encyclopedia = sanitized })
+                (fun _ after ->
+                    store.Events.Publish(
+                        HubEvents.EncyclopediaSelectionChanged after.Encyclopedia))
 
     let updatePresetList (store: T) (names: string list) : unit =
         // Facade-only; no event. Three-retry CAS to converge under

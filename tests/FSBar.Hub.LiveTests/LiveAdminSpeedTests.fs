@@ -197,7 +197,7 @@ type LiveAdminSpeedTests() =
                   VizConfig = FSBar.Viz.VizDefaults.defaultConfig
                   Camera = ViewerCamera.defaults
                   Lobby = LobbyConfig.defaults
-                  Encyclopedia = { FactionFilter = Set.empty; SelectedDefId = None }
+                  Encyclopedia = EncyclopediaSelection.defaults
                   PresetList = []
                   Settings = HubSettings.defaults }
         let overlays = OverlayLayerStore.create bus.Sink
