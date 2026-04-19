@@ -27,3 +27,9 @@ bots/runs/
 
 # Viz configurator presets (feature 033-viz-style-configurator) — user-local
 viz-presets/*.json
+
+# Python artifacts (feature 047 — scripts/examples/python/)
+__pycache__/
+*.pyc
+.venv/
+venv/

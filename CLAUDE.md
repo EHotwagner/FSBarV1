@@ -132,6 +132,9 @@ Procedural workflows live as `.claude/skills/` — invoke via `/skill`:
 ## Active Technologies
 - F# 9 on .NET 10.0 (Constitution §Engineering Constraints) + FsGrpc 1.0.6, Grpc.AspNetCore 2.67.0, SkiaSharp 2.88.6, BarData (local nupkg) (046-scripting-full-client)
 - N/A — live session state is in-process (`BarClient.GameState`) (046-scripting-full-client)
+- Markdown for the docs page; Python 3.10+ for + `grpcio` (≥1.60), `grpcio-tools` (for (047-polyglot-client-guide)
+- N/A — the Python client is stateless; live session state (047-polyglot-client-guide)
 
 ## Recent Changes
+- 047-polyglot-client-guide: Python scripting-client on-ramp — new `docs/scripting-polyglot.md` + runnable `scripts/examples/python/hub_full_client.py` (docs/code only; no F# / proto changes)
 - 046-scripting-full-client: Added F# 9 on .NET 10.0 (Constitution §Engineering Constraints) + FsGrpc 1.0.6, Grpc.AspNetCore 2.67.0, SkiaSharp 2.88.6, BarData (local nupkg)
