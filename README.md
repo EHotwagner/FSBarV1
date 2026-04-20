@@ -1,3 +1,5 @@
+Archived Prototype. Most things work but the central hub app should be done in a real ui framework like avalonia and the command protocol is flakey. 
+
 # FSBarV1
 
 > Uses [Spec Kit](https://github.com/github/spec-kit). See [constitution](.specify/memory/constitution.md) for governing principles.
